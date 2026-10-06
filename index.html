@@ -37,6 +37,13 @@
   .btn:hover:not(:disabled) { background: rgba(95, 227, 255, 0.22); }
   .btn.alt:hover:not(:disabled) { background: rgba(255, 63, 164, 0.18); }
   .btn:disabled { opacity: 0.35; cursor: default; }
+  .fullscreen-toggle.hidden, .fullscreen-help.hidden { display: none; }
+  .fullscreen-help { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+    padding: 16px calc(16px + var(--safe-r)) 16px calc(16px + var(--safe-l)); background: rgba(0, 0, 8, 0.9); }
+  .fullscreen-help-card { width: min(460px, 100%); box-sizing: border-box; padding: 22px 26px; border: 1px solid var(--cyan); border-radius: 3px;
+    background: #080d1c; box-shadow: 0 0 30px rgba(95, 227, 255, 0.28); }
+  .fullscreen-help-title { color: var(--cyan); font-size: 16px; letter-spacing: 0.25em; text-transform: uppercase; }
+  .fullscreen-help p { margin: 12px 0 20px; font-size: 14px; line-height: 1.5; letter-spacing: 0.02em; }
 
   #title { font-size: clamp(34px, 7vw, 76px); font-weight: 200; letter-spacing: 0.45em; margin-right: -0.45em; color: #f4fbff;
     text-shadow: 0 0 18px var(--magenta), 0 0 42px rgba(255, 63, 164, 0.5); }
@@ -71,6 +78,9 @@
   #controls b { color: var(--cyan); font-weight: 600; }
   #status { margin-top: 14px; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6; }
   #status:empty { display: none; }
+  #status.control-error, .control-error { color: #ff9aa6; opacity: 1; letter-spacing: 0.02em; text-transform: none; font-size: 12px; line-height: 1.35;
+    max-width: 620px; margin-top: 9px; }
+  .control-error:empty { display: none; }
   #overlay.error { z-index: 30; }
   #overlay.error #status { white-space: pre-wrap; text-transform: none; letter-spacing: 0; color: var(--red); opacity: 1; font: 12px/1.5 ui-monospace, Menlo, monospace; text-align: left; max-height: 50vh; overflow: auto; }
 
@@ -142,7 +152,8 @@
   .set-option:hover { border-color: rgba(95, 227, 255, 0.7); }
 
   #rotate { display: none; }
-  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px; padding: 20px; text-align: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
 
   /* ---- HUD ----------------------------------------------------------------------------------- */
   .hud { position: fixed; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
@@ -282,7 +293,7 @@
     <form id="course-form" class="course-form"><input id="course-input" class="course-input" aria-label="Course code" placeholder="CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="course-load" class="btn" type="submit" disabled>load code</button></form>
     <div id="course-error" class="course-error" role="status"></div>
   </div>
-  <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button></div>
+  <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button><button id="title-fullscreen" class="btn fullscreen-toggle hidden" type="button">fullscreen</button></div>
   <div id="controls"></div>
   <div id="status"></div>
 </div>
@@ -291,6 +302,7 @@
   <div class="pause-run" id="pause-run"></div>
   <div class="panel-buttons"><button id="resume" class="btn primary">resume</button><button id="restart" class="btn">restart</button><button id="pause-new" class="btn alt">new course</button><button id="pause-title" class="btn">menu</button><button id="pause-settings" class="btn">settings</button></div>
   <div class="pause-controls" id="pause-controls"></div>
+  <div id="pause-control-error" class="control-error" role="status"></div>
 </div>
 <div id="results" class="screen hidden">
   <div class="kicker">finish</div>
@@ -302,6 +314,7 @@
   <div class="res-next"></div>
   <div class="res-unlock" id="extreme-result" role="status"></div>
   <div class="panel-buttons"><button id="retry" class="btn primary">retry</button><button id="next" class="btn alt">new course</button><button id="results-title" class="btn">menu</button></div>
+  <div id="results-control-error" class="control-error" role="status"></div>
   <div class="res-code"><span></span><button id="results-copy" class="copy-code" type="button" aria-label="Copy course code">copy</button></div>
 </div>
 <div id="settings" class="screen hidden">
@@ -310,7 +323,14 @@
     <div class="set-groups"></div>
   </div>
 </div>
-<div id="rotate">rotate to landscape</div>
+<div id="rotate"><div>rotate to landscape</div><button id="portrait-fullscreen" class="btn fullscreen-toggle hidden" type="button">fullscreen</button></div>
+<div id="fullscreen-help" class="fullscreen-help hidden" role="dialog" aria-modal="true" aria-labelledby="fullscreen-help-title">
+  <div class="fullscreen-help-card">
+    <div id="fullscreen-help-title" class="fullscreen-help-title">Play fullscreen</div>
+    <p id="fullscreen-help-text"></p>
+    <button id="fullscreen-help-close" class="btn primary" type="button">got it</button>
+  </div>
+</div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
 <script id="audio-src" type="text/plain">var AUDIO = {};
 ;(function () {
@@ -8123,6 +8143,8 @@ const TILT_ROLL = 28 * Math.PI / 180;    // tilt for a full turn
 const TILT_PITCH = 20 * Math.PI / 180;   // tilt for a full climb or dive
 const TILT_DEAD = 2.5 * Math.PI / 180;
 const TILT_SMOOTH = 0.06;    // s: low-pass on sensor noise
+const TILT_SENSOR_TIMEOUT = 4000; // permission may succeed even when no readings arrive
+const TILT_SAMPLE_FRESH = 1000;
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const deadzone = (x, d) => (Math.abs(x) < d ? 0 : x - Math.sign(x) * d);
@@ -8180,6 +8202,7 @@ function create(canvas) {
   let key = { x: 0, y: 0 };
   let tilt = null;                // latest { roll, pitch } relative to neutral (rad), smoothed
   let tiltRaw = null, neutral = null, latest = null, listening = false;
+  let lastTiltSampleAt = 0, sensorWait = null, orientationListenersAttached = false;
   let mode = 'keyboard';
 
   window.addEventListener('keydown', e => {
@@ -8208,28 +8231,57 @@ function create(canvas) {
   const angles = gs => ({ roll: Math.asin(clamp(gs[0], -1, 1)), pitch: Math.atan2(gs[2], -gs[1]) });
 
   function onOrientation(e) {
-    if (e.beta === null) return;
+    // Some browsers dispatch an event before the sensor has supplied angles. Treating null as
+    // zero would silently start a run with a stick that can never steer.
+    if (!Number.isFinite(e.beta) || !Number.isFinite(e.gamma)) return;
     latest = angles(gravityOnScreen(e));
+    lastTiltSampleAt = performance.now();
     if (!neutral) neutral = latest;
     tiltRaw = { roll: latest.roll - neutral.roll, pitch: latest.pitch - neutral.pitch };
     mode = 'tilt';
+    if (sensorWait) {
+      clearTimeout(sensorWait.timer);
+      sensorWait.resolve();
+      sensorWait = null;
+    }
   }
 
   // Must be called from a user gesture: iOS asks for motion permission then.
   async function enableTilt() {
-    if (typeof DeviceOrientationEvent === 'undefined') throw new Error('This browser has no motion sensors.');
+    if (typeof DeviceOrientationEvent === 'undefined') throw new Error('This browser has no motion sensors. Try another browser or device.');
     // Browsers only hand out motion sensors on HTTPS (or localhost); elsewhere the listener would
     // stay silent and the glider would fly straight.
     if (!window.isSecureContext) throw new Error('Tilt steering needs the page over HTTPS. Open the published game address.');
     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      const answer = await DeviceOrientationEvent.requestPermission();
-      if (answer !== 'granted') throw new Error('Motion access was denied. Allow it in Settings › Safari › Motion & Orientation Access, then reload.');
+      let answer;
+      try { answer = await DeviceOrientationEvent.requestPermission(); }
+      catch (e) { throw new Error('Motion access could not be started. Allow Motion & Orientation Access in your browser settings, then tap Play again.'); }
+      if (answer !== 'granted') throw new Error('Motion access was denied. Allow Motion & Orientation Access in your browser settings, then tap Play again.');
     }
-    if (listening) return;
-    listening = true;
-    window.addEventListener('deviceorientation', onOrientation);
-    window.addEventListener('orientationchange', () => { neutral = null; });
-    screen.orientation?.addEventListener?.('change', () => { neutral = null; });
+    if (!orientationListenersAttached) {
+      orientationListenersAttached = true;
+      window.addEventListener('orientationchange', () => { neutral = null; });
+      screen.orientation?.addEventListener?.('change', () => { neutral = null; });
+    }
+    if (!listening) {
+      listening = true;
+      window.addEventListener('deviceorientation', onOrientation);
+    }
+    // A resumed run can use a reading from the current hold. Otherwise wait for the first valid
+    // event before the countdown; a granted permission alone does not prove the sensor works.
+    if (latest && performance.now() - lastTiltSampleAt < TILT_SAMPLE_FRESH) return;
+    if (sensorWait) return sensorWait.promise;
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    const timer = setTimeout(() => {
+      if (!sensorWait || sensorWait.promise !== promise) return;
+      sensorWait = null;
+      listening = false;
+      window.removeEventListener('deviceorientation', onOrientation);
+      reject(new Error('No tilt readings arrived. Check Motion & Orientation Access, hold the phone in landscape, then tap Play again.'));
+    }, TILT_SENSOR_TIMEOUT);
+    sensorWait = { promise, resolve, timer };
+    return promise;
   }
 
   function stick(s, dt) {
@@ -8778,6 +8830,56 @@ const $ = id => document.getElementById(id);
 const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
+const fullscreenButtons = [$('title-fullscreen'), $('portrait-fullscreen')];
+const fullscreenHelp = $('fullscreen-help');
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let fullscreenTrigger = null;
+
+function standalone() {
+  return navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+}
+function syncFullscreenButtons() {
+  for (const button of fullscreenButtons) {
+    const active = !!document.fullscreenElement;
+    button.classList.toggle('hidden', !TOUCH || (standalone() && !active));
+    button.textContent = active ? 'exit fullscreen' : 'fullscreen';
+    button.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Play fullscreen');
+  }
+}
+function showFullscreenHelp(button) {
+  fullscreenTrigger = button;
+  $('fullscreen-help-text').textContent = IOS
+    ? 'In Safari, tap Share, choose Add to Home Screen, turn on Open as Web App, then launch Neon Flight from its Home Screen icon.'
+    : 'Fullscreen is unavailable in this browser tab. Use your browser’s Add to Home Screen or Install app option, then launch Neon Flight from its icon.';
+  fullscreenHelp.classList.remove('hidden');
+  $('fullscreen-help-close').focus();
+}
+function closeFullscreenHelp() {
+  fullscreenHelp.classList.add('hidden');
+  fullscreenTrigger?.focus();
+  fullscreenTrigger = null;
+}
+// Fullscreen requires a direct tap. Keep this synchronous until requestFullscreen has been called.
+function toggleFullscreen(event) {
+  const button = event.currentTarget;
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => showFullscreenHelp(button));
+    return;
+  }
+  if (!document.fullscreenEnabled || typeof document.documentElement.requestFullscreen !== 'function') {
+    showFullscreenHelp(button);
+    return;
+  }
+  try {
+    Promise.resolve(document.documentElement.requestFullscreen())
+      .then(syncFullscreenButtons)
+      .catch(() => showFullscreenHelp(button));
+  } catch { showFullscreenHelp(button); }
+}
+for (const button of fullscreenButtons) button.addEventListener('click', toggleFullscreen);
+$('fullscreen-help-close').addEventListener('click', closeFullscreenHelp);
+document.addEventListener('fullscreenchange', syncFullscreenButtons);
+syncFullscreenButtons();
 
 const api = window.__game = { ready: false, errors: [], frames: 0 };
 
@@ -9092,6 +9194,8 @@ function applySetting(key, value) {
 }
 
 function showTitle() {
+  statusEl.textContent = '';
+  statusEl.classList.remove('control-error');
   const best = readBest(seedCode), medals = medalLadder(course);
   resetCopy($('title-copy'));
   GAME.hud.showTitle(overlay, { code: seedCode, difficulty, gates: course.gates.length, medals, best, bestMedal: best === null ? null : medalFor(best, medals) });
@@ -9151,6 +9255,24 @@ function showMenu() {
   showTitle();
 }
 
+function showControlFailure(err) {
+  const screen = [overlay, pausePanel, results].find(panel => !panel.classList.contains('hidden'));
+  const button = screen === pausePanel ? 'Resume' : screen === results ? 'Retry' : 'Fly';
+  const message = (err?.message || String(err)).replace(/tap Play again/g, `tap ${button} again`);
+  if (screen === pausePanel) $('pause-control-error').textContent = message;
+  else if (screen === results) $('results-control-error').textContent = message;
+  else {
+    statusEl.textContent = message;
+    statusEl.classList.add('control-error');
+  }
+}
+function clearControlFailure() {
+  statusEl.textContent = '';
+  statusEl.classList.remove('control-error');
+  $('pause-control-error').textContent = '';
+  $('results-control-error').textContent = '';
+}
+
 function loadEnteredCourse() {
   const entry = $('course-input').value.trim().toUpperCase();
   let seed;
@@ -9177,9 +9299,12 @@ const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'tilt to steer · tap to re-
 
 // A fresh run of the current course, after a countdown.
 async function fly() {
+  let locked;
+  try { locked = await takeControls(); }
+  catch (err) { showControlFailure(err); return; }
+  clearControlFailure();
   hideScreens();
   hud.show(true);
-  const locked = await takeControls();
   newRun();
   startCountdown(COUNT_TICKS);
   if (locked) hud.hint(PLAY_HINT); else hud.hint(LOCK_HINT, 10);
@@ -9209,14 +9334,18 @@ function showPause() {
 // Back into the run through a short countdown, so the player has their hands ready.
 async function resume() {
   if (mode !== 'paused') throw new Error(`resume from ${mode}`);
+  let locked;
+  try { locked = await takeControls(); }
+  catch (err) { showControlFailure(err); return; }
+  clearControlFailure();
   hideScreens();
-  if (!(await takeControls())) hud.hint(LOCK_HINT, 10);
+  if (!locked) hud.hint(LOCK_HINT, 10);
   if (resumeTo === 'crashed') return respawn();
   startCountdown(resumeTo === 'countdown' ? countTicks : RESPAWN_TICKS);
 }
 
 // Buttons run async flows; any failure lands on the error screen.
-const action = fn => () => { Promise.resolve().then(fn).catch(fail); };
+const action = fn => () => { try { Promise.resolve(fn()).catch(fail); } catch (err) { fail(err); } };
 
 // Every press or key may be the gesture the browser needs before it lets the page make sound.
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => GAME.sound.unlock(), { capture: true });
@@ -9225,6 +9354,7 @@ document.addEventListener('click', e => { if (e.target.closest?.('button')) soun
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !TOUCH) pause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && !fullscreenHelp.classList.contains('hidden')) { closeFullscreenHelp(); return; }
   if (e.code === 'KeyI') input.toggleInvert();
   // Esc closes the settings panel first. With the pointer locked the browser takes Esc to release
   // it (and pointerlockchange pauses); without the lock (keyboard play, autopilot) Esc pauses here.
