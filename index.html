@@ -37,13 +37,6 @@
   .btn:hover:not(:disabled) { background: rgba(95, 227, 255, 0.22); }
   .btn.alt:hover:not(:disabled) { background: rgba(255, 63, 164, 0.18); }
   .btn:disabled { opacity: 0.35; cursor: default; }
-  .fullscreen-toggle.hidden, .fullscreen-help.hidden { display: none; }
-  .fullscreen-help { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
-    padding: 16px calc(16px + var(--safe-r)) 16px calc(16px + var(--safe-l)); background: rgba(0, 0, 8, 0.9); }
-  .fullscreen-help-card { width: min(460px, 100%); box-sizing: border-box; padding: 22px 26px; border: 1px solid var(--cyan); border-radius: 3px;
-    background: #080d1c; box-shadow: 0 0 30px rgba(95, 227, 255, 0.28); }
-  .fullscreen-help-title { color: var(--cyan); font-size: 16px; letter-spacing: 0.25em; text-transform: uppercase; }
-  .fullscreen-help p { margin: 12px 0 20px; font-size: 14px; line-height: 1.5; letter-spacing: 0.02em; }
 
   #title { font-size: clamp(34px, 7vw, 76px); font-weight: 200; letter-spacing: 0.45em; margin-right: -0.45em; color: #f4fbff;
     text-shadow: 0 0 18px var(--magenta), 0 0 42px rgba(255, 63, 164, 0.5); }
@@ -152,8 +145,7 @@
   .set-option:hover { border-color: rgba(95, 227, 255, 0.7); }
 
   #rotate { display: none; }
-  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center;
-    flex-direction: column; gap: 20px; padding: 20px; text-align: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
+  @media (orientation: portrait) and (pointer: coarse) { body:not(.run-started) #rotate { display: flex; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
 
   /* ---- HUD ----------------------------------------------------------------------------------- */
   .hud { position: fixed; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
@@ -293,7 +285,7 @@
     <form id="course-form" class="course-form"><input id="course-input" class="course-input" aria-label="Course code" placeholder="CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="course-load" class="btn" type="submit" disabled>load code</button></form>
     <div id="course-error" class="course-error" role="status"></div>
   </div>
-  <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button><button id="title-fullscreen" class="btn fullscreen-toggle hidden" type="button">fullscreen</button></div>
+  <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button></div>
   <div id="controls"></div>
   <div id="status"></div>
 </div>
@@ -323,14 +315,7 @@
     <div class="set-groups"></div>
   </div>
 </div>
-<div id="rotate"><div>rotate to landscape</div><button id="portrait-fullscreen" class="btn fullscreen-toggle hidden" type="button">fullscreen</button></div>
-<div id="fullscreen-help" class="fullscreen-help hidden" role="dialog" aria-modal="true" aria-labelledby="fullscreen-help-title">
-  <div class="fullscreen-help-card">
-    <div id="fullscreen-help-title" class="fullscreen-help-title">Play fullscreen</div>
-    <p id="fullscreen-help-text"></p>
-    <button id="fullscreen-help-close" class="btn primary" type="button">got it</button>
-  </div>
-</div>
+<div id="rotate">rotate to landscape</div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
 <script id="audio-src" type="text/plain">var AUDIO = {};
 ;(function () {
@@ -8830,56 +8815,6 @@ const $ = id => document.getElementById(id);
 const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
-const fullscreenButtons = [$('title-fullscreen'), $('portrait-fullscreen')];
-const fullscreenHelp = $('fullscreen-help');
-const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let fullscreenTrigger = null;
-
-function standalone() {
-  return navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
-}
-function syncFullscreenButtons() {
-  for (const button of fullscreenButtons) {
-    const active = !!document.fullscreenElement;
-    button.classList.toggle('hidden', !TOUCH || (standalone() && !active));
-    button.textContent = active ? 'exit fullscreen' : 'fullscreen';
-    button.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Play fullscreen');
-  }
-}
-function showFullscreenHelp(button) {
-  fullscreenTrigger = button;
-  $('fullscreen-help-text').textContent = IOS
-    ? 'In Safari, tap Share, choose Add to Home Screen, turn on Open as Web App, then launch Neon Flight from its Home Screen icon.'
-    : 'Fullscreen is unavailable in this browser tab. Use your browser’s Add to Home Screen or Install app option, then launch Neon Flight from its icon.';
-  fullscreenHelp.classList.remove('hidden');
-  $('fullscreen-help-close').focus();
-}
-function closeFullscreenHelp() {
-  fullscreenHelp.classList.add('hidden');
-  fullscreenTrigger?.focus();
-  fullscreenTrigger = null;
-}
-// Fullscreen requires a direct tap. Keep this synchronous until requestFullscreen has been called.
-function toggleFullscreen(event) {
-  const button = event.currentTarget;
-  if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => showFullscreenHelp(button));
-    return;
-  }
-  if (!document.fullscreenEnabled || typeof document.documentElement.requestFullscreen !== 'function') {
-    showFullscreenHelp(button);
-    return;
-  }
-  try {
-    Promise.resolve(document.documentElement.requestFullscreen())
-      .then(syncFullscreenButtons)
-      .catch(() => showFullscreenHelp(button));
-  } catch { showFullscreenHelp(button); }
-}
-for (const button of fullscreenButtons) button.addEventListener('click', toggleFullscreen);
-$('fullscreen-help-close').addEventListener('click', closeFullscreenHelp);
-document.addEventListener('fullscreenchange', syncFullscreenButtons);
-syncFullscreenButtons();
 
 const api = window.__game = { ready: false, errors: [], frames: 0 };
 
@@ -8957,7 +8892,11 @@ let timeScale = 1;             // autopilot tests fast-forward the simulation
 // headless Chrome), and on 120 Hz screens frames alternate between 0 and 2.
 let stepBefore = null;         // the glider one step back, while steps run back to back
 
-function setMode(m) { mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m); }
+function setMode(m) {
+  mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m);
+  // The portrait reminder is useful before Fly, but must not cover a run if the phone rotates.
+  document.body.classList.toggle('run-started', m !== 'title');
+}
 
 function startCountdown(ticks) {
   countTicks = ticks;
@@ -9294,13 +9233,33 @@ async function takeControls() {
   if (TOUCH) { await input.enableTilt(); return true; }
   return input.lockPointer();
 }
+// Fly/Resume are direct user gestures. Start motion permission or pointer lock first, then ask
+// for fullscreen before awaiting either one: fullscreen consumes the gesture in many browsers.
+// Unsupported or rejected fullscreen must never prevent a run.
+function lockLandscape() {
+  if (!TOUCH || typeof screen.orientation?.lock !== 'function') return;
+  try { Promise.resolve(screen.orientation.lock('landscape')).catch(() => {}); }
+  catch { /* Some browsers do not allow orientation lock. */ }
+}
+function enterFullscreen() {
+  if (document.fullscreenElement) { lockLandscape(); return; }
+  if (document.fullscreenEnabled === false) return;
+  const root = document.documentElement;
+  if (typeof root.requestFullscreen !== 'function') return;
+  try { Promise.resolve(root.requestFullscreen()).then(lockLandscape).catch(() => {}); }
+  catch { /* Keep playing in the normal browser view. */ }
+}
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
 const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'tilt to steer · tap to re-level · follow the line' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
 
 // A fresh run of the current course, after a countdown.
 async function fly() {
   let locked;
-  try { locked = await takeControls(); }
+  try {
+    const controls = takeControls();
+    enterFullscreen();
+    locked = await controls;
+  }
   catch (err) { showControlFailure(err); return; }
   clearControlFailure();
   hideScreens();
@@ -9335,7 +9294,11 @@ function showPause() {
 async function resume() {
   if (mode !== 'paused') throw new Error(`resume from ${mode}`);
   let locked;
-  try { locked = await takeControls(); }
+  try {
+    const controls = takeControls();
+    enterFullscreen();
+    locked = await controls;
+  }
   catch (err) { showControlFailure(err); return; }
   clearControlFailure();
   hideScreens();
@@ -9354,7 +9317,6 @@ document.addEventListener('click', e => { if (e.target.closest?.('button')) soun
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !TOUCH) pause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 window.addEventListener('keydown', e => {
-  if (e.code === 'Escape' && !fullscreenHelp.classList.contains('hidden')) { closeFullscreenHelp(); return; }
   if (e.code === 'KeyI') input.toggleInvert();
   // Esc closes the settings panel first. With the pointer locked the browser takes Esc to release
   // it (and pointerlockchange pauses); without the lock (keyboard play, autopilot) Esc pauses here.
