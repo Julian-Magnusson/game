@@ -9235,18 +9235,20 @@ async function takeControls() {
 }
 // Fly/Resume are direct user gestures. Start motion permission or pointer lock first, then ask
 // for fullscreen before awaiting either one: fullscreen consumes the gesture in many browsers.
-// Unsupported or rejected fullscreen must never prevent a run.
-function lockLandscape() {
+// Unsupported or rejected fullscreen must never prevent a run. Capture the landscape side at the
+// tap: the broad "landscape" lock still permits a 180-degree flip while steering.
+function lockLandscape(side) {
   if (!TOUCH || typeof screen.orientation?.lock !== 'function') return;
-  try { Promise.resolve(screen.orientation.lock('landscape')).catch(() => {}); }
+  try { Promise.resolve(screen.orientation.lock(side)).catch(() => {}); }
   catch { /* Some browsers do not allow orientation lock. */ }
 }
 function enterFullscreen() {
-  if (document.fullscreenElement) { lockLandscape(); return; }
+  const side = screen.orientation?.type === 'landscape-secondary' ? 'landscape-secondary' : 'landscape-primary';
+  if (document.fullscreenElement) { lockLandscape(side); return; }
   if (document.fullscreenEnabled === false) return;
   const root = document.documentElement;
   if (typeof root.requestFullscreen !== 'function') return;
-  try { Promise.resolve(root.requestFullscreen()).then(lockLandscape).catch(() => {}); }
+  try { Promise.resolve(root.requestFullscreen()).then(() => lockLandscape(side)).catch(() => {}); }
   catch { /* Keep playing in the normal browser view. */ }
 }
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
