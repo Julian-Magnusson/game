@@ -18,6 +18,23 @@
      browser rotates despite rejecting the native orientation lock. */
   #game-stage { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;
     transform-origin: 0 0; touch-action: none; }
+  /* CSS sees a portrait viewport before some browsers deliver their orientation event. Phones
+     with a portrait-natural screen can keep the Fly-side stage in landscape during that gap. */
+  @media (orientation: portrait) {
+    #game-stage.fly-angle-90, #game-stage.fly-angle-270 {
+      width: 100vh !important; width: 100dvh !important;
+      height: 100vw !important; height: 100dvw !important;
+    }
+    #game-stage.fly-angle-90:not(.portrait-secondary),
+    #game-stage.fly-angle-270.portrait-secondary {
+      transform: translate(100vw, 0) rotate(90deg) !important;
+    }
+    #game-stage.fly-angle-270:not(.portrait-secondary),
+    #game-stage.fly-angle-90.portrait-secondary {
+      transform: translate(0, 100vh) rotate(-90deg) !important;
+      transform: translate(0, 100dvh) rotate(-90deg) !important;
+    }
+  }
   /* Keep the scene against every viewport edge when browser chrome or orientation changes. */
   canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
   body { font: 500 14px/1.3 system-ui, "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
@@ -9148,6 +9165,9 @@ function hudFrame({ cam, next }) {
 function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
+  // Orientation properties can change before their events reach the page. Recheck on every frame
+  // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
+  if (TOUCH && runScreenAngle !== null) steadyLandscapeView();
   if (mode !== 'paused') update(dt * timeScale);
   resolution.fitCanvas();
   const [w, h] = resolution.renderSize();
@@ -9320,24 +9340,73 @@ async function takeControls() {
 // Fly; the broad "landscape" lock still permits a 180-degree flip while steering. Installed web
 // apps may allow orientation lock even when the Fullscreen API is unavailable.
 let runLandscapeSide = null, runScreenAngle = null, orientationLockPending = false, orientationLockQueued = false;
+let seenScreenAngle = null, seenWindowAngle = null, lastReportedAngle = null;
+let stageAngle = null, stageWidth = -1, stageHeight = -1, stageViewportWidth = -1, stageViewportHeight = -1;
+const normalAngle = raw => {
+  const n = Number(raw);
+  return raw == null || !Number.isFinite(n) ? null : ((Math.round(n / 90) * 90 % 360) + 360) % 360;
+};
 function currentScreenAngle() {
-  const raw = Number(screen.orientation?.angle ?? window.orientation);
-  return Number.isFinite(raw) ? ((Math.round(raw / 90) * 90 % 360) + 360) % 360 : 0;
+  const screenAngle = normalAngle(screen.orientation?.angle);
+  const windowAngle = normalAngle(window.orientation);
+  const screenChanged = screenAngle !== null && screenAngle !== seenScreenAngle;
+  const windowChanged = windowAngle !== null && windowAngle !== seenWindowAngle;
+  seenScreenAngle = screenAngle;
+  seenWindowAngle = windowAngle;
+  // The two APIs can update in different turns. Use whichever changed first, then retain it until
+  // the other catches up. On an initial disagreement, Screen Orientation is the primary source.
+  let angle = screenChanged && !windowChanged ? screenAngle
+    : windowChanged && !screenChanged ? windowAngle
+      : screenAngle !== null && windowAngle !== null && screenAngle !== windowAngle
+        ? (lastReportedAngle === screenAngle || lastReportedAngle === windowAngle ? lastReportedAngle : screenAngle)
+        : screenAngle ?? windowAngle ?? 0;
+  // A browser can publish the angle before the viewport, or resize the viewport before either
+  // angle. The visible viewport decides when a quarter turn is needed, avoiding a wrong-sized
+  // frame in both orders. A same-aspect 180° flip still follows the reported angle immediately.
+  const phoneAngle = runScreenAngle === null
+    ? [screenAngle, windowAngle].some(a => a === 90 || a === 270)
+    : runScreenAngle === 90 || runScreenAngle === 270;
+  if (phoneAngle && innerWidth !== innerHeight) {
+    const portrait = innerHeight > innerWidth;
+    if ((angle % 180 === 0) !== portrait) {
+      const matching = [screenAngle, windowAngle].filter(a => a !== null && (a % 180 === 0) === portrait);
+      angle = matching.includes(lastReportedAngle) ? lastReportedAngle : matching[0]
+        ?? (portrait ? (screen.orientation?.type === 'portrait-secondary' ? 180 : 0)
+          : screen.orientation?.type === 'landscape-secondary' ? 270
+            : screen.orientation?.type === 'landscape-primary' ? 90 : runScreenAngle ?? 90);
+    }
+  }
+  lastReportedAngle = angle;
+  return angle;
 }
 function currentLandscapeSide() {
+  const angle = currentScreenAngle();
+  if (angle === 270) return 'landscape-secondary';
+  if (angle === 90) return 'landscape-primary';
   if (screen.orientation?.type === 'landscape-secondary') return 'landscape-secondary';
   if (screen.orientation?.type === 'landscape-primary') return 'landscape-primary';
-  return currentScreenAngle() === 270 ? 'landscape-secondary' : 'landscape-primary';
+  return 'landscape-primary';
 }
 function steadyLandscapeView() {
   if (!TOUCH || runScreenAngle === null) {
+    if (!stage.style.width && !stage.style.height && !stage.style.transform
+      && !stage.classList.contains('counter-rotated')) return;
     stage.style.width = stage.style.height = stage.style.transform = '';
-    stage.classList.remove('counter-rotated');
+    stage.classList.remove('counter-rotated', 'portrait-secondary');
+    stageAngle = null; stageWidth = stageHeight = stageViewportWidth = stageViewportHeight = -1;
     hud?.relayout();
     return;
   }
   const turn = (runScreenAngle - currentScreenAngle() + 360) % 360;
   const w = innerWidth, h = innerHeight;
+  const vw = window.visualViewport?.width ?? w, vh = window.visualViewport?.height ?? h;
+  const portraitSecondary = lastReportedAngle === 180;
+  if (stageAngle === turn && stageWidth === w && stageHeight === h
+    && stageViewportWidth === vw && stageViewportHeight === vh
+    && stage.classList.contains('portrait-secondary') === portraitSecondary) return;
+  stageAngle = turn; stageWidth = w; stageHeight = h;
+  stageViewportWidth = vw; stageViewportHeight = vh;
+  stage.classList.toggle('portrait-secondary', portraitSecondary);
   stage.style.width = `${turn % 180 ? h : w}px`;
   stage.style.height = `${turn % 180 ? w : h}px`;
   stage.style.transform = turn === 90 ? `translate(${w}px, 0) rotate(90deg)`
@@ -9355,6 +9424,7 @@ function releaseLandscape() {
   runLandscapeSide = null;
   runScreenAngle = null;
   orientationLockQueued = false;
+  stage.classList.remove('fly-angle-90', 'fly-angle-270', 'portrait-secondary');
   input?.setDisplayAngle(null);
   steadyLandscapeView();
   unlockLandscape();
@@ -9393,6 +9463,8 @@ async function fly() {
   try {
     runLandscapeSide = currentLandscapeSide();
     runScreenAngle = currentScreenAngle();
+    stage.classList.toggle('fly-angle-90', runScreenAngle === 90);
+    stage.classList.toggle('fly-angle-270', runScreenAngle === 270);
     input.setDisplayAngle(runScreenAngle);
     steadyLandscapeView();
     const controls = takeControls();
@@ -9462,6 +9534,8 @@ function retryLandscape() {
 screen.orientation?.addEventListener?.('change', retryLandscape);
 window.addEventListener('orientationchange', retryLandscape);
 window.addEventListener('resize', steadyLandscapeView);
+window.visualViewport?.addEventListener('resize', steadyLandscapeView);
+matchMedia('(orientation: portrait)').addEventListener?.('change', steadyLandscapeView);
 document.addEventListener('fullscreenchange', () => {
   if (document.fullscreenElement) retryLandscape();
   // Most browsers release orientation locks when fullscreen ends. Resume is a fresh gesture that
