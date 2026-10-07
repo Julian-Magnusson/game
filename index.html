@@ -14,8 +14,8 @@
     /* Dark halo under every HUD glyph: readable over bright towers without boxes around it. */
     --halo: 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 6px rgba(0, 0, 0, 0.7); }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
-  /* dvh: iOS Safari's 100vh includes the space under its toolbar; the frame is sized from innerHeight. */
-  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; }
+  /* Keep the scene against every viewport edge when browser chrome or orientation changes. */
+  canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
   body { font: 500 14px/1.3 system-ui, "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
   button { -webkit-tap-highlight-color: transparent; }
   .hud, .screen { zoom: var(--ui-zoom, 1); }
@@ -154,6 +154,7 @@
   .hud::before, .hud::after { content: ''; position: absolute; left: 0; right: 0; pointer-events: none; }
   .hud::before { top: 0; height: 96px; background: linear-gradient(rgba(0, 0, 8, 0.42), rgba(0, 0, 8, 0)); }
   .hud::after { bottom: 0; height: 150px; background: linear-gradient(rgba(0, 0, 8, 0), rgba(0, 0, 8, 0.42)); }
+  @media (pointer: coarse) { .hud::after { display: none; } }
   .hud > * { z-index: 1; }
   .hud-boundary { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s, background-size 0.08s;
     background-image: radial-gradient(ellipse at top left, rgba(255, 28, 60, 0.9), rgba(255, 28, 60, 0.3) 38%, transparent 74%),
