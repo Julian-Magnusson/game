@@ -5821,6 +5821,7 @@ const SCHEMA = {
   mouseSensitivity: { type: 'number', min: 0.3, max: 3, step: 0.05, default: 1, format: times, label: 'Mouse sensitivity', group: 'Controls', device: 'mouse' },
   mouseSmoothing: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.5, format: v => `${Math.round(v * 100)}%`, label: 'Mouse smoothing', group: 'Controls', device: 'mouse' },
   tiltSensitivity: { type: 'number', min: 0.5, max: 2, step: 0.05, default: 1, format: times, label: 'Tilt sensitivity', group: 'Controls', device: 'touch' },
+  forwardTilt: { type: 'number', min: 0, max: 80, step: 5, default: 45, format: v => `${v}° down`, label: 'Straight-ahead phone angle', group: 'Controls', device: 'touch' },
   invertY: { type: 'bool', default: false, label: 'Invert mouse/tilt pitch', group: 'Controls' },
   // Vertical, as the camera uses it: 68° is about 100° across a 16:9 screen, and past 90° (120°
   // across) the edges stretch more than they show.
@@ -8102,7 +8103,7 @@ GAME.guide = { create, frame, onGate, jumpTo };
 //  - Mouse (pointer lock): moves an aim point in the world; the glider turns toward it (see
 //    mouseSteering).
 //  - Keyboard (WASD / arrows): a stick that springs back when released.
-//  - Tilt (phones): device orientation relative to a neutral pose captured when play starts.
+//  - Tilt (phones): the level phone points straight ahead at the chosen angle below upright.
 // Sensitivities, smoothing and pitch inversion come from GAME.settings.
 
 const { FLIGHT } = GAME.flight;
@@ -8186,8 +8187,8 @@ function create(canvas) {
   const keys = new Set();
   const mouse = mouseSteering();
   let key = { x: 0, y: 0 };
-  let tilt = null;                // latest { roll, pitch } relative to neutral (rad), smoothed
-  let tiltRaw = null, neutral = null, latest = null, listening = false;
+  let tilt = null;                // smoothed { roll, pitch } relative to the chosen forward hold
+  let latest = null, listening = false;
   let lastTiltSampleAt = 0, sensorWait = null, orientationListenersAttached = false;
   let mode = 'keyboard';
 
@@ -8222,8 +8223,6 @@ function create(canvas) {
     if (!Number.isFinite(e.beta) || !Number.isFinite(e.gamma)) return;
     latest = angles(gravityOnScreen(e));
     lastTiltSampleAt = performance.now();
-    if (!neutral) neutral = latest;
-    tiltRaw = { roll: latest.roll - neutral.roll, pitch: latest.pitch - neutral.pitch };
     mode = 'tilt';
     if (sensorWait) {
       clearTimeout(sensorWait.timer);
@@ -8246,8 +8245,11 @@ function create(canvas) {
     }
     if (!orientationListenersAttached) {
       orientationListenersAttached = true;
-      window.addEventListener('orientationchange', () => { neutral = null; });
-      screen.orientation?.addEventListener?.('change', () => { neutral = null; });
+      // A browser may rotate despite the requested landscape lock. Wait for a reading in the
+      // new screen frame, without turning the tilted hold into a new straight-ahead position.
+      const changed = () => { latest = null; tilt = null; };
+      window.addEventListener('orientationchange', changed);
+      screen.orientation?.addEventListener?.('change', changed);
     }
     if (!listening) {
       listening = true;
@@ -8286,9 +8288,12 @@ function create(canvas) {
     } else mouse.reset();
 
     let tx2 = 0, ty2 = 0;
-    if (tiltRaw) {
+    if (latest) {
       const a = Math.min(1, dt / TILT_SMOOTH);
       const sens = settings.get('tiltSensitivity');
+      // 0° is upright, 90° is flat with the screen facing up. The left/right level position is
+      // always zero: a crash, pause or restart can never silently redefine a tilted hold.
+      const tiltRaw = { roll: latest.roll, pitch: latest.pitch + settings.get('forwardTilt') * Math.PI / 180 };
       tilt = tilt ? { roll: tilt.roll + (tiltRaw.roll - tilt.roll) * a, pitch: tilt.pitch + (tiltRaw.pitch - tilt.pitch) * a } : { ...tiltRaw };
       tx2 = deadzone(tilt.roll, TILT_DEAD) / TILT_ROLL * sens;
       ty2 = deadzone(tilt.pitch, TILT_DEAD) / TILT_PITCH * sens * invert;
@@ -8304,15 +8309,9 @@ function create(canvas) {
     get invertY() { return settings.get('invertY'); },
     // The aim stays where it is; mouse movement from now on moves it the other way up.
     toggleInvert() { settings.set('invertY', !settings.get('invertY')); },
-    // After a respawn the aim must not drag the glider back toward the old heading.
-    reset() { mouse.reset(); key = { x: 0, y: 0 }; },
-    // The current hold becomes level, now: waiting for the next sensor event would steer on the
-    // old neutral for a moment.
-    recalibrate() {
-      neutral = latest;
-      tilt = null;
-      tiltRaw = latest ? { roll: 0, pitch: 0 } : null;
-    },
+    // At each countdown, remove old mouse/key and sensor smoothing without changing what
+    // physical phone position means straight ahead.
+    reset() { mouse.reset(); key = { x: 0, y: 0 }; tilt = null; },
     // Resolves false when the browser refuses pointer lock; keyboard steering still works then.
     async lockPointer() {
       try { await canvas.requestPointerLock(); return true; } catch (e) {
@@ -8972,9 +8971,9 @@ function update(dt) {
       hud.message(label, 'count');
       soundtrack.count(label);
     }
-    // Neutral is how the player holds the controls at "go": the aim, the keys, and the phone's
-    // tilt (which may be held differently after a pause or a new run).
-    else { hud.message('go', 'count', 0.6); soundtrack.count('go'); input.reset(); input.recalibrate(); setMode('playing'); }
+    // Reset accumulated input at "go"; phone steering keeps its fixed level/forward reference
+    // through crashes, pauses and new runs.
+    else { hud.message('go', 'count', 0.6); soundtrack.count('go'); input.reset(); setMode('playing'); }
   } else if (mode === 'playing') {
     acc += dt;
     while (acc >= PHYSICS_DT && mode === 'playing') {
@@ -9102,12 +9101,12 @@ function loop(now) {
 const RULES = 'Fly the gates in order along the glowing line. Altitude drains every second:<br>' +
   'lime <b>boost rings</b> and <b>light beams</b> lift you. Missed gate +2 s · crash +3 s and back to the last gate.';
 const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause<br>' + RULES;
-const CONTROLS_TOUCH = '<b>Tilt like a steering wheel</b> to turn · <b>tilt the top away</b> to dive · tap to re-level<br>' + RULES;
+const CONTROLS_TOUCH = '<b>Level phone = straight</b> · roll to turn · top away to dive · angle in Settings<br>' + RULES;
 // Pause shows the controls with the current pitch setting, the one thing players change mid-run
 // (phones have no I key: there it is in the settings).
 const pauseControls = () => {
   const invert = `invert pitch: ${input.invertY ? 'on' : 'off'}`;
-  return TOUCH ? `<b>Tilt</b> to steer · <b>tap</b> to re-level · <b>II</b> pause · ${invert} in <b>settings</b> (tilt)`
+  return TOUCH ? `<b>Hold level</b> to fly straight · <b>tilt</b> to steer · <b>II</b> pause · forward angle and ${invert} in <b>settings</b>`
     : `<b>Mouse</b> aim · <b>W/S</b> pull up / dive · <b>A/D</b> turn · <b>Esc</b> pause · <b>I</b> ${invert} (mouse)`;
 };
 
@@ -9191,6 +9190,7 @@ function showMenu() {
   hud.show(false);
   newRun();
   setMode('title');
+  releaseLandscape();
   if (document.pointerLockElement) document.exitPointerLock();
   showTitle();
 }
@@ -9236,34 +9236,52 @@ async function takeControls() {
 }
 // Fly/Resume are direct user gestures. Start motion permission or pointer lock first, then ask
 // for fullscreen before awaiting either one: fullscreen consumes the gesture in many browsers.
-// Unsupported or rejected fullscreen must never prevent a run. Capture the landscape side at the
-// tap: the broad "landscape" lock still permits a 180-degree flip while steering.
-function lockLandscape(side) {
-  if (!TOUCH || typeof screen.orientation?.lock !== 'function') return;
-  try { Promise.resolve(screen.orientation.lock(side)).catch(() => {}); }
-  catch { /* Some browsers do not allow orientation lock. */ }
+// Unsupported or rejected fullscreen must never prevent a run. Pin the exact landscape side at
+// Fly; the broad "landscape" lock still permits a 180-degree flip while steering. Installed web
+// apps may allow orientation lock even when the Fullscreen API is unavailable.
+let runLandscapeSide = null, orientationLockPending = false;
+function currentLandscapeSide() {
+  if (screen.orientation?.type === 'landscape-secondary') return 'landscape-secondary';
+  if (screen.orientation?.type === 'landscape-primary') return 'landscape-primary';
+  const angle = ((Number(screen.orientation?.angle ?? window.orientation ?? 90) % 360) + 360) % 360;
+  return angle === 270 ? 'landscape-secondary' : 'landscape-primary';
+}
+function releaseLandscape() {
+  runLandscapeSide = null;
+  if (!TOUCH || typeof screen.orientation?.unlock !== 'function') return;
+  try { Promise.resolve(screen.orientation.unlock()).catch(() => {}); }
+  catch { /* The browser may already have released it. */ }
+}
+function lockLandscape() {
+  if (!TOUCH || !runLandscapeSide || orientationLockPending || typeof screen.orientation?.lock !== 'function') return;
+  orientationLockPending = true;
+  try {
+    Promise.resolve(screen.orientation.lock(runLandscapeSide))
+      .catch(() => { /* This browser cannot lock the display. */ })
+      .finally(() => { orientationLockPending = false; });
+  } catch { orientationLockPending = false; }
 }
 function enterFullscreen() {
-  const side = screen.orientation?.type === 'landscape-secondary' ? 'landscape-secondary' : 'landscape-primary';
-  if (document.fullscreenElement) { lockLandscape(side); return; }
-  if (document.fullscreenEnabled === false) return;
+  if (document.fullscreenElement) { lockLandscape(); return; }
+  if (document.fullscreenEnabled === false) { lockLandscape(); return; }
   const root = document.documentElement;
-  if (typeof root.requestFullscreen !== 'function') return;
-  try { Promise.resolve(root.requestFullscreen()).then(() => lockLandscape(side)).catch(() => {}); }
-  catch { /* Keep playing in the normal browser view. */ }
+  if (typeof root.requestFullscreen !== 'function') { lockLandscape(); return; }
+  try { Promise.resolve(root.requestFullscreen()).then(lockLandscape).catch(lockLandscape); }
+  catch { lockLandscape(); }
 }
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
-const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'tilt to steer · tap to re-level · follow the line' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
+const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'hold level to fly straight · set forward angle in settings' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
 
 // A fresh run of the current course, after a countdown.
 async function fly() {
   let locked;
   try {
+    runLandscapeSide = currentLandscapeSide();
     const controls = takeControls();
     enterFullscreen();
     locked = await controls;
   }
-  catch (err) { showControlFailure(err); return; }
+  catch (err) { releaseLandscape(); showControlFailure(err); return; }
   clearControlFailure();
   hideScreens();
   hud.show(true);
@@ -9319,6 +9337,9 @@ document.addEventListener('click', e => { if (e.target.closest?.('button')) soun
 
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !TOUCH) pause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+screen.orientation?.addEventListener?.('change', () => {
+  if (runLandscapeSide && (document.fullscreenElement || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches)) lockLandscape();
+});
 window.addEventListener('keydown', e => {
   if (e.code === 'KeyI') input.toggleInvert();
   // Esc closes the settings panel first. With the pointer locked the browser takes Esc to release
@@ -9334,7 +9355,6 @@ window.addEventListener('keydown', e => {
 });
 const IN_RUN = new Set(['countdown', 'playing', 'crashed']);
 canvas.addEventListener('click', () => { if (!TOUCH && !AUTOPILOT && IN_RUN.has(mode) && !document.pointerLockElement) input.lockPointer(); });
-canvas.addEventListener('pointerdown', () => { if (TOUCH && mode === 'playing') input.recalibrate(); });
 startBtn.addEventListener('click', action(fly));
 shuffleBtn.addEventListener('click', action(() => { loadCourse(GAME.rng.randomSeed()); showTitle(); }));
 for (const button of document.querySelectorAll('[data-difficulty]')) button.addEventListener('click', action(() => {
