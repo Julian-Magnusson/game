@@ -14,6 +14,10 @@
     /* Dark halo under every HUD glyph: readable over bright towers without boxes around it. */
     --halo: 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 6px rgba(0, 0, 0, 0.7); }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+  /* A transformed stage keeps the game visually on its Fly-side landscape axis if a phone's
+     browser rotates despite rejecting the native orientation lock. */
+  #game-stage { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;
+    transform-origin: 0 0; touch-action: none; }
   /* Keep the scene against every viewport edge when browser chrome or orientation changes. */
   canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
   body { font: 500 14px/1.3 system-ui, "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
@@ -56,8 +60,6 @@
   .difficulty-choice[aria-pressed="true"] { border-color: var(--cyan); background: rgba(95, 227, 255, 0.2); color: #fff;
     box-shadow: 0 0 12px rgba(95, 227, 255, 0.3); }
   .difficulty-choice:disabled { opacity: 0.44; border-color: rgba(255, 212, 90, 0.4); cursor: default; }
-  .extreme-status { margin-top: 6px; min-height: 1.3em; font-size: 10px; letter-spacing: 0.08em; color: var(--gold); opacity: 0.8; }
-  .extreme-status.unlocked { opacity: 1; text-shadow: 0 0 10px rgba(255, 212, 90, 0.55); }
   .card-best { margin-top: 10px; font-size: 13px; letter-spacing: 0.14em; }
   .card-best.none { opacity: 0.55; }
   .card-best.gold { color: var(--gold); } .card-best.silver { color: var(--silver); } .card-best.bronze { color: var(--bronze); }
@@ -67,8 +69,30 @@
   .course-input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
   .course-form .btn { padding: 8px 12px; font-size: 11px; }
   .course-error { min-height: 1.3em; margin-top: 3px; font-size: 11px; color: #ff9aa6; }
-  #controls { margin-top: 22px; font-size: 13px; opacity: 0.75; line-height: 1.7; max-width: 660px; }
-  #controls b { color: var(--cyan); font-weight: 600; }
+  .info-opener { position: absolute; top: 16px; right: calc(18px + var(--safe-r)); width: 44px; height: 44px; padding: 0;
+    border: 1px solid var(--cyan); border-radius: 50%; background: rgba(4, 8, 22, 0.8); color: var(--cyan);
+    font: 600 22px/1 Georgia, serif; cursor: pointer; box-shadow: 0 0 15px rgba(95, 227, 255, 0.3); }
+  .info-opener:hover, .info-opener:focus-visible { background: rgba(95, 227, 255, 0.2); box-shadow: 0 0 20px rgba(95, 227, 255, 0.55); }
+  #pause-info { left: calc(18px + var(--safe-l)); right: auto; }
+  #info { z-index: 35; padding: 18px calc(18px + var(--safe-r)) 18px calc(18px + var(--safe-l));
+    background: rgba(0, 0, 8, 0.88); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .info-sheet { width: min(640px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; box-sizing: border-box; text-align: left;
+    padding: 0 24px 22px; border: 1px solid rgba(95, 227, 255, 0.45); border-radius: 3px;
+    background: rgba(4, 8, 22, 0.94); box-shadow: 0 0 40px rgba(95, 227, 255, 0.12); }
+  .info-head { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 18px 0 12px;
+    background: rgba(4, 8, 22, 0.98); border-bottom: 1px solid rgba(95, 227, 255, 0.3); }
+  #info-title { flex: 1; margin: 0; font-size: 20px; font-weight: 300; letter-spacing: 0.3em; text-shadow: 0 0 14px var(--magenta); }
+  .info-head .btn { padding: 9px 16px; }
+  .info-section { margin-top: 18px; }
+  .info-section h3 { margin: 0 0 6px; color: var(--cyan); font-size: 11px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; }
+  .info-section p { margin: 0 0 8px; font-size: 13px; line-height: 1.55; color: rgba(230, 248, 255, 0.86); }
+  .info-section b { color: var(--cyan); font-weight: 600; }
+  .info-section strong { color: #fff; font-weight: 600; }
+  .info-difficulties { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.55; color: rgba(230, 248, 255, 0.86); }
+  .info-difficulties li { margin: 3px 0; }
+  #extreme-status:empty { display: none; }
+  #extreme-status { color: var(--gold); }
+  #extreme-status.unlocked { text-shadow: 0 0 10px rgba(255, 212, 90, 0.55); }
   #status { margin-top: 14px; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6; }
   #status:empty { display: none; }
   #status.control-error, .control-error { color: #ff9aa6; opacity: 1; letter-spacing: 0.02em; text-transform: none; font-size: 12px; line-height: 1.35;
@@ -79,8 +103,6 @@
 
   .pause-title { font-size: clamp(28px, 5vw, 44px); font-weight: 200; letter-spacing: 0.5em; margin-right: -0.5em; text-shadow: 0 0 16px var(--magenta); }
   .pause-run { margin-top: 12px; font-size: 13px; letter-spacing: 0.2em; opacity: 0.8; font-variant-numeric: tabular-nums; }
-  .pause-controls { margin-top: 24px; font-size: 12px; opacity: 0.6; line-height: 1.7; max-width: 560px; }
-  .pause-controls b { color: var(--cyan); font-weight: 600; }
 
   .res-time { margin-top: 6px; font-size: clamp(52px, 10vw, 104px); font-weight: 200; line-height: 1.05; font-variant-numeric: tabular-nums; text-shadow: 0 0 24px var(--magenta), 0 0 60px rgba(255, 63, 164, 0.35); }
   .res-medal { margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 14px; animation: pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 0.95s both; }
@@ -218,21 +240,24 @@
   .hud-hint.gone { opacity: 0; }
 
   /* ---- Short landscape screens (phones) ------------------------------------------------------ */
-  @media (max-height: 500px) {
+  @media (max-height: 500px), (orientation: portrait) and (pointer: coarse) {
     .screen { padding: 10px 24px; }
     #title { font-size: 30px; }
     .card { margin-top: 8px; padding: 6px 28px 8px; }
     .card-code { font-size: 28px; }
     .copy-code { min-height: 40px; }
     .difficulty-row { margin-top: 5px; } .difficulty-choice { min-height: 40px; }
-    .extreme-status { margin-top: 3px; font-size: 9px; }
     .card-best { margin-top: 4px; }
     .course-form { margin-top: 6px; } .course-input { min-height: 40px; padding: 6px 8px; } .course-form .btn { min-height: 40px; padding: 6px 10px; }
     .panel-buttons { margin-top: 14px; }
     #overlay .panel-buttons { margin-top: 10px; }
     .btn { padding: 10px 20px; } .btn.primary { padding: 12px 34px; }
-    #controls { margin-top: 6px; font-size: 12px; line-height: 1.3; }
-    .pause-controls { margin-top: 12px; }
+    .info-opener { top: 9px; right: calc(10px + var(--safe-r)); min-width: 44px; min-height: 44px; }
+    #pause-info { left: calc(10px + var(--safe-l)); right: auto; }
+    #info { padding: 8px calc(10px + var(--safe-r)) 8px calc(10px + var(--safe-l)); }
+    .info-sheet { padding: 0 18px 18px; }
+    .info-head { padding: 8px 0; }
+    .info-section { margin-top: 12px; }
     .kicker { font-size: 11px; }
     .res-time { margin-top: 0; font-size: 56px; }
     .res-medal { margin-top: 2px; } .medal-disc { width: 26px; height: 26px; }
@@ -268,8 +293,10 @@
 </style>
 </head>
 <body>
+<div id="game-stage">
 <canvas id="c"></canvas>
 <div id="overlay" class="screen">
+  <button id="title-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div id="title">NEON FLIGHT</div>
   <div class="card">
     <div class="kicker">course</div>
@@ -281,20 +308,18 @@
       <button class="difficulty-choice" type="button" data-difficulty="hard" aria-pressed="false" aria-label="Hard: six to eight short narrow passages with frequent turns, tighter rings" title="Six to eight short narrow passages with frequent turns">hard</button>
       <button class="difficulty-choice" type="button" data-difficulty="extreme" aria-pressed="false" aria-label="Extreme locked: earn Gold on Hard for this course" title="Earn Gold on Hard for this course to unlock Extreme" disabled>extreme</button>
     </div>
-    <div class="extreme-status" id="extreme-status" role="status"></div>
     <div class="card-best none" id="card-best"></div>
     <form id="course-form" class="course-form"><input id="course-input" class="course-input" aria-label="Course code" placeholder="CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="course-load" class="btn" type="submit" disabled>load code</button></form>
     <div id="course-error" class="course-error" role="status"></div>
   </div>
   <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button></div>
-  <div id="controls"></div>
   <div id="status"></div>
 </div>
 <div id="pause" class="screen hidden">
+  <button id="pause-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div class="pause-title">PAUSED</div>
   <div class="pause-run" id="pause-run"></div>
   <div class="panel-buttons"><button id="resume" class="btn primary">resume</button><button id="restart" class="btn">restart</button><button id="pause-new" class="btn alt">new course</button><button id="pause-title" class="btn">menu</button><button id="pause-settings" class="btn">settings</button></div>
-  <div class="pause-controls" id="pause-controls"></div>
   <div id="pause-control-error" class="control-error" role="status"></div>
 </div>
 <div id="results" class="screen hidden">
@@ -310,6 +335,31 @@
   <div id="results-control-error" class="control-error" role="status"></div>
   <div class="res-code"><span></span><button id="results-copy" class="copy-code" type="button" aria-label="Copy course code">copy</button></div>
 </div>
+<div id="info" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="info-title">
+  <div class="info-sheet">
+    <div class="info-head"><h2 id="info-title">HOW TO FLY</h2><button id="info-done" class="btn primary" type="button">done</button></div>
+    <section class="info-section"><h3>Controls</h3><p id="controls"></p><p id="info-pitch"></p></section>
+    <section class="info-section"><h3>Course rules</h3>
+      <p>Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
+      <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
+    </section>
+    <section class="info-section"><h3>Difficulty</h3>
+      <ul class="info-difficulties">
+        <li><strong>Easy:</strong> open avenues and regular rings; no side streets or course obstacles.</li>
+        <li><strong>Medium:</strong> a few wider side streets and obstacles; regular rings.</li>
+        <li><strong>Hard:</strong> more narrow turns and obstacles; smaller rings.</li>
+        <li><strong>Extreme:</strong> narrow streets throughout, smaller rings and faster flight.</li>
+      </ul>
+      <p id="extreme-status" role="status"></p>
+    </section>
+    <section class="info-section"><h3>Screen orientation</h3>
+      <p>The game requests a fixed landscape side. If the browser rotates anyway, the game view turns back to the side used at Fly. Browser bars may still rotate.</p>
+    </section>
+    <section class="info-section"><h3>Courses and times</h3>
+      <p>Copy a course code or share the page URL to fly the same course and difficulty again. Your best time is saved in this browser. Medals use your flight time plus penalties. Earn Gold on Hard to unlock Extreme for that course.</p>
+    </section>
+  </div>
+</div>
 <div id="settings" class="screen hidden">
   <div class="set-sheet">
     <div class="set-head"><div class="set-title">SETTINGS</div><button id="settings-reset" class="btn">reset</button><button id="settings-done" class="btn primary">done</button></div>
@@ -317,6 +367,7 @@
   </div>
 </div>
 <div id="rotate">rotate to landscape</div>
+</div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
 <script id="audio-src" type="text/plain">var AUDIO = {};
 ;(function () {
@@ -7051,7 +7102,9 @@ let level = 0, gpuEma = 0, lateFrames = 0, fitsAbove = 0, maxPixels = 0;
 
 function fitCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
+  // The visual stage can stay landscape while the browser viewport turns portrait. Size the
+  // backing buffer from the canvas' layout, before its stage transform, not the OS viewport.
+  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
 }
 
@@ -8190,6 +8243,7 @@ function create(canvas) {
   let tilt = null;                // smoothed { roll, pitch } relative to the chosen forward hold
   let latest = null, listening = false;
   let lastTiltSampleAt = 0, sensorWait = null, orientationListenersAttached = false;
+  let displayAngle = null;        // fixed Fly-side frame while a browser rotates the visual stage
   let mode = 'keyboard';
 
   window.addEventListener('keydown', e => {
@@ -8209,7 +8263,7 @@ function create(canvas) {
   function gravityOnScreen(e) {
     const b = (e.beta || 0) * Math.PI / 180, g = (e.gamma || 0) * Math.PI / 180;
     const dx = Math.cos(b) * Math.sin(g), dy = -Math.sin(b), dz = -Math.cos(b) * Math.cos(g);
-    const angle = ((screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0) * Math.PI / 180;
+    const angle = (displayAngle ?? screen.orientation?.angle ?? window.orientation ?? 0) * Math.PI / 180;
     const c = Math.cos(angle), s = Math.sin(angle);
     return [dx * c - dy * s, dx * s + dy * c, dz];
   }
@@ -8304,6 +8358,7 @@ function create(canvas) {
   return {
     stick,
     enableTilt,
+    setDisplayAngle(angle) { displayAngle = angle; latest = null; tilt = null; },
     get mode() { return mode; },
     get aim() { return mouse.aim; },
     get invertY() { return settings.get('invertY'); },
@@ -8373,8 +8428,8 @@ function replay(node, cls) {
 // their share of the screen (a 1440p monitor would otherwise get a HUD half the size). Smaller
 // views keep 1: phones get their own compact layout in the stylesheet instead.
 const DESIGN = { w: 1280, h: 720, maxZoom: 2 };
-function fitZoom() {
-  const k = Math.min(DESIGN.maxZoom, Math.max(1, Math.min(innerWidth / DESIGN.w, innerHeight / DESIGN.h)));
+function fitZoom(root) {
+  const k = Math.min(DESIGN.maxZoom, Math.max(1, Math.min(root.clientWidth / DESIGN.w, root.clientHeight / DESIGN.h)));
   document.documentElement.style.setProperty('--ui-zoom', k.toFixed(3));
   return k;
 }
@@ -8382,7 +8437,14 @@ function fitZoom() {
 // Where the arrow's centre may go, in viewport px: inside the HUD's own side margins, below the
 // top bar and above the bottom gauges.
 function freeBand(hud, zoom) {
-  const rects = sel => [...hud.querySelectorAll(sel)].map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+  // A counterrotated stage has viewport bounding boxes on different axes. Its HUD children are
+  // still laid out in landscape coordinates, which offsetLeft/Top give us directly.
+  const counterRotated = hud.parentElement.classList.contains('counter-rotated');
+  const rects = sel => [...hud.querySelectorAll(sel)].map(e => counterRotated
+    ? { left: e.offsetLeft * zoom, right: (e.offsetLeft + e.offsetWidth) * zoom,
+      top: e.offsetTop * zoom, bottom: (e.offsetTop + e.offsetHeight) * zoom,
+      width: e.offsetWidth * zoom, height: e.offsetHeight * zoom }
+    : e.getBoundingClientRect()).filter(r => r.width && r.height);
   const top = rects(TOP_PARTS), bottom = rects(BOTTOM_PARTS), all = [...top, ...bottom];
   const pad = (ARROW.len / 2 + ARROW.gap) * zoom;
   return {
@@ -8393,7 +8455,7 @@ function freeBand(hud, zoom) {
 
 // opts: { touch: shows a pause button (phones have no Esc key), onPause }
 function create(root, { touch, onPause }) {
-  let zoom = fitZoom(), band = null;
+  let zoom = fitZoom(root), band = null;
   const hud = el('div', `hud${touch ? ' touch' : ''}`, root);
   const boundary = el('div', 'hud-boundary', hud);
   boundary.setAttribute('aria-hidden', 'true');
@@ -8401,8 +8463,8 @@ function create(root, { touch, onPause }) {
   boundaryLabel.setAttribute('role', 'status');
   // The arrow's band is measured on the first update after the layout may have changed, so the
   // gauges hold real values by then.
-  const relayout = () => { band = null; };
-  window.addEventListener('resize', () => { zoom = fitZoom(); relayout(); });
+  const relayout = () => { zoom = fitZoom(root); band = null; };
+  window.addEventListener('resize', relayout);
   const gates = el('div', 'hud-gates', hud);
   el('div', 'hud-label', gates, 'GATE');
   const gatesValue = el('div', 'hud-gates-value', gates);
@@ -8468,7 +8530,7 @@ function create(root, { touch, onPause }) {
       spd.classList.toggle('stall', s.speed < FLIGHT.MIN_SPEED + 3);
       place(reticle, info.aimScreen);
       if (!band) band = freeBand(hud, zoom);
-      placeArrow(arrow, info.nextScreen, band);
+      placeArrow(arrow, info.nextScreen, band, hud);
       const now = performance.now();
       if (hintUntil && now > hintUntil) { hint.classList.add('gone'); hintUntil = 0; }
       if (messageUntil && now > messageUntil) setMessage('');
@@ -8483,6 +8545,7 @@ function create(root, { touch, onPause }) {
       setTimeout(() => t.remove(), seconds * 1000);
     },
     gatePassed() { replay(gates, 'pulse'); },
+    relayout,
     // A hint can wrap to two lines on a phone, which moves the band's lower edge.
     hint(text, seconds = 8) { hint.textContent = text; hint.classList.remove('gone'); hintUntil = performance.now() + seconds * 1000; relayout(); },
     show(on) { hud.classList.toggle('on', on); relayout(); },
@@ -8500,12 +8563,14 @@ function place(node, p) {
 // position (-1..1, y up) when it is in front, or the direction to it (right, up) when behind.
 // Behind you only the way to turn matters, so the arrow sits on that side, pointing sideways.
 // band: the free band (see freeBand).
-function placeArrow(node, n, band) {
+function placeArrow(node, n, band, hud) {
   const off = n && (n.behind || Math.abs(n.x) > ARROW_FROM.x || Math.abs(n.y) > ARROW_FROM.y);
   node.style.display = off ? 'block' : 'none';
   if (!off) return;
   // In pixels: screen coordinates stretch x by the aspect ratio, which would skew diagonals.
-  const W = innerWidth, H = innerHeight;
+  // CSS zoom shrinks the HUD's layout box as it enlarges its pixels. Stage dimensions match the
+  // visible game frame and the bounding boxes used by freeBand on unrotated views.
+  const W = hud.parentElement.clientWidth, H = hud.parentElement.clientHeight;
   const dx = n.behind ? (n.x < 0 ? -1 : 1) : n.x * W / 2;
   const dy = n.behind ? 0 : -n.y * H / 2;
   // From the screen centre along that direction, to the edge of the band.
@@ -8530,10 +8595,9 @@ function showTitle(panel, c) {
   panel.classList.remove('hidden');
 }
 
-// r: { time, gate, gates, code, difficulty, controls (html) }
+// r: { time, gate, gates, code, difficulty }
 function showPause(panel, r) {
   panel.querySelector('#pause-run').textContent = `${fmtTime(r.time)}  ·  gate ${Math.min(r.gate + 1, r.gates)} / ${r.gates}  ·  ${r.code} ${r.difficulty}`;
-  panel.querySelector('#pause-controls').innerHTML = r.controls;
   panel.classList.remove('hidden');
 }
 
@@ -8812,7 +8876,8 @@ const { FLIGHT } = GAME.flight;
 const params = new URLSearchParams(location.hash.slice(1));
 const AUTOPILOT = params.has('autopilot');
 const $ = id => document.getElementById(id);
-const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), settingsScreen = $('settings');
+const stage = $('game-stage');
+const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), infoScreen = $('info'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 
@@ -9098,19 +9163,34 @@ function loop(now) {
 }
 
 // ---- Screens and controls ---------------------------------------------------------------------
-const RULES = 'Fly the gates in order along the glowing line. Altitude drains every second:<br>' +
-  'lime <b>boost rings</b> and <b>light beams</b> lift you. Missed gate +2 s · crash +3 s and back to the last gate.';
-const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause<br>' + RULES;
-const CONTROLS_TOUCH = '<b>Level phone = straight</b> · roll to turn · top away to dive · angle in Settings<br>' + RULES;
-// Pause shows the controls with the current pitch setting, the one thing players change mid-run
-// (phones have no I key: there it is in the settings).
-const pauseControls = () => {
-  const invert = `invert pitch: ${input.invertY ? 'on' : 'off'}`;
-  return TOUCH ? `<b>Hold level</b> to fly straight · <b>tilt</b> to steer · <b>II</b> pause · forward angle and ${invert} in <b>settings</b>`
-    : `<b>Mouse</b> aim · <b>W/S</b> pull up / dive · <b>A/D</b> turn · <b>Esc</b> pause · <b>I</b> ${invert} (mouse)`;
-};
+const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause';
+const CONTROLS_TOUCH = '<b>Hold the phone level</b> to fly straight · roll it like a steering wheel to turn · tilt the top away to dive · <b>II</b> pause. Set your straight-ahead angle in <b>Settings</b>.';
+
+let infoReturnFocus = null, infoOrigin = null;
+function refreshInfo() {
+  $('controls').innerHTML = TOUCH ? CONTROLS_TOUCH : CONTROLS_DESKTOP;
+  $('info-pitch').textContent = `Pitch inversion: ${input?.invertY ? 'on' : 'off'} · change it ${TOUCH ? 'in Settings' : 'with I or in Settings'}.`;
+}
+function openInfo(button) {
+  refreshInfo();
+  infoReturnFocus = button;
+  infoOrigin = button.closest('.screen');
+  infoOrigin.inert = true;
+  button.setAttribute('aria-expanded', 'true');
+  infoScreen.classList.remove('hidden');
+  $('info-done').focus();
+}
+function closeInfo(restoreFocus = true) {
+  if (infoScreen.classList.contains('hidden')) return;
+  infoScreen.classList.add('hidden');
+  if (infoOrigin) infoOrigin.inert = false;
+  if (infoReturnFocus) infoReturnFocus.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) infoReturnFocus?.focus();
+  infoReturnFocus = infoOrigin = null;
+}
 
 function hideScreens() {
+  closeInfo(false);
   for (const s of [overlay, pausePanel, results]) s.classList.add('hidden');
 }
 
@@ -9239,26 +9319,61 @@ async function takeControls() {
 // Unsupported or rejected fullscreen must never prevent a run. Pin the exact landscape side at
 // Fly; the broad "landscape" lock still permits a 180-degree flip while steering. Installed web
 // apps may allow orientation lock even when the Fullscreen API is unavailable.
-let runLandscapeSide = null, orientationLockPending = false;
+let runLandscapeSide = null, runScreenAngle = null, orientationLockPending = false, orientationLockQueued = false;
+function currentScreenAngle() {
+  const raw = Number(screen.orientation?.angle ?? window.orientation);
+  return Number.isFinite(raw) ? ((Math.round(raw / 90) * 90 % 360) + 360) % 360 : 0;
+}
 function currentLandscapeSide() {
   if (screen.orientation?.type === 'landscape-secondary') return 'landscape-secondary';
   if (screen.orientation?.type === 'landscape-primary') return 'landscape-primary';
-  const angle = ((Number(screen.orientation?.angle ?? window.orientation ?? 90) % 360) + 360) % 360;
-  return angle === 270 ? 'landscape-secondary' : 'landscape-primary';
+  return currentScreenAngle() === 270 ? 'landscape-secondary' : 'landscape-primary';
 }
-function releaseLandscape() {
-  runLandscapeSide = null;
+function steadyLandscapeView() {
+  if (!TOUCH || runScreenAngle === null) {
+    stage.style.width = stage.style.height = stage.style.transform = '';
+    stage.classList.remove('counter-rotated');
+    hud?.relayout();
+    return;
+  }
+  const turn = (runScreenAngle - currentScreenAngle() + 360) % 360;
+  const w = innerWidth, h = innerHeight;
+  stage.style.width = `${turn % 180 ? h : w}px`;
+  stage.style.height = `${turn % 180 ? w : h}px`;
+  stage.style.transform = turn === 90 ? `translate(${w}px, 0) rotate(90deg)`
+    : turn === 180 ? `translate(${w}px, ${h}px) rotate(180deg)`
+      : turn === 270 ? `translate(0, ${h}px) rotate(-90deg)` : 'none';
+  stage.classList.toggle('counter-rotated', turn !== 0);
+  hud?.relayout();
+}
+function unlockLandscape() {
   if (!TOUCH || typeof screen.orientation?.unlock !== 'function') return;
   try { Promise.resolve(screen.orientation.unlock()).catch(() => {}); }
   catch { /* The browser may already have released it. */ }
 }
+function releaseLandscape() {
+  runLandscapeSide = null;
+  runScreenAngle = null;
+  orientationLockQueued = false;
+  input?.setDisplayAngle(null);
+  steadyLandscapeView();
+  unlockLandscape();
+}
 function lockLandscape() {
-  if (!TOUCH || !runLandscapeSide || orientationLockPending || typeof screen.orientation?.lock !== 'function') return;
+  if (!TOUCH || !runLandscapeSide || typeof screen.orientation?.lock !== 'function') return;
+  // A turn or Resume can arrive before the previous lock request settles. Keep the retry so the
+  // final request always uses the side captured at Fly, even if the browser changes orientation.
+  if (orientationLockPending) { orientationLockQueued = true; return; }
+  orientationLockQueued = false;
   orientationLockPending = true;
   try {
     Promise.resolve(screen.orientation.lock(runLandscapeSide))
       .catch(() => { /* This browser cannot lock the display. */ })
-      .finally(() => { orientationLockPending = false; });
+      .finally(() => {
+        orientationLockPending = false;
+        if (!runLandscapeSide) unlockLandscape();
+        else if (orientationLockQueued) lockLandscape();
+      });
   } catch { orientationLockPending = false; }
 }
 function enterFullscreen() {
@@ -9277,6 +9392,9 @@ async function fly() {
   let locked;
   try {
     runLandscapeSide = currentLandscapeSide();
+    runScreenAngle = currentScreenAngle();
+    input.setDisplayAngle(runScreenAngle);
+    steadyLandscapeView();
     const controls = takeControls();
     enterFullscreen();
     locked = await controls;
@@ -9308,7 +9426,7 @@ function pause() {
 }
 
 function showPause() {
-  GAME.hud.showPause(pausePanel, { time: GAME.run.total(run), gate: run.next, gates: course.gates.length, code: seedCode, difficulty, controls: pauseControls() });
+  GAME.hud.showPause(pausePanel, { time: GAME.run.total(run), gate: run.next, gates: course.gates.length, code: seedCode, difficulty });
 }
 
 // Back into the run through a short countdown, so the player has their hands ready.
@@ -9337,11 +9455,23 @@ document.addEventListener('click', e => { if (e.target.closest?.('button')) soun
 
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !TOUCH) pause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
-screen.orientation?.addEventListener?.('change', () => {
+function retryLandscape() {
+  steadyLandscapeView();
   if (runLandscapeSide && (document.fullscreenElement || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches)) lockLandscape();
+}
+screen.orientation?.addEventListener?.('change', retryLandscape);
+window.addEventListener('orientationchange', retryLandscape);
+window.addEventListener('resize', steadyLandscapeView);
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) retryLandscape();
+  // Most browsers release orientation locks when fullscreen ends. Resume is a fresh gesture that
+  // can request fullscreen and the same landscape side again.
+  else if (TOUCH && ['countdown', 'playing', 'crashed'].includes(mode)) pause();
 });
 window.addEventListener('keydown', e => {
-  if (e.code === 'KeyI') input.toggleInvert();
+  if (e.code === 'KeyI') { input.toggleInvert(); if (!infoScreen.classList.contains('hidden')) refreshInfo(); }
+  if (!infoScreen.classList.contains('hidden') && e.key === 'Tab') { e.preventDefault(); $('info-done').focus(); }
+  if (e.code === 'Escape' && !infoScreen.classList.contains('hidden')) { e.preventDefault(); closeInfo(); return; }
   // Esc closes the settings panel first. With the pointer locked the browser takes Esc to release
   // it (and pointerlockchange pauses); without the lock (keyboard play, autopilot) Esc pauses here.
   if (e.code === 'Escape' && settingsPanel.isOpen) settingsPanel.close();
@@ -9349,7 +9479,7 @@ window.addEventListener('keydown', e => {
   // Enter takes the screen's main button: fly, resume, retry or done, without reaching for the
   // mouse (a focused button already gets Enter from the browser).
   if (e.code === 'Enter' && !e.repeat && !['BUTTON', 'INPUT'].includes(document.activeElement?.tagName)) {
-    const primary = [settingsScreen, overlay, pausePanel, results].find(p => !p.classList.contains('hidden'))?.querySelector('.btn.primary');
+    const primary = [infoScreen, settingsScreen, overlay, pausePanel, results].find(p => !p.classList.contains('hidden'))?.querySelector('.btn.primary');
     if (primary && !primary.disabled) primary.click();
   }
 });
@@ -9374,6 +9504,10 @@ $('resume').addEventListener('click', action(resume));
 $('restart').addEventListener('click', action(fly));
 $('pause-new').addEventListener('click', action(newCourse));
 $('pause-title').addEventListener('click', action(showMenu));
+$('title-info').addEventListener('click', () => openInfo($('title-info')));
+$('pause-info').addEventListener('click', () => openInfo($('pause-info')));
+$('info-done').addEventListener('click', () => closeInfo());
+infoScreen.addEventListener('click', e => { if (e.target === infoScreen) closeInfo(); });
 $('title-settings').addEventListener('click', action(() => openSettings(overlay, showTitle)));
 $('pause-settings').addEventListener('click', action(() => openSettings(pausePanel, showPause)));
 
@@ -9382,7 +9516,7 @@ async function boot() {
   GAME.settings.load();
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
-  hud = GAME.hud.create(document.body, { touch: TOUCH, onPause: pause });
+  hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause });
   input = GAME.input.create(canvas);
   soundtrack = GAME.soundtrack.create(GAME.sound);
   applyVolumes();
@@ -9392,7 +9526,7 @@ async function boot() {
   resolution.setBudget(GAME.settings.get('quality'));
   renderer.setTheme(GAME.themes.theme(params.get('theme') ?? GAME.settings.get('theme')));
   GAME.settings.onChange(applySetting);
-  $('controls').innerHTML = TOUCH ? CONTROLS_TOUCH : CONTROLS_DESKTOP;
+  refreshInfo();
   loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
   showTitle();
   const t0 = performance.now();
