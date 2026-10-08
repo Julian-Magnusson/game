@@ -3786,13 +3786,13 @@ const FLIGHT = {
   TURN_RATE: 1.25,   // rad/s at full stick
   BANK: 0.55,        // rad of visual bank at full turn
   RADIUS: 1.2,       // collision sphere
-  EXTREME_PACE: 1.28,
+  EXTREME_CRUISE: 80, // units/s: Extreme's level-flight speed
 };
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
-const pace = difficulty => difficulty === 'extreme' ? FLIGHT.EXTREME_PACE : 1;
+const pace = difficulty => difficulty === 'extreme' ? FLIGHT.EXTREME_CRUISE / FLIGHT.CRUISE : 1;
 const cruise = difficulty => FLIGHT.CRUISE * pace(difficulty);
 
 function create({ x, y, z, yaw }, difficulty = 'medium') {
@@ -5092,10 +5092,13 @@ const PLANS = 3;                    // candidate plans per attempt; the one with
 const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
-// Hard's Gold records and Extreme unlocks keep their layout version. Extreme has its own version
-// because its new street-only route and faster pace make old Extreme times incomparable.
-const VERSION = 12;
-const EXTREME_VERSION = 13;
+// Keep earned Extreme unlocks and Easy times. New inward buildings change Medium and Hard times;
+// Extreme's new geometry and 80-u/s pace change its times too.
+const VERSION = 13;
+const EASY_VERSION = 12;
+const UNLOCK_VERSION = 12;
+const EXTREME_VERSION = 14;
+const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
   medium: Object.freeze({ label: 'Medium', gate: 1, ring: 1, pad: 1, minObstacles: 1 }),
@@ -5680,6 +5683,158 @@ function activateBridgePipes(city, course, streets, bridges, medium) {
   return chosen.length;
 }
 
+// One facade in a straight minor-street run projects almost to the old centreline. Bend the
+// guide towards the opposite wall before it, then bring it back. A solid straight-through flight
+// hits the building; the curved route and its final proof use the same boxes as the renderer.
+function addInwardBuildings(city, course, pts, streets, wallCells, difficulty) {
+  const sample = course.sample, line = course.line;
+  const profile = difficulty === 'medium' ? { radius: 50, offset: 6, max: 1, min: 1 }
+    : difficulty === 'hard' ? { radius: 58, offset: 4.5, max: 2, min: 2 }
+      : { radius: 84, offset: 4.5, max: 7, min: 4 };
+  const r = GAME.rng.stream(city.seed, `inward-buildings-${difficulty}-${course.attempt}`);
+  const intrusions = [], used = new Set();
+  const occupied = new Set(city.courseProps.map(p => p.cell));
+  const markers = [...course.gates, ...course.boosters.filter(b => b.type === 'ring')];
+  const halfCell = city.cell / 2;
+  for (const w of streets) {
+    const runs = [];
+    let from = w.wallS0;
+    for (const curve of w.curves || []) {
+      if (curve.s0 - 20 > from) runs.push([from, curve.s0 - 20]);
+      from = curve.s1 + 20;
+    }
+    if (w.wallS1 > from) runs.push([from, w.wallS1]);
+    const candidates = [];
+    for (const [lo, hi] of runs) {
+      for (let k = Math.ceil((lo + profile.radius + 4) / sample);
+        k <= Math.floor((hi - profile.radius - 4) / sample); k++) {
+        const s = k * sample;
+        if (markers.some(m => Math.abs(m.s - s) < 42)
+          || course.boosters.some(b => b.type === 'pad' && Math.abs(b.s - s) < profile.radius + 36)) continue;
+        const alongZ = Math.abs(pts[k].dz) > Math.abs(pts[k].dx);
+        const ix = Math.floor(line.x[k] / city.cell), iz = Math.floor(line.z[k] / city.cell);
+        const pair = alongZ ? [iz * city.n + ix - 1, iz * city.n + ix]
+          : [(iz - 1) * city.n + ix, iz * city.n + ix];
+        if (pair.some(i => !wallCells.has(i) || city.kind[i] !== city.KIND.TOWER || used.has(i))) continue;
+        if (pair.every(i => occupied.has(i))) continue;
+        const first = city.cellCenter(pair[0]), second = city.cellCenter(pair[1]);
+        if (Math.abs((alongZ ? line.z[k] - first[1] : line.x[k] - first[0])) > sample / 2
+          || Math.abs((alongZ ? line.z[k] - second[1] : line.x[k] - second[0])) > sample / 2) continue;
+        candidates.push({ k, s, alongZ, pair });
+      }
+    }
+    // Seeded order and alternating sides keep these from forming another predictable straight
+    // strip. Medium uses one per passage; Hard may use two and Extreme several.
+    for (let j = candidates.length - 1; j > 0; j--) {
+      const other = r.int(0, j);
+      [candidates[j], candidates[other]] = [candidates[other], candidates[j]];
+    }
+    let placed = 0;
+    for (const c of candidates) {
+      if (placed >= profile.max) break;
+      if (intrusions.some(p => Math.abs(p.s - c.s) < profile.radius * 2 + 38)) continue;
+      const firstSide = (intrusions.length + (city.seed & 1)) % 2 ? 1 : -1;
+      for (const side of [firstSide, -firstSide]) {
+        if (occupied.has(c.pair[side < 0 ? 0 : 1])) continue;
+        const wall = c.pair[side < 0 ? 0 : 1], opposite = c.pair[side < 0 ? 1 : 0];
+        const cross = c.alongZ ? 0 : 1, half = cross + 2;
+        const a = wall * 4, b = opposite * 4;
+        const oldWall = city.boxA.slice(a, a + 4), oldOpposite = city.boxA.slice(b, b + 4);
+        const oldWallTop = city.boxB.slice(a, a + 4);
+        const wallCentre = city.cellCenter(wall)[cross] + city.boxA[a + cross];
+        const lane = c.alongZ ? line.x[c.k] : line.z[c.k];
+        const towardLane = -side;
+        const face = wallCentre + towardLane * city.boxA[a + half];
+        const reach = towardLane * (lane - towardLane * 0.8 - face);
+        if (reach < 4 || reach > 15) continue;
+        city.boxA[a + cross] += towardLane * reach / 2;
+        city.boxA[a + half] += reach / 2;
+        if (difficulty !== 'medium' && !occupied.has(opposite)) {
+          const retreat = 2.2;
+          city.boxA[b + cross] += towardLane * retreat / 2;
+          city.boxA[b + half] -= retreat / 2;
+        }
+        const attached = city.bridgePipes.filter(p => p.cells.includes(wall));
+        city.boxB[a] = Math.max(line.y[c.k] + 10, ...attached.map(p => p.y + 2));
+        city.boxB[a + 1] = city.boxB[a];
+        // Bridge segments store the facade face in their own cells. Move their endpoints with the
+        // changed walls so an existing crossing stays visibly attached on both sides.
+        const bridgeOffsets = [];
+        for (const pipe of city.bridgePipes) for (let n = 0; n < 2; n++) {
+          const cell = pipe.cells[n];
+          if (cell !== wall && cell !== opposite) continue;
+          const data = pipe.slots[n] ? city.bridgeB : city.bridgeA;
+          const index = cell * 4 + 2, base = cell * 4;
+          bridgeOffsets.push([data, index, data[index], pipe, n, pipe.boxes[n]]);
+          const cellCentre = city.cellCenter(cell)[cross];
+          const face = cellCentre + city.boxA[base + cross] + (n ? -1 : 1) * city.boxA[base + half];
+          data[index] = face - cellCentre;
+          const count = Number(Boolean(city.bridgeA[base + 3])) + Number(Boolean(city.bridgeB[base + 3]));
+          const rank = pipe.slots[n] && city.bridgeA[base + 3] ? 1 : 0;
+          pipe.boxes[n] = city.boxes(cell).at(-count + rank);
+        }
+        const centreOffset = city.boxA[a + cross], width = city.boxA[a + half];
+        const oldCentreX = line.x[c.k], oldCentreZ = line.z[c.k];
+        const originalHits = GAME.collide.sphere(city, oldCentreX, line.y[c.k], oldCentreZ, GAME.flight.FLIGHT.RADIUS)?.cell === wall;
+        const changed = [];
+        const moved = [];
+        if (Math.abs(centreOffset) + width <= halfCell - 0.15 && originalHits) {
+          const first = Math.max(0, Math.floor((c.s - profile.radius) / sample));
+          const last = Math.min(line.n - 1, Math.ceil((c.s + profile.radius) / sample));
+          for (let j = first; j <= last; j++) {
+            const u = Math.abs(j * sample - c.s) / profile.radius;
+            if (u >= 1) continue;
+            const amount = profile.offset * (1 + Math.cos(Math.PI * u)) / 2 * -side;
+            changed.push([j, line.x[j], line.z[j]]);
+            if (c.alongZ) line.x[j] += amount;
+            else line.z[j] += amount;
+          }
+          for (const m of markers) {
+            if (Math.abs(m.s - c.s) >= profile.radius) continue;
+            moved.push([m, m.x, m.z, m.n]);
+            const k = Math.round(m.s / sample);
+            const a = Math.max(0, k - 2), b = Math.min(line.n - 1, k + 2);
+            const dx = line.x[b] - line.x[a], dz = line.z[b] - line.z[a], len = Math.hypot(dx, dz);
+            m.x = line.x[k]; m.z = line.z[k];
+            if (len) m.n = [dx / len, 0, dz / len];
+          }
+        }
+        const clear = changed.length && changed.every(([j]) => !GAME.collide.sphere(city,
+          line.x[j], line.y[j], line.z[j], CLEARANCE))
+          && moved.every(([m]) => ringClear(city, m));
+        const proof = clear && GAME.autopilot.fly(city, course);
+        // A low approach after a beam can expose a collision or a late missed gate that a
+        // normal run does not. Check the preceding beam before keeping a nearby obstruction.
+        const nearbyPads = proof?.finished && !proof.crashes && !proof.missed
+          ? course.boosters.filter(b => b.type === 'pad' && b.s <= c.s && c.s - b.s < 400) : [];
+        const lowClear = nearbyPads.every(b => {
+          const lowBy = Math.min(12, b.top - b.lift - 4);
+          const low = GAME.autopilot.fly(city, course, { lowInto: [b.id], lowBy });
+          return low.finished && !low.crashes && !low.missed;
+        });
+        if (proof?.finished && !proof.crashes && !proof.missed && lowClear) {
+          intrusions.push({ s: c.s, cell: wall, opposite, side, k: c.k, originalX: oldCentreX, originalZ: oldCentreZ });
+          used.add(wall); used.add(opposite);
+          placed++;
+          break;
+        } else {
+          for (const [j, x, z] of changed) { line.x[j] = x; line.z[j] = z; }
+          for (const [m, x, z, n] of moved) { m.x = x; m.z = z; m.n = n; }
+          for (const [data, index, old, pipe, n, box] of bridgeOffsets) {
+            data[index] = old;
+            pipe.boxes[n] = box;
+          }
+          city.boxA.set(oldWall, a);
+          city.boxA.set(oldOpposite, b);
+          city.boxB.set(oldWallTop, a);
+        }
+      }
+    }
+    w.inwardBuildings = placed;
+  }
+  return intrusions.length >= profile.min ? intrusions : null;
+}
+
 function streetNetwork(city, course, pts, difficulty) {
   const profile = STREETS[difficulty];
   const extreme = difficulty === 'extreme';
@@ -5762,6 +5917,9 @@ function streetNetwork(city, course, pts, difficulty) {
     const activeBridges = activateBridgePipes(city, trial, streets, bridges, difficulty === 'medium');
     if (activeBridges < profile.minActiveBridges || blocked(city, trial.line, trial.gates)
       || trial.boosters.some(b => b.type === 'ring' && !ringClear(city, b))) return null;
+    const inwardBuildings = addInwardBuildings(city, trial, pts, streets, new Set(cells), difficulty);
+    if (!inwardBuildings) return null;
+    trial.inwardBuildings = inwardBuildings;
     const proof = GAME.autopilot.fly(city, trial);
     const shaky = proof.finished && !proof.crashes && !proof.missed
       ? GAME.autopilot.fly(city, trial, { noise: 0.35, seed: city.seed }) : null;
@@ -5866,7 +6024,7 @@ function generate(city, seed, difficulty = 'medium') {
   throw new Error(`no flyable course for seed ${seed} after ${layouts.reduce((n, p) => n + p.to - p.from, 0)} attempts: ${reasons.slice(-5).join('; ')}`);
 }
 
-GAME.course = { generate, DIFFICULTIES, VERSION, EXTREME_VERSION, PAD, START_ALT };
+GAME.course = { generate, DIFFICULTIES, VERSION, EASY_VERSION, UNLOCK_VERSION, EXTREME_VERSION, RECORD_VERSIONS, PAD, START_ALT };
 
 })();
 
@@ -8921,7 +9079,7 @@ let seedCode, city, course, run, guide, pilot;
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
 const sessionExtremeUnlocks = new Set();
-const extremeUnlockKey = code => `neonflight.unlock.v${GAME.course.VERSION}.extreme.${code}`;
+const extremeUnlockKey = code => `neonflight.unlock.v${GAME.course.UNLOCK_VERSION}.extreme.${code}`;
 function extremeUnlocked(code) {
   if (sessionExtremeUnlocks.has(code)) return true;
   try { return localStorage.getItem(extremeUnlockKey(code)) === '1'; } catch { return false; }
@@ -9076,7 +9234,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => `neonflight.best.v${difficulty === 'extreme' ? GAME.course.EXTREME_VERSION : GAME.course.VERSION}.${difficulty}.${code}`;
+const bestKey = code => `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
     const v = localStorage.getItem(bestKey(code));
