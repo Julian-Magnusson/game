@@ -283,6 +283,18 @@
   #start.btn { min-height: 50px; font-size: 15px; background: rgba(77, 255, 192, 0.24); border-color: var(--green); color: #d8ffed;
     text-shadow: 0 0 10px var(--green); box-shadow: 0 0 26px rgba(77, 255, 192, 0.4), inset 0 0 18px rgba(77, 255, 192, 0.2); }
   #start.btn:hover:not(:disabled) { background: rgba(77, 255, 192, 0.38); }
+  #overlay #start { position: relative; min-height: 44px; padding: 8px; font-size: 22px; font-weight: 700; line-height: 1; letter-spacing: 0.22em; }
+  #overlay:not([inert]) #start:not(:disabled)::before,
+  #overlay:not([inert]) #start:not(:disabled)::after {
+    content: ''; position: absolute; inset: -1px; border: 1px solid var(--green); border-radius: inherit;
+    box-shadow: 0 0 9px rgba(77, 255, 192, 0.3); pointer-events: none; opacity: 0;
+    animation: fly-pulse 2.8s ease-out infinite;
+  }
+  #overlay:not([inert]) #start:not(:disabled)::after { animation-delay: 1.4s; }
+  @keyframes fly-pulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    75%, 100% { transform: scale(1.12, 1.6); opacity: 0; }
+  }
   #course-dialog { z-index: 30; background: rgba(0, 0, 8, 0.78); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   .course-sheet { width: min(480px, 100%); max-height: 100%; box-sizing: border-box; overflow-y: auto; touch-action: pan-y;
     padding: 0 24px 16px; background: rgba(4, 8, 22, 0.96); border: 1px solid rgba(95, 227, 255, 0.45); border-radius: 5px; }
@@ -305,7 +317,11 @@
   #loading-detail { min-height: 2.8em; margin: 12px 0 18px; font-size: 13px; line-height: 1.4; color: rgba(230, 248, 255, 0.75); }
   #loading-cancel { min-height: 44px; }
   #loading-cancel[hidden] { display: none; }
-  @media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .loading-spinner,
+    #overlay:not([inert]) #start:not(:disabled)::before,
+    #overlay:not([inert]) #start:not(:disabled)::after { animation: none; }
+  }
 
   /* ---- Short landscape screens (phones) ------------------------------------------------------ */
   @media (max-height: 500px), (orientation: portrait) and (pointer: coarse) {
@@ -4223,8 +4239,9 @@ function steer(pilot, g, course) {
   }
   pilot.k = best;
   const ahead = dist => Math.min(L.n - 1, best + Math.round(dist / course.sample));
-  // Extreme's continuous minor streets need a closer pursuit point through consecutive bends.
-  const t = ahead(course.difficulty === 'extreme' ? 12 + g.speed * 0.2 : 16 + g.speed * 0.3);
+  // A closer pursuit point keeps the proof pilot on the route through bends and tighter rings.
+  const t = ahead(course.difficulty === 'extreme' ? 12 + g.speed * 0.2
+    : course.difficulty === 'hard' ? 14 + g.speed * 0.25 : 16 + g.speed * 0.3);
   const err = wrap(Math.atan2(L.x[t] - g.x, L.z[t] - g.z) - g.yaw);
   const x = clamp(-err * 2.4, -1, 1);
 
@@ -5201,17 +5218,18 @@ const PLANS = 3;                    // candidate plans per attempt; the one with
 const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
-// Keep earned Extreme unlocks and Easy times. New inward buildings change Medium and Hard times;
-// Extreme's denser inward buildings need fresh times; its 80-u/s pace stays the same.
+// Keep earned Extreme unlocks and unchanged difficulty records. Hard's smaller rings need fresh
+// times; Extreme retains its own version for the denser inward buildings and 80-u/s pace.
 const VERSION = 13;
 const EASY_VERSION = 12;
+const HARD_VERSION = 14;
 const UNLOCK_VERSION = 12;
 const EXTREME_VERSION = 15;
-const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: VERSION, extreme: EXTREME_VERSION });
+const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: HARD_VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
   medium: Object.freeze({ label: 'Medium', gate: 1, ring: 1, pad: 1, minObstacles: 1 }),
-  hard: Object.freeze({ label: 'Hard', gate: 0.8, ring: 0.8, pad: 0.85, minObstacles: 2 }),
+  hard: Object.freeze({ label: 'Hard', gate: 0.7, ring: 0.7, pad: 0.85, minObstacles: 2 }),
   extreme: Object.freeze({ label: 'Extreme', gate: 0.55, ring: 0.55, pad: 0.75, minObstacles: 0 }),
 });
 
