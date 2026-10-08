@@ -59,7 +59,7 @@
   .btn.alt:hover:not(:disabled) { background: rgba(255, 63, 164, 0.18); }
   .btn:disabled { opacity: 0.35; cursor: default; }
 
-  #title { font-size: clamp(34px, 7vw, 76px); font-weight: 200; letter-spacing: 0.45em; margin-right: -0.45em; color: #f4fbff;
+  #title { font-size: clamp(40px, 8vw, 100px); font-weight: 200; letter-spacing: 0.38em; margin-right: -0.38em; color: #f4fbff;
     text-shadow: 0 0 18px var(--magenta), 0 0 42px rgba(255, 63, 164, 0.5); }
   .card { margin-top: 22px; padding: 12px 36px 14px; min-width: 250px; border: 1px solid rgba(95, 227, 255, 0.3); border-radius: 3px;
     background: rgba(4, 8, 22, 0.6); box-shadow: inset 0 0 26px rgba(95, 227, 255, 0.08); }
@@ -262,25 +262,25 @@
   .hud-hint.gone { opacity: 0; }
 
   /* A compact title menu. Equal columns keep Fly on the screen centre. */
-  .menu-course { margin-top: 26px; width: min(490px, 100%); }
-  .medal-targets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 12px; margin: 0 18px 10px;
+  .menu-course { margin-top: 22px; width: min(400px, 100%); }
+  .medal-targets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 7px 10px; margin: 0 10px 8px;
     border: 1px solid rgba(95, 227, 255, 0.24); border-radius: 5px; background: rgba(4, 8, 22, 0.75); }
   .medal-target { display: flex; flex-direction: column; gap: 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
-  .medal-target strong { font-size: 14px; font-weight: 500; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+  .medal-target strong { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
   .medal-target.diamond, .card-best.diamond { color: var(--diamond); }
   .medal-target.gold { color: var(--gold); } .medal-target.silver { color: var(--silver); } .medal-target.bronze { color: var(--bronze); }
   .course-bar { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid rgba(95, 227, 255, 0.4); border-radius: 5px;
     background: rgba(4, 8, 22, 0.85); }
-  .course-summary { display: grid; grid-template-columns: 1fr auto; gap: 5px 14px; padding: 12px 20px; border: 0; text-align: left;
+  .course-summary { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; padding: 8px 14px; min-height: 48px; border: 0; text-align: left;
     background: transparent; color: var(--ink); font: inherit; text-transform: uppercase; cursor: pointer; }
   .course-summary + .course-summary { border-left: 1px solid rgba(95, 227, 255, 0.25); }
   .course-summary > span:first-child { font-size: 10px; letter-spacing: 0.22em; opacity: 0.6; }
-  .course-summary strong { grid-column: 1; font-size: 19px; letter-spacing: 0.16em; font-weight: 400; color: var(--cyan); }
+  .course-summary strong { grid-column: 1; font-size: 16px; letter-spacing: 0.14em; font-weight: 400; color: var(--cyan); }
   .summary-edit { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--cyan); }
   .course-summary:hover { background: rgba(95, 227, 255, 0.08); }
-  #overlay .panel-buttons { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; width: min(580px, 100%); gap: 14px; }
-  #overlay .panel-buttons .btn { padding-left: 8px; padding-right: 8px; min-height: 48px; letter-spacing: 0.16em; }
-  #start.btn { min-height: 58px; background: rgba(77, 255, 192, 0.24); border-color: var(--green); color: #d8ffed;
+  #overlay .panel-buttons { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; width: min(470px, 100%); gap: 10px; margin-top: 18px; }
+  #overlay .panel-buttons .btn { padding: 10px 8px; min-height: 44px; font-size: 12px; letter-spacing: 0.12em; }
+  #start.btn { min-height: 50px; font-size: 15px; background: rgba(77, 255, 192, 0.24); border-color: var(--green); color: #d8ffed;
     text-shadow: 0 0 10px var(--green); box-shadow: 0 0 26px rgba(77, 255, 192, 0.4), inset 0 0 18px rgba(77, 255, 192, 0.2); }
   #start.btn:hover:not(:disabled) { background: rgba(77, 255, 192, 0.38); }
   #course-dialog { z-index: 30; background: rgba(0, 0, 8, 0.78); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
@@ -295,14 +295,25 @@
     box-shadow: 0 0 24px rgba(176, 247, 255, 0.7); }
   .diamond .res-medal-name { color: var(--diamond); text-shadow: 0 0 14px var(--cyan); }
   .rung.diamond.got { border-color: var(--diamond); color: var(--diamond); }
+  #course-loading { z-index: 38; background: rgba(0, 0, 8, 0.8); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .loading-sheet { width: min(360px, 100%); box-sizing: border-box; padding: 24px; border: 1px solid rgba(95, 227, 255, 0.4);
+    border-radius: 5px; background: rgba(4, 8, 22, 0.96); }
+  .loading-spinner { width: 30px; height: 30px; margin: 0 auto 18px; border: 2px solid rgba(95, 227, 255, 0.15);
+    border-top-color: var(--cyan); border-right-color: var(--cyan); border-radius: 50%; animation: loading-spin 0.9s linear infinite; }
+  @keyframes loading-spin { to { transform: rotate(360deg); } }
+  #loading-title { margin: 0; font-size: 17px; font-weight: 400; letter-spacing: 0.08em; }
+  #loading-detail { min-height: 2.8em; margin: 12px 0 18px; font-size: 13px; line-height: 1.4; color: rgba(230, 248, 255, 0.75); }
+  #loading-cancel { min-height: 44px; }
+  #loading-cancel[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
 
   /* ---- Short landscape screens (phones) ------------------------------------------------------ */
   @media (max-height: 500px), (orientation: portrait) and (pointer: coarse) {
     .screen { padding: 10px 24px; }
-    #title { font-size: 30px; }
+    #title { font-size: clamp(36px, 7vw, 50px); }
     .menu-course { margin-top: 14px; }
     .medal-targets { padding: 7px 10px; margin-bottom: 8px; }
-    .course-summary { padding: 8px 16px; }
+    .course-summary { padding: 7px 12px; }
     #start.btn { min-height: 50px; }
     .card { margin-top: 8px; padding: 6px 28px 8px; }
     .card-code { font-size: 28px; }
@@ -444,6 +455,15 @@
   <p class="rotate-note">Rotation lock on? Hold the phone sideways and play with the screen locked: the game turns itself.</p>
   <button id="rotate-sideways" class="btn primary" type="button">play sideways</button>
   <div id="rotate-error" class="control-error" role="status"></div>
+</div>
+<div id="course-loading" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="loading-title" aria-describedby="loading-detail" aria-busy="true">
+  <div class="loading-sheet">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <h2 id="loading-title">Preparing course</h2>
+    <p id="loading-detail" role="status" aria-live="polite">Finding a clear route through the city…</p>
+    <button id="loading-cancel" class="btn" type="button">cancel</button>
+    <p id="loading-escape" hidden>Press Esc to cancel</p>
+  </div>
 </div>
 </div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
@@ -3164,7 +3184,23 @@ self.onmessage = e => {
 
 })();
 </script>
-<script>var GAME = {};
+<script id="course-worker-src" type="text/plain">;(function () {
+'use strict';
+// ---- src/game/course-worker.js ----
+// The exact same generator and flight proofs as the game, away from the UI thread.
+self.onmessage = ({ data: { seed, difficulty } }) => {
+  try {
+    const city = GAME.city.generate(seed, difficulty);
+    const course = GAME.course.generate(city, seed, difficulty);
+    self.postMessage({ world: GAME.courseData.pack(city, course) });
+  } catch (error) {
+    self.postMessage({ error: error.message || String(error) });
+  }
+};
+
+})();
+</script>
+<script id="sim-src">var GAME = {};
 ;(function () {
 'use strict';
 // ---- src/world/rng.js ----
@@ -3779,7 +3815,19 @@ function placeBridgePipes(city, course) {
   return city.bridgePipes;
 }
 
-GAME.city = { generate, CELL, N, KIND, PROP, AVENUE_X, AVENUE_Z };
+// Reattach city methods to a worker's data. Preserve the arrays captured by makeCity's closures:
+// collision and rendering must continue to read the very same geometry after restoration.
+function restore(data) {
+  const city = makeCity(data.seed, data.kind, data.boxA, data.boxB, data.maxHeight,
+    data.seededObstacles, data.difficulty);
+  for (const [key, value] of Object.entries(data)) {
+    if (ArrayBuffer.isView(city[key])) city[key].set(value);
+    else city[key] = value;
+  }
+  return city;
+}
+
+GAME.city = { generate, restore, CELL, N, KIND, PROP, AVENUE_X, AVENUE_Z };
 
 })();
 
@@ -6090,6 +6138,27 @@ GAME.course = { generate, DIFFICULTIES, VERSION, EASY_VERSION, UNLOCK_VERSION, E
 })();
 
 ;(function () {
+'use strict';
+// ---- src/game/course-data.js ----
+// Worker/cache payload: geometry, route and energy samples without function closures.
+const dataOf = object => Object.fromEntries(Object.entries(object).filter(([, value]) => typeof value !== 'function'));
+
+function pack(city, course) {
+  const energy = Float64Array.from({ length: course.line.n }, (_, k) => course.energyAt(k * course.sample));
+  return { city: dataOf(city), course: { ...dataOf(course), energy } };
+}
+
+function unpack(data) {
+  const city = GAME.city.restore(data.city), course = data.course;
+  course.energyAt = s => course.energy[Math.max(0, Math.min(course.energy.length - 1, Math.round(s / course.sample)))];
+  return { city, course };
+}
+
+GAME.courseData = { pack, unpack };
+
+})();
+</script>
+<script>;(function () {
 'use strict';
 // ---- src/game/settings.js ----
 // Player settings: one schema (ranges, defaults, labels) that the settings panel renders from and
@@ -9137,6 +9206,63 @@ GAME.soundtrack = { create };
 
 ;(function () {
 'use strict';
+// ---- src/game/course-loader.js ----
+// Generate off-thread and keep the last eight course/difficulty combinations for quick returns.
+// Each load gets a fresh copy: later runs must not mutate a cached world or its collision data.
+const cache = new Map(), CACHE_SIZE = 8;
+let active = null, workerURL = null;
+const keyOf = (seed, difficulty) => `${seed}:${difficulty}`;
+
+function cancel() {
+  active?.cancel();
+}
+
+async function load(seed, difficulty) {
+  cancel();
+  const key = keyOf(seed, difficulty);
+  if (cache.has(key)) {
+    const data = cache.get(key);
+    cache.delete(key);
+    cache.set(key, data);
+    return GAME.courseData.unpack(structuredClone(data));
+  }
+  if (!workerURL) {
+    const source = document.getElementById('sim-src').textContent + '\n'
+      + document.getElementById('course-worker-src').textContent;
+    workerURL = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+  }
+  const data = await new Promise((resolve, reject) => {
+    const worker = new Worker(workerURL);
+    const request = {
+      cancel: () => finish(null, new DOMException('Course loading cancelled', 'AbortError')),
+    };
+    function finish(world, error) {
+      if (active !== request) return;
+      active = null;
+      worker.terminate();
+      error ? reject(error) : resolve(world);
+    }
+    active = request;
+    worker.onmessage = ({ data }) => finish(data.world, data.error ? new Error(data.error) : null);
+    worker.onerror = event => {
+      event.preventDefault();
+      finish(null, new Error(event.message || 'Course worker could not start'));
+    };
+    worker.onmessageerror = () => finish(null, new Error('Course data could not be read'));
+    try { worker.postMessage({ seed, difficulty }); }
+    catch (error) { finish(null, error); }
+  });
+  cache.set(key, data);
+  if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value);
+  return GAME.courseData.unpack(structuredClone(data));
+}
+
+GAME.courseLoader = { load, cancel, has: (seed, difficulty) => cache.has(keyOf(seed, difficulty)) };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/main.js ----
 // Boot, run flow and the main loop. Also exposes window.__game for the screenshot/test tools.
 //   #seed=8F3A&difficulty=hard   fly that course and difficulty (Medium is the default)
@@ -9190,19 +9316,62 @@ function grantExtreme(code) {
   try { localStorage.setItem(extremeUnlockKey(code), '1'); } catch { /* available for this session */ }
 }
 
-// Generates the city and the course for a seed and puts its code in the URL, so a reload or a
-// shared link flies the same course.
-function loadCourse(seed) {
-  const t0 = performance.now();
-  seedCode = GAME.rng.seedToCode(seed);
-  requestedLockedExtreme = difficulty === 'extreme' && !extremeUnlocked(seedCode);
-  if (requestedLockedExtreme) difficulty = 'hard';
-  city = GAME.city.generate(seed, difficulty);
-  course = GAME.course.generate(city, seed, difficulty);
-  renderer.setWorld(city, course.pads);
-  history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${AUTOPILOT ? '&autopilot' : ''}`);
-  console.log(`[game] course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.boosters.length} boosters, ${course.obstacles} avenue buildings, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, generated in ${(performance.now() - t0).toFixed(0)} ms (attempt ${course.attempt + 1})`);
-  newRun();
+// Generation runs off-thread. Keep the old world and its URL intact until its replacement is
+// fully ready, so cancelling or failing a load leaves a playable course.
+let courseLoading = false;
+async function loadCourse(seed, selectedDifficulty = difficulty) {
+  if (courseLoading) return false;
+  const t0 = performance.now(), code = GAME.rng.seedToCode(seed);
+  const lockedExtreme = selectedDifficulty === 'extreme' && !extremeUnlocked(code);
+  const nextDifficulty = lockedExtreme ? 'hard' : selectedDifficulty;
+  const cached = GAME.courseLoader.has(seed, nextDifficulty);
+  const loading = $('course-loading'), cancel = $('loading-cancel');
+  const focus = document.activeElement;
+  const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen];
+  const inert = screens.map(screen => screen.inert);
+  let patience;
+  courseLoading = true;
+  if (!cached) {
+    $('loading-title').textContent = `Preparing ${GAME.course.DIFFICULTIES[nextDifficulty].label} course`;
+    $('loading-detail').textContent = 'Finding a clear route through the city…';
+    cancel.hidden = !course || !!document.pointerLockElement;
+    $('loading-escape').hidden = !course || !document.pointerLockElement;
+    screens.forEach(screen => { screen.inert = true; });
+    loading.classList.remove('hidden');
+    if (!cancel.hidden) cancel.focus();
+    patience = setTimeout(() => {
+      $('loading-detail').textContent = 'Tight streets take a little longer. Still preparing your route…';
+    }, 4000);
+  }
+  try {
+    const world = await GAME.courseLoader.load(seed, nextDifficulty);
+    city = world.city;
+    course = world.course;
+    seedCode = code;
+    difficulty = nextDifficulty;
+    requestedLockedExtreme = lockedExtreme;
+    renderer.setWorld(city, course.pads);
+    history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${AUTOPILOT ? '&autopilot' : ''}`);
+    console.log(`[game] course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.boosters.length} boosters, ${course.obstacles} avenue buildings, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms (attempt ${course.attempt + 1})`);
+    newRun();
+    return true;
+  } catch (error) {
+    if (error.name === 'AbortError') return false;
+    if (!course) throw error;
+    console.warn(`[game] course load failed: ${error.message}`);
+    const message = 'Could not prepare that course. Your previous course is ready — please try again.';
+    if (!courseDialog.classList.contains('hidden')) $('course-error').textContent = message;
+    else if (!pausePanel.classList.contains('hidden')) $('pause-control-error').textContent = message;
+    else if (!results.classList.contains('hidden')) $('results-control-error').textContent = message;
+    else { statusEl.textContent = message; statusEl.classList.add('control-error'); }
+    return false;
+  } finally {
+    courseLoading = false;
+    clearTimeout(patience);
+    loading.classList.add('hidden');
+    screens.forEach((screen, i) => { screen.inert = inert[i]; });
+    if (!cached && focus?.isConnected) focus.focus();
+  }
 }
 
 // Boosters taken this run (run.used can't say: a respawn re-arms the boosters after the checkpoint).
@@ -9429,7 +9598,7 @@ function loop(now) {
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
   if (TOUCH && viewAngle() !== null) steadyLandscapeView();
-  if (mode !== 'paused') update(dt * timeScale);
+  if (mode !== 'paused' && !courseLoading) update(dt * timeScale);
   resolution.fitCanvas();
   const [w, h] = resolution.renderSize();
   timerBegin(resolution.level);
@@ -9595,7 +9764,7 @@ function clearControlFailure() {
   $('results-control-error').textContent = '';
 }
 
-function loadEnteredCourse() {
+async function loadEnteredCourse() {
   const entry = $('course-input').value.trim().toUpperCase();
   let seed;
   try {
@@ -9605,7 +9774,7 @@ function loadEnteredCourse() {
     $('course-input').focus();
     return;
   }
-  loadCourse(seed);
+  if (!await loadCourse(seed)) return;
   showTitle();
   closeCourseOptions();
 }
@@ -9770,7 +9939,8 @@ const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work
 const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
 
 // A fresh run of the current course, after a countdown.
-async function fly({ calibrate = false } = {}) {
+async function fly({ calibrate = false, seed = null } = {}) {
+  if (courseLoading) return;
   let locked;
   try {
     runLandscapeSide = currentLandscapeSide();
@@ -9790,6 +9960,10 @@ async function fly({ calibrate = false } = {}) {
     if (TOUCH && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
   }
   catch (err) { releaseLandscape(); showControlFailure(err); return; }
+  if (seed !== null && !await loadCourse(seed)) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    return;
+  }
   clearControlFailure();
   hideScreens();
   hud.show(true);
@@ -9798,11 +9972,15 @@ async function fly({ calibrate = false } = {}) {
   if (locked) hud.hint(PLAY_HINT); else hud.hint(LOCK_HINT, 10);
 }
 
-function newCourse() {
-  const wasExtreme = difficulty === 'extreme';
-  loadCourse(GAME.rng.randomSeed());
-  if (wasExtreme && difficulty !== 'extreme') return showMenu();
-  return fly();
+async function newCourse() {
+  const seed = GAME.rng.randomSeed();
+  if (difficulty === 'extreme' && !extremeUnlocked(GAME.rng.seedToCode(seed))) {
+    if (await loadCourse(seed)) showMenu();
+    return;
+  }
+  // Fly takes the controls during this click, before waiting for the worker, preserving motion
+  // permission/fullscreen/pointer-lock gestures even when the new course takes a while.
+  return fly({ seed });
 }
 
 // Also during the pause after a crash: Esc there releases the pointer, and the run must not
@@ -9843,7 +10021,12 @@ const action = fn => () => { try { Promise.resolve(fn()).catch(fail); } catch (e
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => GAME.sound.unlock(), { capture: true });
 document.addEventListener('click', e => { if (e.target.closest?.('button')) soundtrack.click(); });
 
-document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !TOUCH) pause(); });
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement || TOUCH) return;
+  // Browsers can consume Esc to release the pointer without sending its key event to the page.
+  if (courseLoading) GAME.courseLoader.cancel();
+  else pause();
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 function retryLandscape() {
   steadyLandscapeView();
@@ -9861,6 +10044,11 @@ document.addEventListener('fullscreenchange', () => {
   else if (TOUCH && ['countdown', 'playing', 'crashed'].includes(mode)) pause();
 });
 window.addEventListener('keydown', e => {
+  if (courseLoading) {
+    if (e.code === 'Escape' && course) { e.preventDefault(); GAME.courseLoader.cancel(); }
+    if (e.key === 'Tab') { e.preventDefault(); if (!$('loading-cancel').hidden) $('loading-cancel').focus(); }
+    return;
+  }
   if (!courseDialog.classList.contains('hidden')) {
     if (e.code === 'Escape') { e.preventDefault(); closeCourseOptions(); }
     else if (e.key === 'Tab') {
@@ -9891,15 +10079,14 @@ startBtn.addEventListener('click', action(() => fly({ calibrate: true })));
 for (const id of ['course-options', 'difficulty-options']) $(id).addEventListener('click', () => openCourseOptions($(id)));
 $('course-done').addEventListener('click', () => closeCourseOptions());
 courseDialog.addEventListener('click', e => { if (e.target === courseDialog) closeCourseOptions(); });
-shuffleBtn.addEventListener('click', action(() => { loadCourse(GAME.rng.randomSeed()); showTitle(); }));
-for (const button of document.querySelectorAll('[data-difficulty]')) button.addEventListener('click', action(() => {
+shuffleBtn.addEventListener('click', action(async () => { if (await loadCourse(GAME.rng.randomSeed())) showTitle(); }));
+for (const button of document.querySelectorAll('[data-difficulty]')) button.addEventListener('click', action(async () => {
   if (button.dataset.difficulty === difficulty || button.disabled) return;
   if (button.dataset.difficulty === 'extreme' && !extremeUnlocked(seedCode)) return;
-  difficulty = button.dataset.difficulty;
-  loadCourse(GAME.rng.codeToSeed(seedCode));
-  showTitle();
+  if (await loadCourse(GAME.rng.codeToSeed(seedCode), button.dataset.difficulty)) showTitle();
 }));
-$('course-form').addEventListener('submit', e => { e.preventDefault(); loadEnteredCourse(); });
+$('course-form').addEventListener('submit', e => { e.preventDefault(); loadEnteredCourse().catch(fail); });
+$('loading-cancel').addEventListener('click', () => GAME.courseLoader.cancel());
 $('title-copy').addEventListener('click', () => { copyCourse($('title-copy')).catch(fail); });
 $('results-copy').addEventListener('click', () => { copyCourse($('results-copy')).catch(fail); });
 $('retry').addEventListener('click', action(fly));
@@ -9933,7 +10120,7 @@ async function boot() {
   renderer.setTheme(GAME.themes.theme(params.get('theme') ?? GAME.settings.get('theme')));
   GAME.settings.onChange(applySetting);
   refreshInfo();
-  loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
+  await loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
   showTitle();
   const t0 = performance.now();
   while (!GAME.gfx.allReady()) await nextFrame();
@@ -9945,7 +10132,7 @@ async function boot() {
   startBtn.textContent = 'fly';
   api.ready = true;
   api.state = () => ({
-    mode, input: input.mode, code: seedCode, difficulty, extremeUnlocked: extremeUnlocked(seedCode), courseLength: course.length,
+    mode, loading: courseLoading, input: input.mode, code: seedCode, difficulty, extremeUnlocked: extremeUnlocked(seedCode), courseLength: course.length,
     obstacles: city.obstacles.length, routeObstacles: course.obstacles,
     props: city.courseProps?.length ?? 0, pipes: city.courseProps?.filter(p => p.type === 'pipe').length ?? 0,
     bridges: city.bridgePipes?.length ?? 0, activeBridges: course.activeBridges ?? 0,
