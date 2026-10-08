@@ -9,7 +9,7 @@
 <title>Neon Flight</title>
 <style>
   :root { --cyan: #5fe3ff; --magenta: #ff3fa4; --amber: #ffb04a; --green: #4dffc0; --lime: #b8ff5a; --red: #ff4a5a;
-    --gold: #ffd45a; --silver: #dce8ff; --bronze: #ffa26b; --ink: #e6f8ff;
+    --diamond: #b0f7ff; --gold: #ffd45a; --silver: #dce8ff; --bronze: #ffa26b; --ink: #e6f8ff;
     --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px);
     /* Dark halo under every HUD glyph: readable over bright towers without boxes around it. */
     --halo: 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 6px rgba(0, 0, 0, 0.7); }
@@ -184,7 +184,12 @@
   .set-option:hover { border-color: rgba(95, 227, 255, 0.7); }
 
   #rotate { display: none; }
-  @media (orientation: portrait) and (pointer: coarse) { body:not(.run-started) #rotate { display: flex; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
+  @media (orientation: portrait) and (pointer: coarse) { body:not(.run-started):not(.sideways) #rotate { display: flex; flex-direction: column; gap: 18px; padding: 24px; box-sizing: border-box; text-align: center; position: fixed; inset: 0; background: #000; align-items: center; justify-content: center; z-index: 40; letter-spacing: 0.25em; text-transform: uppercase; } }
+  .rotate-note { max-width: 300px; margin: 18px 0 0; font-size: 13px; line-height: 1.5; letter-spacing: 0.04em; text-transform: none; opacity: 0.75; }
+  #rotate-error:empty { display: none; }
+  #rotate-error { max-width: 300px; letter-spacing: 0.02em; text-transform: none; }
+  /* The native app (app/) is locked to landscape by iOS itself: no browser orientation advice. */
+  .native-app .orientation-info { display: none; }
 
   /* ---- HUD ----------------------------------------------------------------------------------- */
   .hud { position: fixed; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
@@ -256,13 +261,52 @@
   .hud-hint { position: absolute; left: 22%; right: 22%; bottom: 26px; text-align: center; font-size: 13px; letter-spacing: 0.08em; opacity: 0.85; transition: opacity 1.2s; }
   .hud-hint.gone { opacity: 0; }
 
+  /* A compact title menu. Equal columns keep Fly on the screen centre. */
+  .menu-course { margin-top: 26px; width: min(490px, 100%); }
+  .medal-targets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 12px; margin: 0 18px 10px;
+    border: 1px solid rgba(95, 227, 255, 0.24); border-radius: 5px; background: rgba(4, 8, 22, 0.75); }
+  .medal-target { display: flex; flex-direction: column; gap: 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .medal-target strong { font-size: 14px; font-weight: 500; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+  .medal-target.diamond, .card-best.diamond { color: var(--diamond); }
+  .medal-target.gold { color: var(--gold); } .medal-target.silver { color: var(--silver); } .medal-target.bronze { color: var(--bronze); }
+  .course-bar { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid rgba(95, 227, 255, 0.4); border-radius: 5px;
+    background: rgba(4, 8, 22, 0.85); }
+  .course-summary { display: grid; grid-template-columns: 1fr auto; gap: 5px 14px; padding: 12px 20px; border: 0; text-align: left;
+    background: transparent; color: var(--ink); font: inherit; text-transform: uppercase; cursor: pointer; }
+  .course-summary + .course-summary { border-left: 1px solid rgba(95, 227, 255, 0.25); }
+  .course-summary > span:first-child { font-size: 10px; letter-spacing: 0.22em; opacity: 0.6; }
+  .course-summary strong { grid-column: 1; font-size: 19px; letter-spacing: 0.16em; font-weight: 400; color: var(--cyan); }
+  .summary-edit { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--cyan); }
+  .course-summary:hover { background: rgba(95, 227, 255, 0.08); }
+  #overlay .panel-buttons { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; width: min(580px, 100%); gap: 14px; }
+  #overlay .panel-buttons .btn { padding-left: 8px; padding-right: 8px; min-height: 48px; letter-spacing: 0.16em; }
+  #start.btn { min-height: 58px; background: rgba(77, 255, 192, 0.24); border-color: var(--green); color: #d8ffed;
+    text-shadow: 0 0 10px var(--green); box-shadow: 0 0 26px rgba(77, 255, 192, 0.4), inset 0 0 18px rgba(77, 255, 192, 0.2); }
+  #start.btn:hover:not(:disabled) { background: rgba(77, 255, 192, 0.38); }
+  #course-dialog { z-index: 30; background: rgba(0, 0, 8, 0.78); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .course-sheet { width: min(480px, 100%); max-height: 100%; box-sizing: border-box; overflow-y: auto; touch-action: pan-y;
+    padding: 0 24px 16px; background: rgba(4, 8, 22, 0.96); border: 1px solid rgba(95, 227, 255, 0.45); border-radius: 5px; }
+  #course-dialog-title { margin: 0; flex: 1; text-align: left; font-size: 15px; font-weight: 400; letter-spacing: 0.15em; }
+  .course-sheet .code-row { margin-top: 14px; }
+  .course-sheet .difficulty-row { margin-top: 14px; }
+  .course-lock { color: var(--gold); font-size: 11px; margin: 8px 0; }
+  .set-help { grid-column: 1 / -1; font-size: 11px; line-height: 1.4; opacity: 0.65; padding-bottom: 6px; }
+  .diamond .medal-disc { border-radius: 3px; transform: rotate(45deg) scale(0.8); background: linear-gradient(135deg, #fff, var(--diamond) 40%, #52aaff 65%, #e2feff);
+    box-shadow: 0 0 24px rgba(176, 247, 255, 0.7); }
+  .diamond .res-medal-name { color: var(--diamond); text-shadow: 0 0 14px var(--cyan); }
+  .rung.diamond.got { border-color: var(--diamond); color: var(--diamond); }
+
   /* ---- Short landscape screens (phones) ------------------------------------------------------ */
   @media (max-height: 500px), (orientation: portrait) and (pointer: coarse) {
     .screen { padding: 10px 24px; }
     #title { font-size: 30px; }
+    .menu-course { margin-top: 14px; }
+    .medal-targets { padding: 7px 10px; margin-bottom: 8px; }
+    .course-summary { padding: 8px 16px; }
+    #start.btn { min-height: 50px; }
     .card { margin-top: 8px; padding: 6px 28px 8px; }
     .card-code { font-size: 28px; }
-    .copy-code { min-height: 40px; }
+    .copy-code { min-height: 40px; font-size: 11px; }
     .difficulty-row { margin-top: 5px; } .difficulty-choice { min-height: 40px; }
     .card-best { margin-top: 4px; }
     .course-form { margin-top: 6px; } .course-input { min-height: 40px; padding: 6px 8px; } .course-form .btn { min-height: 40px; padding: 6px 10px; }
@@ -315,22 +359,32 @@
 <div id="overlay" class="screen">
   <button id="title-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div id="title">NEON FLIGHT</div>
-  <div class="card">
-    <div class="kicker">course</div>
-    <div class="code-row"><div class="card-code" id="card-code">----</div><button id="title-copy" class="copy-code" type="button" aria-label="Copy course code">copy</button></div>
+  <div class="menu-course">
+    <div class="medal-targets" id="medal-targets" aria-label="Medal target times"></div>
+    <div class="course-bar">
+      <button id="course-options" class="course-summary" type="button" aria-controls="course-dialog" aria-expanded="false"><span>course</span><strong id="card-code">----</strong><span class="summary-edit" aria-hidden="true">⌄</span></button>
+      <button id="difficulty-options" class="course-summary" type="button" aria-controls="course-dialog" aria-expanded="false"><span>difficulty</span><strong id="card-difficulty">medium</strong><span class="summary-edit" aria-hidden="true">⌄</span></button>
+    </div>
+  </div>
+  <div class="panel-buttons"><button id="shuffle" class="btn alt" disabled>new course</button><button id="start" class="btn primary" disabled>loading</button><button id="title-settings" class="btn" disabled>settings</button></div>
+  <div id="status"></div>
+</div>
+<div id="course-dialog" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="course-dialog-title">
+  <div class="course-sheet">
+    <div class="info-head"><h2 id="course-dialog-title">COURSE OPTIONS</h2><button id="course-done" class="btn primary" type="button">done</button></div>
+    <div class="code-row"><span id="course-code" class="card-code">----</span><button id="title-copy" class="copy-code" type="button" aria-label="Copy course code">copy</button></div>
     <div class="card-facts" id="card-facts"></div>
     <div class="difficulty-row" role="group" aria-label="Difficulty">
       <button class="difficulty-choice" type="button" data-difficulty="easy" aria-pressed="false" aria-label="Easy: open avenues, no side streets, regular rings" title="Open avenues, no side streets">easy</button>
       <button class="difficulty-choice" type="button" data-difficulty="medium" aria-pressed="true" aria-label="Medium: two or three wider side-street passages, regular rings" title="Two or three wider side streets, regular rings">medium</button>
       <button class="difficulty-choice" type="button" data-difficulty="hard" aria-pressed="false" aria-label="Hard: six to eight short narrow passages with frequent turns, tighter rings" title="Six to eight short narrow passages with frequent turns">hard</button>
-      <button class="difficulty-choice" type="button" data-difficulty="extreme" aria-pressed="false" aria-label="Extreme locked: earn Gold on Hard for this course" title="Earn Gold on Hard for this course to unlock Extreme" disabled>extreme</button>
+      <button class="difficulty-choice" type="button" data-difficulty="extreme" aria-pressed="false" aria-label="Extreme locked: earn Gold or Diamond on Hard for this course" title="Earn Gold or Diamond on Hard for this course to unlock Extreme" disabled>extreme</button>
     </div>
+    <p id="course-lock" class="course-lock"></p>
     <div class="card-best none" id="card-best"></div>
     <form id="course-form" class="course-form"><input id="course-input" class="course-input" aria-label="Course code" placeholder="CODE" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="course-load" class="btn" type="submit" disabled>load code</button></form>
     <div id="course-error" class="course-error" role="status"></div>
   </div>
-  <div class="panel-buttons"><button id="start" class="btn primary" disabled>loading</button><button id="shuffle" class="btn alt" disabled>new course</button><button id="title-settings" class="btn" disabled>settings</button></div>
-  <div id="status"></div>
 </div>
 <div id="pause" class="screen hidden">
   <button id="pause-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
@@ -369,11 +423,13 @@
       </ul>
       <p id="extreme-status" role="status"></p>
     </section>
-    <section class="info-section"><h3>Screen orientation</h3>
+    <section class="info-section orientation-info"><h3>Screen orientation</h3>
       <p>The game requests a fixed landscape side. If the browser rotates anyway, the game view turns back to the side used at Fly. Browser bars may still rotate.</p>
+      <p>To stop the screen rotating at all, turn on the phone's rotation lock, open the game in portrait and tap <b>play sideways</b>. The game then turns itself to the side you hold the phone.</p>
     </section>
     <section class="info-section"><h3>Courses and times</h3>
-      <p>Copy a course code or share the page URL to fly the same course and difficulty again. Your best time is saved in this browser. Medals use your flight time plus penalties. Earn Gold on Hard to unlock Extreme for that course.</p>
+      <p>Copy a course code or share the page URL to fly the same course and difficulty again. Your best time is saved in this browser. Medals use your flight time plus penalties. Earn Gold or Diamond on Hard to unlock Extreme for that course.</p>
+      <p><b>Diamond</b> matches the clean reference run with no extra time allowance. Keep every gate, cut corners where there is room and use clean dives to gain speed.</p>
     </section>
   </div>
 </div>
@@ -383,7 +439,12 @@
     <div class="set-groups"></div>
   </div>
 </div>
-<div id="rotate">rotate to landscape</div>
+<div id="rotate">
+  <div>rotate to landscape</div>
+  <p class="rotate-note">Rotation lock on? Hold the phone sideways and play with the screen locked: the game turns itself.</p>
+  <button id="rotate-sideways" class="btn primary" type="button">play sideways</button>
+  <div id="rotate-error" class="control-error" role="status"></div>
+</div>
 </div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
 <script id="audio-src" type="text/plain">var AUDIO = {};
@@ -3852,8 +3913,8 @@ const RETRY_LIFT = 15;    // each crash without passing a new gate respawns this
 const RETRY_LIFT_MAX = 60; // ... up to this: repeated mistakes can't trap a player at one checkpoint
 const LOW_ROUTE_GAP = 12;  // a tower hit this far below the intended line can be caused by a missed lift
 // Medals against the total of the course's proof run (the autopilot flight every course must pass),
-// so every medal is known to be reachable; gold leaves a player a little room against a perfect line.
-const MEDALS = [['gold', 1.05], ['silver', 1.2], ['bronze', 1.4]];
+// so every medal is reachable. Diamond has no allowance; Gold leaves a little room.
+const MEDALS = [['diamond', 1], ['gold', 1.05], ['silver', 1.2], ['bronze', 1.4]];
 
 function create(city, course) {
   return {
@@ -5093,11 +5154,11 @@ const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
 // Keep earned Extreme unlocks and Easy times. New inward buildings change Medium and Hard times;
-// Extreme's new geometry and 80-u/s pace change its times too.
+// Extreme's denser inward buildings need fresh times; its 80-u/s pace stays the same.
 const VERSION = 13;
 const EASY_VERSION = 12;
 const UNLOCK_VERSION = 12;
-const EXTREME_VERSION = 14;
+const EXTREME_VERSION = 15;
 const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
@@ -5690,7 +5751,7 @@ function addInwardBuildings(city, course, pts, streets, wallCells, difficulty) {
   const sample = course.sample, line = course.line;
   const profile = difficulty === 'medium' ? { radius: 50, offset: 6, max: 1, min: 1 }
     : difficulty === 'hard' ? { radius: 58, offset: 4.5, max: 2, min: 2 }
-      : { radius: 84, offset: 4.5, max: 7, min: 4 };
+      : { radius: 84, offset: 4.5, max: 14, min: 8 };
   const r = GAME.rng.stream(city.seed, `inward-buildings-${difficulty}-${course.attempt}`);
   const intrusions = [], used = new Set();
   const occupied = new Set(city.courseProps.map(p => p.cell));
@@ -6047,7 +6108,7 @@ const SCHEMA = {
   mouseSensitivity: { type: 'number', min: 0.3, max: 3, step: 0.05, default: 1, format: times, label: 'Mouse sensitivity', group: 'Controls', device: 'mouse' },
   mouseSmoothing: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.5, format: v => `${Math.round(v * 100)}%`, label: 'Mouse smoothing', group: 'Controls', device: 'mouse' },
   tiltSensitivity: { type: 'number', min: 0.5, max: 2, step: 0.05, default: 1, format: times, label: 'Tilt sensitivity', group: 'Controls', device: 'touch' },
-  forwardTilt: { type: 'number', min: 0, max: 80, step: 5, default: 45, format: v => `${v}° down`, label: 'Straight-ahead phone angle', group: 'Controls', device: 'touch' },
+  forwardTilt: { type: 'number', min: -180, max: 180, step: 1, default: 45, format: v => `${Math.abs(v)}° ${v < 0 ? 'up' : 'down'}`, label: 'Straight-ahead phone angle', note: 'Set automatically when you tap Fly in the menu. Kept through crashes, resume and retry.', group: 'Controls', device: 'touch' },
   invertY: { type: 'bool', default: false, label: 'Invert mouse/tilt pitch', group: 'Controls' },
   // Vertical, as the camera uses it: 68° is about 100° across a 16:9 screen, and past 90° (120°
   // across) the edges stretch more than they show.
@@ -8419,6 +8480,7 @@ function create(canvas) {
   let latest = null, listening = false;
   let lastTiltSampleAt = 0, sensorWait = null, orientationListenersAttached = false;
   let displayAngle = null;        // fixed Fly-side frame while a browser rotates the visual stage
+  let device = null;              // latest gravity in the device's own frame [x, y, z]
   let mode = 'keyboard';
 
   window.addEventListener('keydown', e => {
@@ -8434,10 +8496,13 @@ function create(canvas) {
     mode = 'mouse';
   });
 
-  // Gravity in screen coordinates (x right, y up, z out of the screen) from device orientation.
-  function gravityOnScreen(e) {
+  // Gravity in the device's own frame (x right, y up, z out of the screen held upright).
+  function deviceGravity(e) {
     const b = (e.beta || 0) * Math.PI / 180, g = (e.gamma || 0) * Math.PI / 180;
-    const dx = Math.cos(b) * Math.sin(g), dy = -Math.sin(b), dz = -Math.cos(b) * Math.cos(g);
+    return [Math.cos(b) * Math.sin(g), -Math.sin(b), -Math.cos(b) * Math.cos(g)];
+  }
+  // Gravity in screen coordinates (x right, y up, z out of the screen).
+  function gravityOnScreen([dx, dy, dz]) {
     const angle = (displayAngle ?? screen.orientation?.angle ?? window.orientation ?? 0) * Math.PI / 180;
     const c = Math.cos(angle), s = Math.sin(angle);
     return [dx * c - dy * s, dx * s + dy * c, dz];
@@ -8446,11 +8511,19 @@ function create(canvas) {
   // Pitch: rotation about the screen's horizontal axis; top edge away from you is negative (dive).
   const angles = gs => ({ roll: Math.asin(clamp(gs[0], -1, 1)), pitch: Math.atan2(gs[2], -gs[1]) });
 
+  // Capture in the game's landscape frame, before fullscreen or a permission prompt can move
+  // the phone. On the very first Fly, the first permitted sensor reading supplies the hold.
+  function forwardAngle() {
+    if (!device || performance.now() - lastTiltSampleAt >= TILT_SAMPLE_FRESH) return null;
+    return Math.round(-angles(gravityOnScreen(device)).pitch * 180 / Math.PI);
+  }
+
   function onOrientation(e) {
     // Some browsers dispatch an event before the sensor has supplied angles. Treating null as
     // zero would silently start a run with a stick that can never steer.
     if (!Number.isFinite(e.beta) || !Number.isFinite(e.gamma)) return;
-    latest = angles(gravityOnScreen(e));
+    device = deviceGravity(e);
+    latest = angles(gravityOnScreen(device));
     lastTiltSampleAt = performance.now();
     mode = 'tilt';
     if (sensorWait) {
@@ -8465,7 +8538,7 @@ function create(canvas) {
     if (typeof DeviceOrientationEvent === 'undefined') throw new Error('This browser has no motion sensors. Try another browser or device.');
     // Browsers only hand out motion sensors on HTTPS (or localhost); elsewhere the listener would
     // stay silent and the glider would fly straight.
-    if (!window.isSecureContext) throw new Error('Tilt steering needs the page over HTTPS. Open the published game address.');
+    if (!window.isSecureContext && location.protocol === 'http:') throw new Error('Tilt steering needs the page over HTTPS. Open the published game address.');
     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
       let answer;
       try { answer = await DeviceOrientationEvent.requestPermission(); }
@@ -8522,7 +8595,8 @@ function create(canvas) {
       const sens = settings.get('tiltSensitivity');
       // 0° is upright, 90° is flat with the screen facing up. The left/right level position is
       // always zero: a crash, pause or restart can never silently redefine a tilted hold.
-      const tiltRaw = { roll: latest.roll, pitch: latest.pitch + settings.get('forwardTilt') * Math.PI / 180 };
+      const pitch = latest.pitch + settings.get('forwardTilt') * Math.PI / 180;
+      const tiltRaw = { roll: latest.roll, pitch: Math.atan2(Math.sin(pitch), Math.cos(pitch)) };
       tilt = tilt ? { roll: tilt.roll + (tiltRaw.roll - tilt.roll) * a, pitch: tilt.pitch + (tiltRaw.pitch - tilt.pitch) * a } : { ...tiltRaw };
       tx2 = deadzone(tilt.roll, TILT_DEAD) / TILT_ROLL * sens;
       ty2 = deadzone(tilt.pitch, TILT_DEAD) / TILT_PITCH * sens * invert;
@@ -8533,7 +8607,21 @@ function create(canvas) {
   return {
     stick,
     enableTilt,
-    setDisplayAngle(angle) { displayAngle = angle; latest = null; tilt = null; },
+    setDisplayAngle(angle) { displayAngle = angle; latest = device ? angles(gravityOnScreen(device)) : null; tilt = null; },
+    forwardAngle,
+    calibrateForward(angle = forwardAngle()) {
+      if (angle === null) return;
+      settings.set('forwardTilt', angle);
+      tilt = null;
+    },
+    // The landscape side the phone is held in, as a screen angle (90: top edge to the left, 270:
+    // to the right), from gravity alone; null while it is held upright, flat or has no sensor.
+    landscapeSide() {
+      if (!device) return null;
+      const [dx, dy] = device;
+      if (Math.abs(dx) < 0.4 || Math.abs(dx) < 1.5 * Math.abs(dy)) return null;
+      return dx < 0 ? 90 : 270;
+    },
     get mode() { return mode; },
     get aim() { return mouse.aim; },
     get invertY() { return settings.get('invertY'); },
@@ -8763,8 +8851,17 @@ function placeArrow(node, n, band, hud) {
 // The course card on the title screen. c: { code, difficulty, gates, medals, best, bestMedal }
 function showTitle(panel, c) {
   panel.querySelector('#card-code').textContent = c.code;
-  panel.querySelector('#card-facts').textContent = `${c.gates} gates · ${c.medals[0].name} ${fmtTime(c.medals[0].time)}`;
-  const best = panel.querySelector('#card-best');
+  panel.querySelector('#card-difficulty').textContent = c.difficulty;
+  const targets = panel.querySelector('#medal-targets');
+  targets.textContent = '';
+  for (const m of c.medals) {
+    const item = el('div', `medal-target ${m.name}`, targets);
+    el('span', '', item, m.name);
+    el('strong', '', item, fmtTime(m.time));
+  }
+  document.querySelector('#course-code').textContent = c.code;
+  document.querySelector('#card-facts').textContent = `${c.gates} gates`;
+  const best = document.querySelector('#card-best');
   best.textContent = c.best === null ? 'no time yet' : `your best ${fmtTime(c.best)}${c.bestMedal ? ` · ${c.bestMedal}` : ''}`;
   best.className = `card-best ${c.best === null ? 'none' : c.bestMedal || ''}`;
   panel.classList.remove('hidden');
@@ -8849,6 +8946,7 @@ function sliderRow(parent, key, s) {
   const slider = el('input', 'set-slider', row);
   Object.assign(slider, { type: 'range', min: s.min, max: s.max, step: s.step });
   const readout = el('output', 'set-value', row);
+  if (s.note) el('span', 'set-help', row, s.note);
   const decimals = decimalsOf(s.step);
   // Rounded to the step: the slider's float arithmetic would store 0.35000000000000003.
   slider.addEventListener('input', () => GAME.settings.set(key, Number(slider.valueAsNumber.toFixed(decimals))));
@@ -9054,7 +9152,10 @@ const $ = id => document.getElementById(id);
 const stage = $('game-stage');
 const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), infoScreen = $('info'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
+const courseDialog = $('course-dialog');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
+// Running inside the native app wrapper (app/, Capacitor), which locks the orientation natively.
+document.body.classList.toggle('native-app', !!window.Capacitor?.isNativePlatform?.());
 
 const api = window.__game = { ready: false, errors: [], frames: 0 };
 
@@ -9257,12 +9358,13 @@ function showResults() {
   if (document.pointerLockElement) document.exitPointerLock();
   const total = GAME.run.total(run), best = readBest(seedCode), medals = medalLadder(course);
   const medal = medalFor(total, medals);
-  const firstExtremeUnlock = difficulty === 'hard' && medal === 'gold' && !extremeUnlocked(seedCode);
-  if (difficulty === 'hard' && medal === 'gold') grantExtreme(seedCode);
+  const unlockMedal = medal === 'gold' || medal === 'diamond';
+  const firstExtremeUnlock = difficulty === 'hard' && unlockMedal && !extremeUnlocked(seedCode);
+  if (difficulty === 'hard' && unlockMedal) grantExtreme(seedCode);
   console.log(`[game] finished ${seedCode}: ${total.toFixed(2)} s (flight ${run.time.toFixed(2)}, penalty ${run.penalty}, missed ${run.missed}, crashes ${run.crashes}), ${medal || 'no medal'}`);
   resetCopy($('results-copy'));
   GAME.hud.showResults(results, { time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, medals, medal, best, code: seedCode, difficulty });
-  $('extreme-result').textContent = difficulty === 'hard' && medal === 'gold'
+  $('extreme-result').textContent = difficulty === 'hard' && unlockMedal
     ? `${firstExtremeUnlock ? 'Extreme unlocked' : 'Extreme available'} for course ${seedCode} · select it from the menu` : '';
   if (best === null || total < best) writeBest(seedCode, total);
 }
@@ -9325,7 +9427,8 @@ function loop(now) {
   lastNow = now;
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
-  if (TOUCH && runScreenAngle !== null) steadyLandscapeView();
+  if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
+  if (TOUCH && viewAngle() !== null) steadyLandscapeView();
   if (mode !== 'paused') update(dt * timeScale);
   resolution.fitCanvas();
   const [w, h] = resolution.renderSize();
@@ -9342,7 +9445,26 @@ function loop(now) {
 
 // ---- Screens and controls ---------------------------------------------------------------------
 const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause';
-const CONTROLS_TOUCH = '<b>Hold the phone level</b> to fly straight · roll it like a steering wheel to turn · tilt the top away to dive · <b>II</b> pause. Set your straight-ahead angle in <b>Settings</b>.';
+const CONTROLS_TOUCH = '<b>Hold the phone comfortably and tap Fly</b> in the menu to set your straight-ahead angle. Keep the sides level; roll like a steering wheel to turn and tilt the top away to dive · <b>II</b> pause. Your saved angle is shown in <b>Settings</b> and stays fixed through crashes, resume and retry.';
+
+let courseReturnFocus = null;
+function openCourseOptions(button) {
+  courseReturnFocus = button;
+  overlay.inert = true;
+  button.setAttribute('aria-expanded', 'true');
+  courseDialog.classList.remove('hidden');
+  const focus = button.id === 'difficulty-options'
+    ? courseDialog.querySelector('[data-difficulty][aria-pressed="true"]') : $('course-done');
+  focus.focus();
+}
+function closeCourseOptions(restoreFocus = true) {
+  if (courseDialog.classList.contains('hidden')) return;
+  courseDialog.classList.add('hidden');
+  overlay.inert = false;
+  courseReturnFocus?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) courseReturnFocus?.focus();
+  courseReturnFocus = null;
+}
 
 let infoReturnFocus = null, infoOrigin = null;
 function refreshInfo() {
@@ -9369,6 +9491,7 @@ function closeInfo(restoreFocus = true) {
 
 function hideScreens() {
   closeInfo(false);
+  closeCourseOptions(false);
   for (const s of [overlay, pausePanel, results]) s.classList.add('hidden');
 }
 
@@ -9401,14 +9524,15 @@ function showTitle() {
     button.setAttribute('aria-pressed', String(button.dataset.difficulty === difficulty));
     if (button.dataset.difficulty === 'extreme') {
       button.disabled = !unlocked;
-      button.title = unlocked ? 'Extreme unlocked for this course' : 'Earn Gold on Hard for this course to unlock Extreme';
-      button.setAttribute('aria-label', unlocked ? 'Extreme: unlocked for this course' : 'Extreme locked: earn Gold on Hard for this course');
+      button.title = unlocked ? 'Extreme unlocked for this course' : 'Earn Gold or Diamond on Hard for this course to unlock Extreme';
+      button.setAttribute('aria-label', unlocked ? 'Extreme: unlocked for this course' : 'Extreme locked: earn Gold or Diamond on Hard for this course');
     }
   }
   $('extreme-status').textContent = unlocked ? `Extreme unlocked for course ${seedCode}`
-    : requestedLockedExtreme ? `Extreme is locked for course ${seedCode} · earn Gold on Hard to unlock it`
-      : 'Earn Gold on Hard to unlock Extreme for this course';
+    : requestedLockedExtreme ? `Extreme is locked for course ${seedCode} · earn Gold or Diamond on Hard to unlock it`
+      : 'Earn Gold or Diamond on Hard to unlock Extreme for this course';
   $('extreme-status').classList.toggle('unlocked', unlocked);
+  $('course-lock').textContent = $('extreme-status').textContent;
   $('course-input').value = '';
   $('course-error').textContent = '';
 }
@@ -9483,6 +9607,7 @@ function loadEnteredCourse() {
   }
   loadCourse(seed);
   showTitle();
+  closeCourseOptions();
 }
 
 // Pointer lock on desktops, motion sensors on phones. Resolves false when the browser refuses the
@@ -9498,6 +9623,11 @@ async function takeControls() {
 // Fly; the broad "landscape" lock still permits a 180-degree flip while steering. Installed web
 // apps may allow orientation lock even when the Fullscreen API is unavailable.
 let runLandscapeSide = null, runScreenAngle = null, orientationLockPending = false, orientationLockQueued = false;
+// Sideways play, for a browser held in portrait by the phone's rotation lock: the landscape side
+// (90 or 270) the stage turns to. Off (null) until the player asks for it on the rotate notice.
+let sidewaysAngle = null;
+// The landscape angle the stage is drawn for: the Fly side during a run, else the sideways side.
+const viewAngle = () => runScreenAngle ?? sidewaysAngle;
 let seenScreenAngle = null, seenWindowAngle = null, lastReportedAngle = null;
 let stageAngle = null, stageWidth = -1, stageHeight = -1, stageViewportWidth = -1, stageViewportHeight = -1;
 const normalAngle = raw => {
@@ -9521,9 +9651,9 @@ function currentScreenAngle() {
   // A browser can publish the angle before the viewport, or resize the viewport before either
   // angle. The visible viewport decides when a quarter turn is needed, avoiding a wrong-sized
   // frame in both orders. A same-aspect 180° flip still follows the reported angle immediately.
-  const phoneAngle = runScreenAngle === null
+  const phoneAngle = viewAngle() === null
     ? [screenAngle, windowAngle].some(a => a === 90 || a === 270)
-    : runScreenAngle === 90 || runScreenAngle === 270;
+    : viewAngle() === 90 || viewAngle() === 270;
   if (phoneAngle && innerWidth !== innerHeight) {
     const portrait = innerHeight > innerWidth;
     if ((angle % 180 === 0) !== portrait) {
@@ -9531,7 +9661,7 @@ function currentScreenAngle() {
       angle = matching.includes(lastReportedAngle) ? lastReportedAngle : matching[0]
         ?? (portrait ? (screen.orientation?.type === 'portrait-secondary' ? 180 : 0)
           : screen.orientation?.type === 'landscape-secondary' ? 270
-            : screen.orientation?.type === 'landscape-primary' ? 90 : runScreenAngle ?? 90);
+            : screen.orientation?.type === 'landscape-primary' ? 90 : viewAngle() ?? 90);
     }
   }
   lastReportedAngle = angle;
@@ -9546,7 +9676,7 @@ function currentLandscapeSide() {
   return 'landscape-primary';
 }
 function steadyLandscapeView() {
-  if (!TOUCH || runScreenAngle === null) {
+  if (!TOUCH || viewAngle() === null) {
     if (!stage.style.width && !stage.style.height && !stage.style.transform
       && !stage.classList.contains('counter-rotated')) return;
     stage.style.width = stage.style.height = stage.style.transform = '';
@@ -9555,7 +9685,7 @@ function steadyLandscapeView() {
     hud?.relayout();
     return;
   }
-  const turn = (runScreenAngle - currentScreenAngle() + 360) % 360;
+  const turn = (viewAngle() - currentScreenAngle() + 360) % 360;
   const w = innerWidth, h = innerHeight;
   const vw = window.visualViewport?.width ?? w, vh = window.visualViewport?.height ?? h;
   const portraitSecondary = lastReportedAngle === 180;
@@ -9578,11 +9708,35 @@ function unlockLandscape() {
   try { Promise.resolve(screen.orientation.unlock()).catch(() => {}); }
   catch { /* The browser may already have released it. */ }
 }
+function markViewAngle() {
+  stage.classList.toggle('fly-angle-90', viewAngle() === 90);
+  stage.classList.toggle('fly-angle-270', viewAngle() === 270);
+}
+// On the title, sideways play follows the side the phone is turned to; a run keeps its Fly side.
+function followSidewaysHold() {
+  const side = input.landscapeSide();
+  if (side === null || side === sidewaysAngle) return;
+  sidewaysAngle = side;
+  markViewAngle();
+}
+// The rotate notice's button. Rotation lock keeps an iPhone's browser in portrait, so the game
+// turns itself instead; the motion sensor tells which side is down, and this tap allows it.
+async function playSideways() {
+  const error = $('rotate-error');
+  error.textContent = '';
+  try { await input.enableTilt(); }
+  catch (err) { error.textContent = err.message.replace(/tap Play again/g, 'tap the button again'); return; }
+  sidewaysAngle = input.landscapeSide() ?? 90;
+  document.body.classList.add('sideways');
+  markViewAngle();
+  steadyLandscapeView();
+}
 function releaseLandscape() {
   runLandscapeSide = null;
   runScreenAngle = null;
   orientationLockQueued = false;
-  stage.classList.remove('fly-angle-90', 'fly-angle-270', 'portrait-secondary');
+  stage.classList.remove('portrait-secondary');
+  markViewAngle();
   input?.setDisplayAngle(null);
   steadyLandscapeView();
   unlockLandscape();
@@ -9613,21 +9767,27 @@ function enterFullscreen() {
   catch { lockLandscape(); }
 }
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
-const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'hold level to fly straight · set forward angle in settings' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
+const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
 
 // A fresh run of the current course, after a countdown.
-async function fly() {
+async function fly({ calibrate = false } = {}) {
   let locked;
   try {
     runLandscapeSide = currentLandscapeSide();
     runScreenAngle = currentScreenAngle();
-    stage.classList.toggle('fly-angle-90', runScreenAngle === 90);
-    stage.classList.toggle('fly-angle-270', runScreenAngle === 270);
+    // Sideways play with the browser still portrait: fly on the side the phone is held.
+    if (sidewaysAngle !== null && runScreenAngle % 180 === 0) {
+      runScreenAngle = sidewaysAngle;
+      runLandscapeSide = sidewaysAngle === 270 ? 'landscape-secondary' : 'landscape-primary';
+    }
+    markViewAngle();
     input.setDisplayAngle(runScreenAngle);
+    const forward = TOUCH && calibrate ? input.forwardAngle() : null;
     steadyLandscapeView();
     const controls = takeControls();
     enterFullscreen();
     locked = await controls;
+    if (TOUCH && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
   }
   catch (err) { releaseLandscape(); showControlFailure(err); return; }
   clearControlFailure();
@@ -9701,6 +9861,16 @@ document.addEventListener('fullscreenchange', () => {
   else if (TOUCH && ['countdown', 'playing', 'crashed'].includes(mode)) pause();
 });
 window.addEventListener('keydown', e => {
+  if (!courseDialog.classList.contains('hidden')) {
+    if (e.code === 'Escape') { e.preventDefault(); closeCourseOptions(); }
+    else if (e.key === 'Tab') {
+      const items = [...courseDialog.querySelectorAll('button:not(:disabled), input')];
+      const first = items[0], last = items.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    return;
+  }
   if (e.code === 'KeyI') { input.toggleInvert(); if (!infoScreen.classList.contains('hidden')) refreshInfo(); }
   if (!infoScreen.classList.contains('hidden') && e.key === 'Tab') { e.preventDefault(); $('info-done').focus(); }
   if (e.code === 'Escape' && !infoScreen.classList.contains('hidden')) { e.preventDefault(); closeInfo(); return; }
@@ -9717,7 +9887,10 @@ window.addEventListener('keydown', e => {
 });
 const IN_RUN = new Set(['countdown', 'playing', 'crashed']);
 canvas.addEventListener('click', () => { if (!TOUCH && !AUTOPILOT && IN_RUN.has(mode) && !document.pointerLockElement) input.lockPointer(); });
-startBtn.addEventListener('click', action(fly));
+startBtn.addEventListener('click', action(() => fly({ calibrate: true })));
+for (const id of ['course-options', 'difficulty-options']) $(id).addEventListener('click', () => openCourseOptions($(id)));
+$('course-done').addEventListener('click', () => closeCourseOptions());
+courseDialog.addEventListener('click', e => { if (e.target === courseDialog) closeCourseOptions(); });
 shuffleBtn.addEventListener('click', action(() => { loadCourse(GAME.rng.randomSeed()); showTitle(); }));
 for (const button of document.querySelectorAll('[data-difficulty]')) button.addEventListener('click', action(() => {
   if (button.dataset.difficulty === difficulty || button.disabled) return;
@@ -9742,6 +9915,7 @@ $('info-done').addEventListener('click', () => closeInfo());
 infoScreen.addEventListener('click', e => { if (e.target === infoScreen) closeInfo(); });
 $('title-settings').addEventListener('click', action(() => openSettings(overlay, showTitle)));
 $('pause-settings').addEventListener('click', action(() => openSettings(pausePanel, showPause)));
+$('rotate-sideways').addEventListener('click', action(playSideways));
 
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
