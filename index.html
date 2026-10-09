@@ -8490,8 +8490,8 @@ GAME.guide = { create, frame, onGate, jumpTo };
 'use strict';
 // ---- src/game/input.js ----
 // Player input from any mix of devices, reduced to one stick: { x: -1..1 (right +), y: -1..1 (up +) }.
-//  - Mouse (pointer lock): moves an aim point in the world; the glider turns toward it (see
-//    mouseSteering).
+//  - Mouse (pointer lock): holds a steering position; sideways deflection keeps turning until
+//    the player moves it back to centre (see mouseSteering).
 //  - Keyboard (WASD / arrows): a stick that springs back when released.
 //  - Tilt (phones): the level phone points straight ahead at the chosen angle below upright.
 //  - Touch stick (optional on phones): hold and drag a thumb control; release returns to centre.
@@ -8502,20 +8502,18 @@ const settings = GAME.settings;
 
 // Mouse steering (see mouseSteering). tools/mouse-feel.mjs flies these numbers through the flight
 // model and prints how the glider answers a hand movement at each smoothing setting.
-// Aim turned per pixel of mouse movement at sensitivity 1×: about what the pointer covers on a
+// Reticle deflection per pixel of mouse movement at sensitivity 1×: about what the pointer covers on a
 // laptop view (900 px tall at the default fov). Fixed, so the fov and the window size never change
 // how far a hand movement steers.
 const MOUSE_RAD_PER_PX = 0.0015;
-const MAX_LEAD = 0.55;             // rad the aim may lead the heading: keeps the reticle on screen at any fov
+const MAX_LEAD = 0.55;             // rad of sideways deflection for a full turn; keeps the reticle visible
+const MOUSE_CENTRE = 0.01;         // rad: a small neutral area makes straight flight easy to hold
 // The follow's stiffness (1/s) at smoothing 0 and 1, blended geometrically so every step of the
-// slider changes the feel by the same ratio: a small move is 90% flown after 3.9 / stiffness s. The
-// soft end must stay above 2 * TURN_RATE / MAX_LEAD (4.5), or a held turn falls short of the
-// glider's full turn rate, which the courses' corners need.
+// slider changes the feel by the same ratio: a small move reaches 90% after 3.9 / stiffness s.
 const FOLLOW_STIFFNESS = [16, 5];
 // Pitch has no bank to jolt, and the flight path angle decides whether you make a ring's height:
 // it follows this much stiffer (as quick as before the springs).
 const PITCH_STIFFER = 2;
-const YAW_GAIN = 4;                // stick per rad the heading trails the follow (it takes up what the rate misses)
 const KEY_RATE = 7;          // 1/s: how fast the keyboard stick moves toward its target
 const TILT_ROLL = 28 * Math.PI / 180;    // tilt for a full turn
 const TILT_PITCH = 20 * Math.PI / 180;   // tilt for a full climb or dive
@@ -8538,36 +8536,34 @@ function springStep(p, target, stiffness, maxRate, dt) {
   p.x += p.v * dt;
 }
 
-// Mouse movement as an aim point (world yaw and pitch) that leads the heading; the reticle shows it.
-// The glider flies the follow, a smoothed copy of the aim (springStep, one per axis): it takes out
-// hand tremor and the per-frame steps of coalesced mouse events, and eases every turn in and out.
-// The yaw stick is the follow's own turn rate plus a correction toward it, so the heading moves
-// exactly as the follow does; the pitch stick is the follow's flight path angle.
+// Horizontal mouse movement accumulates a position relative to the glider, not a world heading.
+// Holding that position keeps the same turn rate even when no more mouse events arrive. Smooth
+// the position so turns ease in/out; pitch still selects a climb/dive angle. The displayed aim
+// travels with the heading, keeping the reticle to the side while the player holds a turn.
 function mouseSteering() {
-  let aim = null, follow = null, dx = 0, dy = 0;
+  let aim = null, follow = null, sideways = 0, dx = 0, dy = 0;
   return {
     move(x, y) { dx += x; dy += y; },
-    reset() { aim = follow = null; dx = dy = 0; },
+    reset() { aim = follow = null; sideways = dx = dy = 0; },
     get aim() { return aim; },
-    // The turn keys turn the glider under the aim: the aim turns with it, or it would pull back.
-    turnBy(angle) { if (aim) { aim.yaw += angle; follow.yaw.x += angle; } },
     // s: flight state; invert: -1 flips pitch.
     stick(s, dt, invert) {
       const perPx = MOUSE_RAD_PER_PX * settings.get('mouseSensitivity');
       if (!aim) {
         aim = { yaw: s.yaw, pitch: s.gamma };
-        follow = { yaw: { x: s.yaw, v: 0 }, pitch: { x: s.gamma, v: 0 } };
+        follow = { yaw: { x: 0, v: 0 }, pitch: { x: s.gamma, v: 0 } };
       }
-      aim.yaw = s.yaw + clamp(aim.yaw - dx * perPx - s.yaw, -MAX_LEAD, MAX_LEAD);
+      sideways = clamp(sideways - dx * perPx, -MAX_LEAD, MAX_LEAD);
+      aim.yaw = s.yaw + sideways;
       aim.pitch = clamp(aim.pitch - dy * perPx * invert, -FLIGHT.DIVE_ANGLE, FLIGHT.CLIMB_ANGLE);
       dx = dy = 0;
       const [stiff, soft] = FOLLOW_STIFFNESS;
       const stiffness = stiff * (soft / stiff) ** settings.get('mouseSmoothing');
-      springStep(follow.yaw, aim.yaw, stiffness, FLIGHT.TURN_RATE, dt);
+      springStep(follow.yaw, sideways, stiffness, FLIGHT.TURN_RATE, dt);
       springStep(follow.pitch, aim.pitch, stiffness * PITCH_STIFFER, FLIGHT.PITCH_RATE, dt);
       const p = follow.pitch.x;
       return {
-        x: clamp(-follow.yaw.v / FLIGHT.TURN_RATE + (s.yaw - follow.yaw.x) * YAW_GAIN, -1, 1),
+        x: clamp(-deadzone(follow.yaw.x, MOUSE_CENTRE) / (MAX_LEAD - MOUSE_CENTRE), -1, 1),
         y: p >= 0 ? p / FLIGHT.CLIMB_ANGLE : p / FLIGHT.DIVE_ANGLE,
       };
     },
@@ -8688,7 +8684,6 @@ function create(canvas) {
 
     let m = { x: 0, y: 0 };
     if (document.pointerLockElement === canvas) {
-      mouse.turnBy(-key.x * FLIGHT.TURN_RATE * dt);
       m = mouse.stick(s, dt, invert);
     } else mouse.reset();
 
@@ -9746,7 +9741,7 @@ function loop(now) {
 }
 
 // ---- Screens and controls ---------------------------------------------------------------------
-const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause';
+const CONTROLS_DESKTOP = '<b>Mouse</b> steer: keep the reticle to either side to keep turning; bring it back to centre to fly straight · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause';
 const CONTROLS_TOUCH = '<b>Hold the phone comfortably and tap Fly</b> in the menu to set your straight-ahead angle. Keep the sides level; roll like a steering wheel to turn and tilt the top away to dive · <b>II</b> pause. Your saved angle is shown in <b>Settings</b> and stays fixed through crashes, resume and retry.';
 const CONTROLS_STICK = '<b>Hold and drag the steering button</b> in the lower-left corner. Drag left/right to turn and up/down to climb or dive. Release to centre · <b>II</b> pause. Choose <b>Tilt</b> in Settings → Mobile steering to use the phone’s movement again.';
 
@@ -10074,7 +10069,7 @@ function enterFullscreen() {
 }
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
 const playHint = () => AUTOPILOT ? 'autopilot' : usesTouchStick() ? 'hold & drag to steer · release to centre'
-  : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
+  : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to steer · centre to fly straight · W/S pitch · A/D turn';
 
 // A fresh run of the current course, after a countdown.
 async function fly({ calibrate = false, seed = null } = {}) {
