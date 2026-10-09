@@ -161,6 +161,7 @@
   .set-group { margin-top: 16px; }
   .set-group-title { margin: 0 0 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.4em; color: var(--cyan); text-transform: uppercase; }
   .set-row { display: grid; grid-template-columns: 1fr 150px 52px; align-items: center; gap: 12px; min-height: 40px; font-size: 13px; }
+  .set-row[hidden] { display: none; }
   .set-row.bool { grid-template-columns: 1fr auto; cursor: pointer; }
   .set-row.choice { grid-template-columns: 1fr auto; gap: 6px; padding: 4px 0 6px; }
   .set-row.choice .set-options { grid-column: 1 / -1; }
@@ -225,6 +226,17 @@
     border: 1px solid rgba(255, 255, 255, 0.45); border-radius: 50%; background: rgba(0, 0, 10, 0.35); color: #fff; font: 600 13px/1 system-ui, sans-serif; letter-spacing: 0.05em; }
   .hud.touch .hud-pause { display: block; }
   .hud.touch .hud-tag { display: none; }
+
+  .touch-stick { position: absolute; z-index: 2; left: calc(24px + var(--safe-l)); bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    width: 128px; height: 128px; padding: 0; border: 1px solid rgba(95, 227, 255, 0.5); border-radius: 50%;
+    background: radial-gradient(circle, rgba(95, 227, 255, 0.1) 35%, rgba(4, 8, 22, 0.35) 36%);
+    color: var(--cyan); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .touch-stick[hidden] { display: none; }
+  .touch-stick[aria-pressed="true"] { border-color: var(--cyan); background-color: rgba(4, 8, 22, 0.2); }
+  .touch-stick-thumb { position: absolute; left: 39px; top: 39px; width: 48px; height: 48px; box-sizing: border-box;
+    border: 2px solid var(--cyan); border-radius: 50%; background: rgba(95, 227, 255, 0.28); box-shadow: 0 0 16px rgba(95, 227, 255, 0.3); pointer-events: none; }
+  .touch-stick-label { position: absolute; left: 0; right: 0; bottom: 9px; font: 500 11px/1 system-ui;
+    letter-spacing: 0.18em; text-transform: uppercase; pointer-events: none; }
 
   .hud-alt, .hud-spd { position: absolute; bottom: 22px; }
   .hud-alt { left: calc(40px + var(--safe-l)); text-align: left; }
@@ -6191,12 +6203,14 @@ const percent = v => `${Math.round(v * 100)}%`;
 // type: 'number' (min/max/step, format for the readout), 'bool' or 'choice' (options:
 // [[id, label], ...]; filled in for themes once the theme catalogue has loaded).
 // device: 'mouse' or 'touch' for settings of one kind of control only; absent for all devices.
+// when: [setting, value] shows a row only when that control choice is selected.
 const SCHEMA = {
   mouseSensitivity: { type: 'number', min: 0.3, max: 3, step: 0.05, default: 1, format: times, label: 'Mouse sensitivity', group: 'Controls', device: 'mouse' },
   mouseSmoothing: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.5, format: v => `${Math.round(v * 100)}%`, label: 'Mouse smoothing', group: 'Controls', device: 'mouse' },
-  tiltSensitivity: { type: 'number', min: 0.5, max: 2, step: 0.05, default: 1, format: times, label: 'Tilt sensitivity', group: 'Controls', device: 'touch' },
-  forwardTilt: { type: 'number', min: -180, max: 180, step: 1, default: 45, format: v => `${Math.abs(v)}° ${v < 0 ? 'up' : 'down'}`, label: 'Straight-ahead phone angle', note: 'Set automatically when you tap Fly in the menu. Kept through crashes, resume and retry.', group: 'Controls', device: 'touch' },
-  invertY: { type: 'bool', default: false, label: 'Invert mouse/tilt pitch', group: 'Controls' },
+  mobileSteering: { type: 'choice', default: 'tilt', label: 'Mobile steering', note: 'Tilt is the default. Touch stick: hold and drag to steer; release to centre.', group: 'Controls', device: 'touch', options: [['tilt', 'Tilt'], ['stick', 'Touch stick']] },
+  tiltSensitivity: { type: 'number', min: 0.5, max: 2, step: 0.05, default: 1, format: times, label: 'Tilt sensitivity', group: 'Controls', device: 'touch', when: ['mobileSteering', 'tilt'] },
+  forwardTilt: { type: 'number', min: -180, max: 180, step: 1, default: 45, format: v => `${Math.abs(v)}° ${v < 0 ? 'up' : 'down'}`, label: 'Straight-ahead phone angle', note: 'Set automatically when you tap Fly in the menu. Kept through crashes, resume and retry.', group: 'Controls', device: 'touch', when: ['mobileSteering', 'tilt'] },
+  invertY: { type: 'bool', default: false, label: 'Invert steering pitch', group: 'Controls' },
   // Vertical, as the camera uses it: 68° is about 100° across a 16:9 screen, and past 90° (120°
   // across) the edges stretch more than they show.
   fov: { type: 'number', min: 55, max: 90, step: 1, default: 68, format: v => `${v}°`, label: 'Vertical field of view', group: 'Camera' },
@@ -8480,6 +8494,7 @@ GAME.guide = { create, frame, onGate, jumpTo };
 //    mouseSteering).
 //  - Keyboard (WASD / arrows): a stick that springs back when released.
 //  - Tilt (phones): the level phone points straight ahead at the chosen angle below upright.
+//  - Touch stick (optional on phones): hold and drag a thumb control; release returns to centre.
 // Sensitivities, smoothing and pitch inversion come from GAME.settings.
 
 const { FLIGHT } = GAME.flight;
@@ -8563,6 +8578,7 @@ function create(canvas) {
   const keys = new Set();
   const mouse = mouseSteering();
   let key = { x: 0, y: 0 };
+  let touch = { x: 0, y: 0 };
   let tilt = null;                // smoothed { roll, pitch } relative to the chosen forward hold
   let latest = null, listening = false;
   let lastTiltSampleAt = 0, sensorWait = null, orientationListenersAttached = false;
@@ -8612,7 +8628,7 @@ function create(canvas) {
     device = deviceGravity(e);
     latest = angles(gravityOnScreen(device));
     lastTiltSampleAt = performance.now();
-    mode = 'tilt';
+    if (settings.get('mobileSteering') !== 'stick') mode = 'tilt';
     if (sensorWait) {
       clearTimeout(sensorWait.timer);
       sensorWait.resolve();
@@ -8677,7 +8693,8 @@ function create(canvas) {
     } else mouse.reset();
 
     let tx2 = 0, ty2 = 0;
-    if (latest) {
+    const useTouchStick = settings.get('mobileSteering') === 'stick';
+    if (latest && !useTouchStick) {
       const a = Math.min(1, dt / TILT_SMOOTH);
       const sens = settings.get('tiltSensitivity');
       // 0° is upright, 90° is flat with the screen facing up. The left/right level position is
@@ -8688,12 +8705,17 @@ function create(canvas) {
       tx2 = deadzone(tilt.roll, TILT_DEAD) / TILT_ROLL * sens;
       ty2 = deadzone(tilt.pitch, TILT_DEAD) / TILT_PITCH * sens * invert;
     }
-    return { x: clamp(key.x + m.x + tx2, -1, 1), y: clamp(key.y + m.y + ty2, -1, 1) };
+    return { x: clamp(key.x + m.x + (useTouchStick ? touch.x : tx2), -1, 1),
+      y: clamp(key.y + m.y + (useTouchStick ? touch.y * invert : ty2), -1, 1) };
   }
 
   return {
     stick,
     enableTilt,
+    setTouchStick(x, y) {
+      touch = { x: clamp(x, -1, 1), y: clamp(y, -1, 1) };
+      if (settings.get('mobileSteering') === 'stick') mode = 'touch';
+    },
     setDisplayAngle(angle) { displayAngle = angle; latest = device ? angles(gravityOnScreen(device)) : null; tilt = null; },
     forwardAngle,
     calibrateForward(angle = forwardAngle()) {
@@ -8716,7 +8738,7 @@ function create(canvas) {
     toggleInvert() { settings.set('invertY', !settings.get('invertY')); },
     // At each countdown, remove old mouse/key and sensor smoothing without changing what
     // physical phone position means straight ahead.
-    reset() { mouse.reset(); key = { x: 0, y: 0 }; tilt = null; },
+    reset() { mouse.reset(); key = { x: 0, y: 0 }; touch = { x: 0, y: 0 }; tilt = null; },
     // Resolves false when the browser refuses pointer lock; keyboard steering still works then.
     async lockPointer() {
       try { await canvas.requestPointerLock(); return true; } catch (e) {
@@ -8798,6 +8820,7 @@ function freeBand(hud, zoom) {
   const top = rects(TOP_PARTS), bottom = rects(BOTTOM_PARTS), all = [...top, ...bottom];
   const pad = (ARROW.len / 2 + ARROW.gap) * zoom;
   return {
+    pad,
     left: Math.min(...all.map(r => r.left)) + pad, right: Math.max(...all.map(r => r.right)) - pad,
     top: Math.max(...top.map(r => r.bottom)) + pad, bottom: Math.min(...bottom.map(r => r.top)) - pad,
   };
@@ -8923,9 +8946,13 @@ function placeArrow(node, n, band, hud) {
   const W = hud.parentElement.clientWidth, H = hud.parentElement.clientHeight;
   const dx = n.behind ? (n.x < 0 ? -1 : 1) : n.x * W / 2;
   const dy = n.behind ? 0 : -n.y * H / 2;
+  // Leave the thumb control clear even while the next gate is off to the left. Its offsets
+  // are already in the stage's landscape frame, including when that stage is counter-rotated.
+  const stick = hud.parentElement.querySelector('.touch-stick:not([hidden])');
+  const left = stick ? Math.max(band.left, stick.offsetLeft + stick.offsetWidth + band.pad) : band.left;
   // From the screen centre along that direction, to the edge of the band.
   const reach = (d, lo, hi, c) => (d > 0 ? (hi - c) / d : d < 0 ? (lo - c) / d : Infinity);
-  const t = Math.max(0, Math.min(reach(dx, band.left, band.right, W / 2), reach(dy, band.top, band.bottom, H / 2)));
+  const t = Math.max(0, Math.min(reach(dx, left, band.right, W / 2), reach(dy, band.top, band.bottom, H / 2)));
   node.style.left = `${(W / 2 + dx * t) / W * 100}%`;
   node.style.top = `${(H / 2 + dy * t) / H * 100}%`;
   node.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(dy, dx)}rad)`;
@@ -9061,6 +9088,7 @@ function choiceRow(parent, key, s) {
   el('span', 'set-note', row);
   const list = el('div', 'set-options', row);
   list.setAttribute('role', 'radiogroup');
+  list.setAttribute('aria-label', s.label);
   list.style.gridTemplateColumns = `repeat(${s.options.length <= 4 ? s.options.length : 3}, 1fr)`;
   const buttons = s.options.map(([id, label]) => {
     const b = el('button', 'set-option', list, label);
@@ -9069,6 +9097,7 @@ function choiceRow(parent, key, s) {
     b.addEventListener('click', () => GAME.settings.set(key, id));
     return b;
   });
+  if (s.note) el('span', 'set-help', row, s.note);
   return v => buttons.forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === v)));
 }
 
@@ -9096,7 +9125,17 @@ function createSettingsPanel(panel, device) {
     if (!n) throw new Error(`the ${key} row has no note`);
     if (n.textContent !== text) n.textContent = text;
   }
-  settings.onChange((key, v) => { if (rows.has(key)) rows.get(key)(v); });
+  function updateVisibility() {
+    for (const key of rows.keys()) {
+      const when = settings.SCHEMA[key].when;
+      if (when) body.querySelector(`[data-setting="${key}"]`).hidden = settings.get(when[0]) !== when[1];
+    }
+  }
+  updateVisibility();
+  settings.onChange((key, v) => {
+    if (rows.has(key)) rows.get(key)(v);
+    updateVisibility();
+  });
 
   // Focus must not stay on a hidden button: Enter would go to it instead of the shown screen's main
   // button (main.js), so opening and closing leave nothing focused.
@@ -9131,6 +9170,79 @@ function createSettingsPanel(panel, device) {
 }
 
 GAME.settingsPanel = { create: createSettingsPanel };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/ui/touch-stick.js ----
+// A captured pointer controls one thumb stick, in the game's visual landscape coordinates.
+// Other fingers can still use Pause. No sensor permission is needed for this control.
+const TRAVEL = 40;
+const DEAD = 0.06;
+
+function create(root, onChange) {
+  const button = GAME.hud.el('button', 'touch-stick', root);
+  button.type = 'button';
+  button.setAttribute('aria-label', 'Steer: hold and drag left or right to turn, up to climb, down to dive');
+  button.setAttribute('aria-pressed', 'false');
+  const thumb = GAME.hud.el('span', 'touch-stick-thumb', button);
+  thumb.setAttribute('aria-hidden', 'true');
+  GAME.hud.el('span', 'touch-stick-label', button, 'steer');
+  let enabled = false, pointer = null, start = null;
+
+  function reset() {
+    const id = pointer;
+    pointer = start = null;
+    if (id !== null && button.hasPointerCapture(id)) button.releasePointerCapture(id);
+    button.setAttribute('aria-pressed', 'false');
+    thumb.style.transform = 'translate(0px, 0px)';
+    onChange(0, 0);
+  }
+  function move(e) {
+    if (e.pointerId !== pointer) return;
+    e.preventDefault();
+    // The stage can be rotated by CSS when the browser ignores its landscape lock. Convert
+    // the drag vector back to that visual frame; translation has no effect on a vector.
+    const matrix = new DOMMatrix(getComputedStyle(root).transform).inverse();
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    const x = (matrix.a * dx + matrix.c * dy) / TRAVEL;
+    const y = (matrix.b * dx + matrix.d * dy) / TRAVEL;
+    const length = Math.hypot(x, y), scale = 1 / Math.max(1, length);
+    thumb.style.transform = `translate(${x * scale * TRAVEL}px, ${y * scale * TRAVEL}px)`;
+    const strength = Math.max(0, Math.min(1, (length - DEAD) / (1 - DEAD)));
+    onChange(length ? x / length * strength : 0, length ? -y / length * strength : 0);
+  }
+  button.addEventListener('pointerdown', e => {
+    if (!enabled || pointer !== null || e.button !== 0) return;
+    e.preventDefault();
+    pointer = e.pointerId;
+    start = { x: e.clientX, y: e.clientY };
+    button.setPointerCapture(pointer);
+    button.setAttribute('aria-pressed', 'true');
+    move(e);
+  });
+  button.addEventListener('pointermove', move);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    button.addEventListener(type, e => { if (e.pointerId === pointer) reset(); });
+  }
+  window.addEventListener('blur', reset);
+  window.addEventListener('resize', reset);
+  window.addEventListener('orientationchange', reset);
+  screen.orientation?.addEventListener?.('change', reset);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
+  button.hidden = true;
+  return {
+    setEnabled(value) {
+      if (enabled === value) return;
+      enabled = value;
+      reset();
+      button.hidden = !enabled;
+    },
+  };
+}
+
+GAME.touchStick = { create };
 
 })();
 
@@ -9319,7 +9431,9 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, hud, input, target, settingsPanel, soundtrack;
+let renderer, hud, input, target, settingsPanel, soundtrack, touchStick;
+const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
+const syncTouchStick = () => touchStick?.setEnabled(usesTouchStick() && mode === 'playing');
 let seedCode, city, course, run, guide, pilot;
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
@@ -9424,6 +9538,7 @@ function setMode(m) {
   mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m);
   // The portrait reminder is useful before Fly, but must not cover a run if the phone rotates.
   document.body.classList.toggle('run-started', m !== 'title');
+  syncTouchStick();
 }
 
 function startCountdown(ticks) {
@@ -9633,6 +9748,7 @@ function loop(now) {
 // ---- Screens and controls ---------------------------------------------------------------------
 const CONTROLS_DESKTOP = '<b>Mouse</b> aim · <b>W/S ↑/↓</b> pull up / dive · <b>A/D ←/→</b> turn · <b>I</b> invert mouse pitch · <b>Esc</b> pause';
 const CONTROLS_TOUCH = '<b>Hold the phone comfortably and tap Fly</b> in the menu to set your straight-ahead angle. Keep the sides level; roll like a steering wheel to turn and tilt the top away to dive · <b>II</b> pause. Your saved angle is shown in <b>Settings</b> and stays fixed through crashes, resume and retry.';
+const CONTROLS_STICK = '<b>Hold and drag the steering button</b> in the lower-left corner. Drag left/right to turn and up/down to climb or dive. Release to centre · <b>II</b> pause. Choose <b>Tilt</b> in Settings → Mobile steering to use the phone’s movement again.';
 
 let courseReturnFocus = null;
 function openCourseOptions(button) {
@@ -9655,7 +9771,8 @@ function closeCourseOptions(restoreFocus = true) {
 
 let infoReturnFocus = null, infoOrigin = null;
 function refreshInfo() {
-  $('controls').innerHTML = TOUCH ? CONTROLS_TOUCH : CONTROLS_DESKTOP;
+  $('controls').innerHTML = TOUCH ? usesTouchStick() ? CONTROLS_STICK
+    : CONTROLS_TOUCH + ' Prefer a thumb control? Choose <b>Touch stick</b> in Settings → Mobile steering.' : CONTROLS_DESKTOP;
   $('info-pitch').textContent = `Pitch inversion: ${input?.invertY ? 'on' : 'off'} · change it ${TOUCH ? 'in Settings' : 'with I or in Settings'}.`;
 }
 function openInfo(button) {
@@ -9697,6 +9814,7 @@ function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
   else if (key === 'theme') renderer.setTheme(GAME.themes.theme(value));
   else if (key === 'quality') resolution.setBudget(value);
+  else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
   else if (key === 'invertY' && mode === 'paused' && !settingsPanel.isOpen) showPause();
 }
 
@@ -9797,11 +9915,11 @@ async function loadEnteredCourse() {
   closeCourseOptions();
 }
 
-// Pointer lock on desktops, motion sensors on phones. Resolves false when the browser refuses the
+// Pointer lock on desktops, the selected steering on phones. Resolves false when the browser refuses the
 // pointer (e.g. right after it was released): keys steer meanwhile, and the hint says so.
 async function takeControls() {
   if (AUTOPILOT) return true;
-  if (TOUCH) { await input.enableTilt(); return true; }
+  if (TOUCH) { if (!usesTouchStick()) await input.enableTilt(); return true; }
   return input.lockPointer();
 }
 // Fly/Resume are direct user gestures. Start motion permission or pointer lock first, then ask
@@ -9901,6 +10019,7 @@ function markViewAngle() {
 }
 // On the title, sideways play follows the side the phone is turned to; a run keeps its Fly side.
 function followSidewaysHold() {
+  if (usesTouchStick()) return;
   const side = input.landscapeSide();
   if (side === null || side === sidewaysAngle) return;
   sidewaysAngle = side;
@@ -9911,9 +10030,9 @@ function followSidewaysHold() {
 async function playSideways() {
   const error = $('rotate-error');
   error.textContent = '';
-  try { await input.enableTilt(); }
+  try { if (!usesTouchStick()) await input.enableTilt(); }
   catch (err) { error.textContent = err.message.replace(/tap Play again/g, 'tap the button again'); return; }
-  sidewaysAngle = input.landscapeSide() ?? 90;
+  sidewaysAngle = usesTouchStick() ? 90 : input.landscapeSide() ?? 90;
   document.body.classList.add('sideways');
   markViewAngle();
   steadyLandscapeView();
@@ -9954,7 +10073,8 @@ function enterFullscreen() {
   catch { lockLandscape(); }
 }
 const LOCK_HINT = 'mouse steering needs the pointer: click the game · keys work meanwhile';
-const PLAY_HINT = AUTOPILOT ? 'autopilot' : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
+const playHint = () => AUTOPILOT ? 'autopilot' : usesTouchStick() ? 'hold & drag to steer · release to centre'
+  : TOUCH ? 'your Fly hold is straight ahead · roll to steer' : 'mouse to aim · W/S pitch · A/D turn · follow the line';
 
 // A fresh run of the current course, after a countdown.
 async function fly({ calibrate = false, seed = null } = {}) {
@@ -9970,12 +10090,12 @@ async function fly({ calibrate = false, seed = null } = {}) {
     }
     markViewAngle();
     input.setDisplayAngle(runScreenAngle);
-    const forward = TOUCH && calibrate ? input.forwardAngle() : null;
+    const forward = TOUCH && !usesTouchStick() && calibrate ? input.forwardAngle() : null;
     steadyLandscapeView();
     const controls = takeControls();
     enterFullscreen();
     locked = await controls;
-    if (TOUCH && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
+    if (TOUCH && !usesTouchStick() && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
   }
   catch (err) { releaseLandscape(); showControlFailure(err); return; }
   if (seed !== null && !await loadCourse(seed)) {
@@ -9987,7 +10107,7 @@ async function fly({ calibrate = false, seed = null } = {}) {
   hud.show(true);
   newRun();
   startCountdown(COUNT_TICKS);
-  if (locked) hud.hint(PLAY_HINT); else hud.hint(LOCK_HINT, 10);
+  if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
 }
 
 async function newCourse() {
@@ -10028,6 +10148,7 @@ async function resume() {
   clearControlFailure();
   hideScreens();
   if (!locked) hud.hint(LOCK_HINT, 10);
+  else if (TOUCH) hud.hint(playHint());
   if (resumeTo === 'crashed') return respawn();
   startCountdown(resumeTo === 'countdown' ? countTicks : RESPAWN_TICKS);
 }
@@ -10129,6 +10250,7 @@ async function boot() {
   renderer = GAME.cityRenderer.create(GAME.gfx);
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause });
   input = GAME.input.create(canvas);
+  if (TOUCH) touchStick = GAME.touchStick.create(stage, (x, y) => input.setTouchStick(x, y));
   soundtrack = GAME.soundtrack.create(GAME.sound);
   applyVolumes();
   // Music renders while the shaders compile; it starts playing at the first press once ready.
