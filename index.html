@@ -7874,6 +7874,13 @@ float bandAA(float x, float hw, float w) {
   w = max(w, 1e-4);
   return saturate((min(x + 0.5 * w, hw) - max(x - 0.5 * w, -hw)) / w);
 }
+float plateAA(vec2 p, vec2 halfs, vec2 fp) {
+  return bandAA(p.x, halfs.x, fp.x) * bandAA(p.y, halfs.y, fp.y);
+}
+float discAA(vec2 p, float radius, float fp) {
+  float blur = max(fp * 0.5, 0.002);
+  return 1.0 - smoothstep(radius - blur, radius + blur, length(p));
+}
 // A neon strip: box-filtered up close; far away it stays about a pixel wide and dims only gently,
 // which keeps the skyline's neon outlines (a fully energy-conserving filter would erase them).
 float neonLine(float x, float hw, float w) {
@@ -8116,11 +8123,31 @@ vec2 rainRipple(vec2 p, float pix) {
   return o / max(r, 1e-3) * (-x * exp(-x * x)) * (1.0 - age) * 0.35 * saturate(1.0 - pix * 6.0);
 }
 
-// Roof: dark, with a thin neon rim a little inside the parapet.
+// Flush roof panels, recessed maintenance hatches and drainage channels. These are surface
+// details on the shared solid roof, so a visible fitting never creates an invisible obstacle.
 vec3 shadeRoof(vec2 halfs, vec2 c, vec3 p, vec3 tint, float fp) {
-  vec2 e = halfs - abs(p.xz - c);
+  vec2 local = p.xz - c, e = halfs - abs(local);
   float edge = min(e.x, e.y);
-  vec3 col = uRoof + tint * (neonLine(edge - 0.45, 0.14, fp) * 2.2 + 0.03 * exp(-edge / 1.5));
+  float wear = mix(0.5, tnoise(vec3(p.xz * 0.24, 2.0)), 1.0 - smoothstep(1.0, 4.0, fp));
+  vec3 col = uRoof * (0.75 + 0.5 * wear) + vec3(0.006, 0.009, 0.012);
+  float seams = max(1.0 - pulseAA(local.x / 3.4, 0.98, fp / 3.4),
+    1.0 - pulseAA(local.y / 4.1, 0.98, fp / 4.1));
+  col *= 1.0 - seams * 0.65;
+  col *= 1.0 - bandAA(edge - 1.1, 0.17, fp) * 0.6;
+  float detail = 1.0 - smoothstep(0.35, 1.2, fp);
+  if (detail > 0.0) {
+    vec2 panelHalf = min(halfs * vec2(0.48, 0.3), vec2(3.0, 2.0));
+    vec2 panel = local - halfs * vec2(0.12, -0.18);
+    float cover = plateAA(panel, panelHalf, vec2(fp));
+    float inset = plateAA(panel, panelHalf - 0.16, vec2(fp));
+    float grille = pulseAA(panel.y / 0.28, 0.38, fp / 0.28);
+    vec3 metal = mix(uRoof * 0.5 + vec3(0.028, 0.038, 0.045),
+      vec3(0.009, 0.014, 0.018) + vec3(0.03, 0.045, 0.05) * grille, inset);
+    vec2 bolts = abs(panel) - (panelHalf - 0.1);
+    metal += vec3(0.12, 0.14, 0.16) * discAA(bolts, 0.07, fp);
+    col = mix(col, metal, cover * detail);
+  }
+  col += tint * (neonLine(edge - 0.45, 0.14, fp) * 2.2 + 0.03 * exp(-edge / 1.5));
   if (uGrowth > 0.0) {
     float moss = tnoise(vec3(p.xz * 0.16, 4.0));
     float patches = smoothstep(0.28, 0.65, moss);
@@ -8187,7 +8214,7 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   vec2 c = (vec2(h.cell) + 0.5) * uCell + h.a.xy;
   float seed = hash12(vec2(h.cell) * 0.731 + 3.7);
   vec3 style = hash31(seed * 97.0);
-  bool upper = h.b.y > h.b.x && p.y > h.b.x - 0.01;
+  bool upper = h.b.y > h.b.x && p.y > h.b.x + (h.n.y > 0.5 ? 0.01 : -0.01);
   vec2 halfs = upper ? h.b.zw : h.a.zw;
   float top = upper ? h.b.y : h.b.x;
   vec3 tint = neon(style.x);
@@ -8210,6 +8237,20 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   vec3 style2 = hash31(seed * 131.0 + 7.0);
   float floorH = mix(2.3, 2.9, style2.y), glass;
   vec3 lit = windows(u, p.y, fp, floorH, seed * 311.0 + dot(h.n, vec3(1.0, 2.0, 3.0)), style2, tint, glass);
+  // Concrete, alloy and curtain-wall bays have broad structural detail at flight speed, with
+  // filtered joints and window sills. Fine weathering disappears before it can shimmer.
+  float bay = mix(2.8, 5.2, style.y);
+  float joints = max(1.0 - pulseAA(u / bay, 0.975, fp.x / bay),
+    1.0 - pulseAA(p.y / floorH, 0.955, fp.y / floorH));
+  vec3 cladding = mix(vec3(0.034, 0.041, 0.052), vec3(0.012, 0.024, 0.036), step(0.42, style2.z));
+  cladding = mix(cladding, uRoof * 0.4 + vec3(0.014, 0.018, 0.023), 0.3);
+  float light = 0.6 + 0.4 * max(dot(h.n, uSunSize > 0.0 ? uSunDir : vec3(-0.6, 0.7, -0.38)), 0.0);
+  float detail = 1.0 - smoothstep(0.3, 1.1, max(fp.x, fp.y));
+  float weather = detail > 0.0 ? mix(0.5, tnoise(vec3(u * 0.32, p.y * 0.055, seed * 19.0)), detail) : 0.5;
+  col += cladding * light * (0.78 + weather * 0.44) * (1.0 - joints * 0.65) * (1.0 - glass * 0.65);
+  float sill = pulseAA(p.y / floorH - 0.275, 0.025, fp.y / floorH);
+  float upright = pulseAA(u / bay - 0.945, 0.018, fp.x / bay);
+  col += cladding * (sill * 1.8 + upright * 1.2);
   col += glass * (vec3(0.004, 0.006, 0.014) + lit);
   // Dark glass: a faint fresnel sheen of the sky, skipped inside reflections. Each curtain-wall
   // panel sits a little off-plane, so up close the sheen breaks into the patchwork of real glass.
@@ -8217,6 +8258,19 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
     vec2 tilt = (hash22(floor(vec2(u / 4.0, p.y / (3.0 * floorH))) + seed * 57.0) - 0.5) * 0.14 * saturate(1.0 - 2.0 * max(fp.x, fp.y));
     vec3 nt = normalize(h.n + tang * tilt.x + vec3(0.0, tilt.y, 0.0));
     col += skyGlow(reflect(rd, nt)) * (0.04 + 0.96 * pow(1.0 - max(abs(dot(nt, rd)), 0.08), 5.0)) * (0.35 + 0.65 * glass);
+  }
+
+  if (detail > 0.0) {
+    // A few mechanical floors break up the glazing with recessed louvres and framed panels.
+    float storey = floor(p.y / (floorH * 4.0));
+    float service = step(0.76, hash11(storey + seed * 71.0));
+    float panel = plateAA(vec2(u - halfU, mod(p.y, floorH * 4.0) - floorH * 0.52),
+      vec2(max(halfU - 1.6, 0.5), floorH * 0.3), fp) * service * detail;
+    float slats = pulseAA(p.y / 0.24, 0.3, fp.y / 0.24);
+    col = mix(col, vec3(0.01, 0.017, 0.022) + cladding * (0.4 + slats * 1.5), panel);
+    // Service conduits follow the wall and have regularly spaced fastening bands.
+    float conduit = bandAA(u - 0.9, 0.09, fp.x) * step(0.55, style.y) * detail;
+    col = mix(col, cladding * 2.4 + vec3(0.06, 0.045, 0.022) * pulseAA(p.y / 3.0, 0.07, fp.y / 3.0), conduit);
   }
 
   // Thin strips, so up close they stay coloured lines instead of blooming into white bars.
@@ -8244,6 +8298,11 @@ vec3 shadeProp(Hit h, vec3 p, vec3 rd, float pix) {
   float v = (p.y - 0.5 * (h.b.x + h.b.y)) / max(0.5 * (h.b.y - h.b.x), 0.01);
   float edge = min(min(1.0 - abs(u), 1.0 - abs(v)), 1.0);
   float fp = pix / max(abs(dot(h.n, rd)), 0.18);
+  float halfV = 0.5 * (h.b.y - h.b.x);
+  float detail = 1.0 - smoothstep(0.18, 0.65, fp);
+  vec2 bolt = abs(vec2(u * halfU, v * halfV)) - vec2(halfU - 0.22, halfV - 0.22);
+  float screws = discAA(bolt, 0.085, fp) * detail;
+  float weather = detail > 0.0 ? mix(0.5, tnoise(p * vec3(1.3, 0.35, 1.3)), detail) : 0.5;
   if (h.b.z < 1.5) {
     // AC unit: pale alloy casing, a dark round fan, and a cyan conduit around the face.
     vec3 col = vec3(0.08, 0.13, 0.17) + vec3(0.025, 0.04, 0.05) * max(h.n.y, 0.0);
@@ -8253,14 +8312,20 @@ vec3 shadeProp(Hit h, vec3 p, vec3 rd, float pix) {
       float rad = length(vec2(u * 0.95, v));
       float fan = 1.0 - smoothstep(0.72, 0.78, rad);
       col = mix(col, vec3(0.018, 0.028, 0.035), fan);
+      float blades = smoothstep(0.1, 0.45, cos(atan(v, u * 0.95 + 1e-5) * 5.0 - uTime * 7.0 - rad * 3.0));
+      col += vec3(0.045, 0.075, 0.085) * blades * fan * detail;
       float grille = pulseAA((u + 1.0) * 8.0, 0.17, fp * 4.0) * fan;
       col += vec3(0.13, 0.24, 0.27) * grille;
+      col += vec3(0.055, 0.08, 0.09) * pulseAA((v + 1.0) * 7.0, 0.1, fp * 3.5) * fan;
       col += vec3(0.16, 0.65, 0.75) * neonLine(rad - 0.78, 0.025, fp / max(halfU, 1.0));
       col += vec3(0.22, 0.28, 0.29) * (1.0 - smoothstep(0.12, 0.18, rad));
+      float label = plateAA(vec2(u, v + 0.86), vec2(0.48, 0.07), fp / vec2(halfU, halfV));
+      float stripes = pulseAA((u * halfU + v * halfV) * 2.0, 0.5, fp * 2.8);
+      col = mix(col, mix(vec3(0.02), vec3(0.5, 0.3, 0.07), stripes), label * detail);
     } else {
       col += vec3(0.05, 0.11, 0.13) * pulseAA((v + 1.0) * 6.0, 0.25, fp * 2.0);
     }
-    return col;
+    return col * (0.83 + 0.3 * weather) + vec3(0.23, 0.28, 0.3) * screws;
   }
   if (h.b.z > 2.5) {
     // Four actual solids: two exposed conduit rails and two short brackets into the facade.
@@ -8269,8 +8334,11 @@ vec3 shadeProp(Hit h, vec3 p, vec3 rd, float pix) {
     col += vec3(0.07, 0.12, 0.14) * max(h.n.y, 0.0);
     col += vec3(0.045, 0.13, 0.15) * max(abs(h.n.x), abs(h.n.z));
     col += vec3(0.3, 0.09, 0.04) * collar;
+    float seams = pulseAA((u * halfU) / 1.8, 0.045, fp / 1.8);
+    col *= 1.0 - seams * 0.45;
+    col += vec3(0.16, 0.21, 0.23) * collar * pulseAA(p.y / 0.32, 0.18, fp / 0.32) * detail;
     col += vec3(0.1, 0.34, 0.38) * neonLine(edge * 0.33, 0.045, fp);
-    return col;
+    return col * (0.8 + 0.35 * weather);
   }
   // Cargo/textile rack: a dark rectangular cabinet with lit rails and coloured stacked rolls.
   vec3 col = vec3(0.025, 0.018, 0.045);
@@ -8282,17 +8350,42 @@ vec3 shadeProp(Hit h, vec3 p, vec3 rd, float pix) {
     float roll = pulseAA((u + 1.0) * 2.8 + floor((v + 1.0) * 3.2) * 0.27, 0.62, fp * 1.3);
     col += mix(vec3(0.09, 0.2, 0.4), vec3(0.46, 0.07, 0.3), step(0.5, fract(floor((v + 1.0) * 3.2) * 0.61))) * roll * (1.0 - shelves);
     col += vec3(0.42, 0.42, 0.54) * shelves + vec3(1.1, 0.22, 0.62) * uprights;
+    float straps = bandAA(abs(u) - 0.44, 0.035, fp / max(halfU, 1.0));
+    col = mix(col, vec3(0.13, 0.16, 0.19), straps * detail);
+    float labels = plateAA(vec2(fract((u + 1.0) * 2.8) - 0.45, fract((v + 1.0) * 3.2) - 0.4),
+      vec2(0.15, 0.065), vec2(fp * 1.3, fp * 1.2));
+    col += vec3(0.18, 0.2, 0.2) * labels * detail;
   } else col += vec3(0.12, 0.04, 0.1) * pulseAA((v + 1.0) * 3.2, 0.13, fp * 1.2);
-  return col;
+  return col * (0.85 + 0.3 * weather) + vec3(0.27, 0.3, 0.32) * screws;
 }
 
-vec3 shadeBridge(Hit h, vec3 p, float pix) {
-  float across = abs(h.a.w) < 1.5 ? p.x : p.z;
-  float collars = pulseAA(across / 3.2, 0.14, pix / 3.2);
+vec3 shadeBridge(Hit h, vec3 p, vec3 rd, float pix) {
+  bool alongX = abs(h.a.w) < 1.5;
+  float across = alongX ? p.x : p.z;
+  vec2 c = (vec2(h.cell) + 0.5) * uCell;
+  float side = (alongX ? p.z - c.y : p.x - c.x) - h.a.x;
+  float height = p.y - h.a.y;
+  float fp = pix / max(abs(dot(h.n, rd)), 0.18);
+  float collars = pulseAA(across / 3.2, 0.14, fp / 3.2);
   float top = max(h.n.y, 0.0);
+  float curve = sqrt(max(0.0, 1.0 - pow(h.n.y != 0.0 ? side / 0.7 : height / 0.75, 2.0)));
   vec3 metal = vec3(0.035, 0.10, 0.12) + vec3(0.07, 0.19, 0.20) * top;
-  metal += vec3(0.2, 0.08, 0.04) * collars;
-  metal += vec3(0.08, 0.42, 0.48) * neonLine(abs(p.y - h.a.y) - 0.56, 0.09, pix);
+  metal *= 0.6 + curve * 0.65;
+  metal = mix(metal, vec3(0.11, 0.085, 0.055) * (0.7 + curve * 0.6), collars);
+  float lips = pulseAA(across / 3.2, 0.018, fp / 3.2) + pulseAA(across / 3.2 - 0.122, 0.018, fp / 3.2);
+  metal += vec3(0.16, 0.19, 0.2) * lips;
+  float detail = 1.0 - smoothstep(0.18, 0.65, fp);
+  if (detail > 0.0) {
+    float grime = tnoise(vec3(across * 1.2, side * 2.0, height * 0.45));
+    metal *= mix(1.0, 0.8 + grime * 0.35, detail);
+    vec2 bolt = vec2(mod(across, 3.2) - 0.224, abs(h.n.y != 0.0 ? side : height) - 0.42);
+    metal += vec3(0.3, 0.32, 0.34) * discAA(bolt, 0.075, fp) * detail;
+    float wall = abs(across - (alongX ? c.x : c.y) - h.a.z);
+    float marking = bandAA(wall - 0.9, 0.32, fp);
+    metal = mix(metal, mix(vec3(0.025), vec3(0.5, 0.29, 0.06),
+      pulseAA((across + height + side) * 2.2, 0.5, fp * 3.0)), marking * detail);
+  }
+  metal += vec3(0.08, 0.42, 0.48) * neonLine(abs(height) - 0.56, 0.09, fp);
   return metal;
 }
 
@@ -8348,7 +8441,7 @@ void main() {
     } else if (h.kind == PROP) {
       col = shadeProp(h, p, rd, pix);
     } else if (h.kind == BRIDGE) {
-      col = shadeBridge(h, p, pix);
+      col = shadeBridge(h, p, rd, pix);
     } else {
       col = shadeGround(p, pix);
       // Wet street: a rippled mirror. Ripples fade out once they would be smaller than a pixel,
@@ -8362,7 +8455,7 @@ void main() {
       Hit r = trace(p + vec3(0.0, 0.01, 0.0), rr, REFLECT_CELLS, pixAngle, rglow);
       vec3 refl = r.kind == TOWER ? shadeTower(r, p + rr * r.t, rr, pix + r.t * pixAngle, true)
         : r.kind == PROP ? shadeProp(r, p + rr * r.t, rr, pix + r.t * pixAngle)
-        : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, pix + r.t * pixAngle) : sky(rr, pixAngle);
+        : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, rr, pix + r.t * pixAngle) : sky(rr, pixAngle);
       refl = applyFog(refl + rglow, p, rr, r.t);
       float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);   // rain: wetter
       col += refl * fres * (1.0 - uGrowth * 0.55);
