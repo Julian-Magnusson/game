@@ -167,6 +167,7 @@
   .set-row.choice { grid-template-columns: 1fr auto; gap: 6px; padding: 4px 0 6px; }
   .set-row.choice .set-options { grid-column: 1 / -1; }
   .set-note { font-size: 11px; letter-spacing: 0.08em; opacity: 0.65; font-variant-numeric: tabular-nums; }
+  [data-setting="musicTrack"] .set-note { grid-column: 1 / -1; overflow-wrap: anywhere; }
   .set-value { text-align: right; font-variant-numeric: tabular-nums; color: var(--cyan); }
   /* Sliders: a thin filled track and a thumb big enough for a thumb; the input's own height is the touch target. */
   .set-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 34px; margin: 0; background: transparent; cursor: pointer; --fill: 50%; }
@@ -502,10 +503,26 @@
 <script id="audio-src" type="text/plain">var AUDIO = {};
 ;(function () {
 'use strict';
+// ---- src/audio/catalog.js ----
+// Shared by the settings/player and the synth workers; IDs are saved in player settings.
+const songs = [
+  { id: 'neon-flight', name: 'Neon Flight' },
+  { id: 'skyline-rush', name: 'Skyline Rush' },
+  { id: 'midnight-drift', name: 'Midnight Drift' },
+  { id: 'afterburn', name: 'Afterburn' },
+];
+if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
+else GAME.songs = songs;
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/audio/loop.js ----
-// The game's music: one seamless loop of 16 bars in stems (layers) that the game fades in and out
+// The game's music: seamless loops of 16 bars in stems (layers) that the game fades in and out
 // with the action. Pure data and helpers, shared by the synth workers (to render) and the main
 // thread (the beat grid and harmony for sound effects).
+// This defines the original Neon Flight composition; songs.js supplies the other arrangements.
 
 const bpm = 140;
 const secPerBeat = 60 / bpm;
@@ -2614,6 +2631,141 @@ AUDIO.defineTrack({
 
 ;(function () {
 'use strict';
+// ---- src/audio/songs.js ----
+// Three new compositions using the game's instrument rack. Each has its own chord order,
+// eight-bar melody, arp, bass line and drum groove. All share the 140 BPM / 16-bar grid so a
+// background song change preserves countdowns, intensity changes and the scheduled finale.
+const loop = AUDIO.loop;
+const originalChords = loop.progression.slice();
+const originals = AUDIO.tracks.map(t => ({ events: t.events, gain: t.gain, send: t.send }));
+
+// Melody rows are [sixteenth step, length in sixteenths, MIDI pitch]. The second four bars
+// answer the first four; the whole phrase repeats with extra percussion in the second half.
+const scores = {
+  'skyline-rush': {
+    chords: [0, 2, 3, 1],
+    hook: [
+      [[0,2,73],[2,2,78],[4,4,81],[10,2,80],[12,4,78]],
+      [[0,2,76],[2,2,81],[4,4,85],[10,2,83],[12,4,81]],
+      [[0,4,83],[6,2,80],[8,4,76],[14,2,80]],
+      [[0,6,81],[6,2,78],[8,4,74],[12,4,73]],
+      [[0,2,73],[2,2,78],[4,4,81],[8,4,85],[12,4,81]],
+      [[0,4,85],[6,2,83],[8,4,81],[12,4,76]],
+      [[0,2,80],[2,2,83],[4,4,88],[10,2,85],[12,4,83]],
+      [[0,4,81],[4,4,78],[8,6,74],[14,2,73]],
+    ],
+    arp: [0,1,2,4,2,1,3,2], arpStep: 0.5,
+    kick: ['x...x...x...x...', 'x...x...x...x..o'],
+    snare: ['....x.......x...', '....x.......x.o.'],
+    hat: ['..x...x...x...O.', '..x...x...x.x.O.'],
+    bass: [[2,2,0],[6,2,12],[10,2,0],[14,2,7]],
+    wobble: [[0,1.5,'e'],[2,1.5,'q'],[3.5,0.5,'s']],
+    gains: { choir: 0.65, arp: 1.1, motif: 1.15, chops: 0.75, metal: 0.45, glitch: 0.5, wobble: 0.85 },
+  },
+  'midnight-drift': {
+    chords: [1, 2, 3, 0],
+    hook: [
+      [[0,6,78],[8,4,76],[12,4,74]],
+      [[2,4,73],[6,6,76],[14,2,81]],
+      [[0,6,80],[8,4,76],[12,4,71]],
+      [[0,8,73],[10,2,69],[12,4,66]],
+      [[0,6,74],[8,4,78],[12,4,81]],
+      [[2,4,83],[6,6,81],[14,2,76]],
+      [[0,6,80],[8,4,83],[12,4,80]],
+      [[0,6,78],[8,4,73],[12,4,69]],
+    ],
+    arp: [2,1,0,1,4,2,1,0], arpStep: 0.5,
+    kick: ['x......o..x.....', 'x.....x.......o.'],
+    snare: ['........x.......', '.......ox.....o.'],
+    hat: ['..x...x...x...x.', '..x..ox...x...O.'],
+    bass: [[0,5,0],[7,3,7],[12,3,12]],
+    wobble: [[0,1.5,'wow'],[2,1,'q'],[3.25,0.75,'e']],
+    gains: { choir: 1.1, arp: 0.72, motif: 1.3, lead: 0.85, chops: 0.85, metal: 0.35, glitch: 0.35, wobble: 0.8, bass: 0.85 },
+  },
+  afterburn: {
+    chords: [0, 3, 1, 2],
+    hook: [
+      [[0,2,78],[3,1,78],[4,2,73],[7,1,76],[8,4,78],[14,2,81]],
+      [[0,2,80],[3,1,80],[4,2,76],[7,1,78],[8,4,80],[14,2,83]],
+      [[0,3,81],[3,3,78],[8,2,74],[10,2,78],[12,4,81]],
+      [[0,4,85],[6,2,83],[8,4,81],[14,2,76]],
+      [[0,2,78],[3,1,81],[4,2,85],[7,1,83],[8,4,81],[14,2,78]],
+      [[0,2,80],[3,1,83],[4,2,88],[7,1,85],[8,4,83],[14,2,80]],
+      [[0,3,86],[3,3,85],[8,2,81],[10,2,78],[12,4,74]],
+      [[0,4,76],[4,4,81],[8,4,85],[12,2,81],[14,2,76]],
+    ],
+    arp: [0,2,0,1,3,2,1,2], arpStep: 0.25,
+    kick: ['x.....x...x..o..', 'x..o..x...x...x.'],
+    snare: ['....x.......x...', '....x......ox.ox'],
+    hat: ['x.xox.x.x.xox.O.', 'x.x.xox.x.xox.O.'],
+    bass: [[0,2,0],[3,1,12],[6,2,0],[9,1,7],[10,2,12],[14,2,0]],
+    wobble: [[0,0.75,'s'],[0.75,0.75,'yoi'],[2,1,'t'],[3.25,0.75,'glitch']],
+    gains: { choir: 0.6, arp: 0.85, motif: 1.1, chops: 0.65, bass: 0.95, wobble: 0.9, metal: 0.8 },
+  },
+};
+
+function setEvents(id, events) {
+  AUDIO.track(id).events = events.sort((a, b) => a.beat - b.beat);
+}
+
+function drumGrid(rows, len, note) {
+  return Array.from({ length: loop.bars }, (_, bar) => [...rows[bar % rows.length]].flatMap((hit, step) => {
+    if (hit === '.') return [];
+    return [{ beat: bar * 4 + step / 4, len: hit === 'O' ? 0.5 : len, note,
+      vel: hit === 'o' ? 0.45 : (bar < 8 ? 0.85 : 1) }];
+  })).flat();
+}
+
+function selectSong(id) {
+  if (!AUDIO.songs.some(s => s.id === id)) throw new Error(`unknown song "${id}"`);
+  if (AUDIO.song === id) return;
+  AUDIO.tracks.forEach((t, i) => Object.assign(t, originals[i]));
+  loop.progression.splice(0, loop.progression.length, ...originalChords);
+  AUDIO.song = id;
+  const score = scores[id];
+  if (!score) return; // Original composition, unchanged.
+  loop.progression.splice(0, loop.progression.length, ...score.chords.map(i => originalChords[i]));
+  const hook = [], pad = [], arp = [], bass = [], sub = [], wobble = [];
+  for (let bar = 0; bar < loop.bars; bar++) {
+    const chord = loop.chordAtBeat(bar * 4), phrase = score.hook[bar % 8];
+    const top = chord.notes[bar % 3] + 12;
+    pad.push({ beat: bar * 4, len: 4, note: top, notes: [...chord.notes, top], vel: 1 });
+    for (const [step, length, note] of phrase) hook.push({ beat: bar * 4 + step / 4, len: length / 4, note, vel: 1, slide: length >= 6 });
+    for (let k = 0; k * score.arpStep < 4; k++) {
+      const tone = score.arp[(k + (bar >= 8 ? 2 : 0)) % score.arp.length];
+      arp.push({ beat: bar * 4 + k * score.arpStep, len: score.arpStep * 0.7,
+        note: chord.notes[tone % 3] + 12 * Math.floor(tone / 3), vel: k % 2 ? 0.7 : 1, accent: k % 2 === 0 });
+    }
+    for (const [step, length, offset] of score.bass) bass.push({ beat: bar * 4 + step / 4, len: length / 4,
+      note: chord.root + 12 + offset, vel: 0.85, accent: step % 4 === 0, ghost: false,
+      grit: id === 'midnight-drift' ? 0.35 : 0.8, bright: id === 'midnight-drift' ? 0.8 : 1.1 });
+    sub.push({ beat: bar * 4, len: 1.75, note: chord.root, vel: 1 },
+      { beat: bar * 4 + 2, len: 1.8, note: chord.root, vel: 0.9, restrike: true });
+    for (const [at, len, gesture] of score.wobble) wobble.push({ beat: bar * 4 + at, len,
+      note: chord.root + 12, vel: 0.9, gesture,
+      patch: ['wow', 'yoi', 'glitch'].includes(gesture) ? 'sawTalk' : id === 'afterburn' ? 'heavy' : 'saw' });
+  }
+  setEvents('pad', pad);
+  setEvents('choir', pad.map(e => ({ ...e, note: e.note - 12 })));
+  setEvents('arp', arp);
+  setEvents('arpHigh', arp.map(e => ({ ...e, note: e.note + 12 })));
+  setEvents('lead', hook);
+  setEvents('motif', hook.filter(e => e.beat >= 32 && e.beat % 4 < 2).map(e => ({ ...e })));
+  setEvents('chops', hook.map((e, k) => ({ ...e, note: e.note - 12, len: Math.min(e.len, 0.4), vel: 0.85, vowel: 'oaeu'[k % 4] })));
+  setEvents('bass', bass); setEvents('sub', sub); setEvents('wobble', wobble);
+  setEvents('kick', drumGrid(score.kick, 0.5));
+  setEvents('snare', drumGrid(score.snare, 0.5, 54));
+  setEvents('hat', drumGrid(score.hat, 0.12));
+  for (const [id, gain] of Object.entries(score.gains)) AUDIO.track(id).gain *= gain;
+}
+
+AUDIO.selectSong = selectSong;
+AUDIO.song = 'neon-flight';
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/audio/render.js ----
 // Renders the music's stems. A stem is the sum of its tracks (gain, pan, the kick's sidechain
 // pump) plus its own reverb, rendered over the loop and a tail; the tail is folded back onto the
@@ -3195,6 +3347,7 @@ AUDIO.renderSfx = renderSfx;
 self.onmessage = e => {
   const msg = e.data;
   try {
+    AUDIO.selectSong(msg.song || 'neon-flight');
     if (msg.type === 'stem') {
       const s = AUDIO.renderStem(msg.stem);
       self.postMessage({ type: 'stem', stem: msg.stem, l: s.l, r: s.r, timings: s.timings }, [s.l.buffer, s.r.buffer]);
@@ -3205,7 +3358,7 @@ self.onmessage = e => {
     } else if (msg.type === 'meta') {
       const { bpm, bars, loopSec, sampleRate, STEMS, LEVELS, PUMP, progression } = AUDIO.loop;
       const pump = AUDIO.pumpShape();
-      self.postMessage({ type: 'meta', meta: { bpm, bars, loopSec, sampleRate, STEMS, LEVELS, PUMP, progression, clip: AUDIO.loop.masterClipCurve(), pump } }, [pump.buffer]);
+      self.postMessage({ type: 'meta', meta: { song: AUDIO.song, bpm, bars, loopSec, sampleRate, STEMS, LEVELS, PUMP, progression, clip: AUDIO.loop.masterClipCurve(), pump } }, [pump.buffer]);
     } else {
       throw new Error(`unknown synth job "${msg.type}"`);
     }
@@ -6207,6 +6360,21 @@ GAME.courseData = { pack, unpack };
 </script>
 <script>;(function () {
 'use strict';
+// ---- src/audio/catalog.js ----
+// Shared by the settings/player and the synth workers; IDs are saved in player settings.
+const songs = [
+  { id: 'neon-flight', name: 'Neon Flight' },
+  { id: 'skyline-rush', name: 'Skyline Rush' },
+  { id: 'midnight-drift', name: 'Midnight Drift' },
+  { id: 'afterburn', name: 'Afterburn' },
+];
+if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
+else GAME.songs = songs;
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/game/settings.js ----
 // Player settings: one schema (ranges, defaults, labels) that the settings panel renders from and
 // every consumer reads through, persisted in this browser.
@@ -6237,6 +6405,9 @@ const SCHEMA = {
   theme: { type: 'choice', default: 'neon', label: 'Theme', group: 'City', options: [] },
   masterVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 1, format: percent, label: 'Volume', group: 'Sound' },
   musicVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.8, format: percent, label: 'Music', group: 'Sound' },
+  musicTrack: { type: 'choice', default: 'random', label: 'Song', group: 'Sound',
+    note: 'Random picks a song for each new flight. Crashes and resumes keep the same song.',
+    options: [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])] },
   effectsVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, format: percent, label: 'Effects', group: 'Sound' },
 };
 
@@ -7109,6 +7280,8 @@ let level = 0;                     // the level asked for; null while the finish
 let cutAt = null;                  // audio time of the finish cut, until a level brings the music back
 let drop = null;                   // the scheduled build and drop
 let volumes = { master: 1, music: 1, effects: 1 };
+let preference = 'random', requestedSong = null, renderController = null, songError = null;
+let hasFlown = false;
 const plays = {};                  // effect name -> times played (tests read this)
 
 function workerUrl() {
@@ -7116,10 +7289,14 @@ function workerUrl() {
   return URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
 }
 
-function job(worker, msg) {
+function job(worker, msg, signal) {
   return new Promise((resolve, reject) => {
-    worker.onmessage = e => (e.data.type === 'error' ? reject(new Error(`synth worker failed:\n${e.data.message}`)) : resolve(e.data));
-    worker.onerror = e => reject(new Error(`synth worker crashed: ${e.message}`));
+    const finish = (fn, value) => { signal.removeEventListener('abort', abort); fn(value); };
+    const abort = () => finish(reject, new DOMException('Song changed', 'AbortError'));
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener('abort', abort, { once: true });
+    worker.onmessage = e => (e.data.type === 'error' ? finish(reject, new Error(`synth worker failed:\n${e.data.message}`)) : finish(resolve, e.data));
+    worker.onerror = e => finish(reject, new Error(`synth worker crashed: ${e.message}`));
     worker.postMessage(msg);
   });
 }
@@ -7132,35 +7309,91 @@ function toBuffer(...channels) {
   return b;
 }
 
-// Renders the stems and effects. onProgress receives 0..1.
-async function load(onProgress = () => {}) {
+// Only the current song and an in-flight render are held in memory. Changing the selection
+// cancels obsolete workers; the previous song keeps playing until its replacement is ready.
+async function renderSong(song, signal) {
   const t0 = performance.now();
   const url = workerUrl();
   const count = Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
-  const workers = Array.from({ length: count }, () => new Worker(url));
+  const workers = [];
   const stems = {}, effects = {};
   try {
-    const m = (await job(workers[0], { type: 'meta' })).meta;
+    for (let i = 0; i < count; i++) workers.push(new Worker(url));
+    const m = (await job(workers[0], { type: 'meta', song }, signal)).meta;
     if (m.sampleRate !== SAMPLE_RATE || m.bpm !== BPM) throw new Error(`music is ${m.bpm} BPM at ${m.sampleRate} Hz, the player expects ${BPM} at ${SAMPLE_RATE}`);
     const queue = [...m.STEMS.map(stem => ({ type: 'stem', stem })), { type: 'sfx' }];
-    const total = queue.length;
     await Promise.all(workers.map(async w => {
       while (queue.length) {
-        const r = await job(w, queue.shift());
+        const r = await job(w, { ...queue.shift(), song }, signal);
         if (r.type === 'stem') stems[r.stem] = toBuffer(r.l, r.r);
         else for (const [k, s] of Object.entries(r.sfx)) effects[k] = toBuffer(s.l, s.r);
-        onProgress(1 - queue.length / total);
       }
     }));
+    if (signal.aborted) return;
     buffers = { stems, effects, pump: toBuffer(m.pump) };
     delete m.pump;
     meta = m;
+    if (started && level !== null) {
+      // The shared tempo/grid lets the replacement join the current bar without disturbing
+      // a scheduled build, finish silence, pause filter or the countdown's next beat.
+      const when = Math.max(ctx.currentTime + START_AHEAD_SEC, ...sets.map(s => s.when)), fade = 0.18;
+      for (const set of sets) endSet(set, when + fade, fade);
+      sets = [startSet(when, mod(when - loopStart, meta.loopSec) / barSec(), fade)];
+    } else if (ctx && !started) attach();
+    console.log(`[audio] ${song}: ${meta.STEMS.length} stems and ${Object.keys(effects).length} effects rendered in ${((performance.now() - t0) / 1000).toFixed(2)}s`);
   } finally {
     workers.forEach(w => w.terminate());
     URL.revokeObjectURL(url);
   }
-  console.log(`[audio] ${meta.STEMS.length} stems and ${Object.keys(effects).length} effects rendered in ${((performance.now() - t0) / 1000).toFixed(2)}s`);
-  if (ctx) attach();
+}
+
+const songName = id => GAME.songs.find(s => s.id === id)?.name;
+function randomSong() {
+  const candidates = GAME.songs.filter(s => s.id !== requestedSong && s.id !== meta?.song);
+  return candidates[Math.floor(Math.random() * candidates.length)].id;
+}
+
+async function requestSong(song) {
+  renderController?.abort();
+  requestedSong = null;
+  songError = null;
+  if (meta?.song === song) { renderController = null; return true; }
+  const controller = new AbortController();
+  renderController = controller;
+  requestedSong = song;
+  try {
+    await renderSong(song, controller.signal);
+    return true;
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      songError = 'Could not prepare music. Choose a song to retry.';
+      console.warn(`[audio] ${err.message}`);
+    }
+    return false;
+  } finally {
+    if (renderController === controller) { renderController = null; requestedSong = null; }
+  }
+}
+
+function setSong(value) {
+  if (value !== 'random' && !songName(value)) throw new Error(`unknown song "${value}"`);
+  preference = value;
+  return requestSong(value === 'random' ? randomSong() : value);
+}
+
+const load = (value = 'random') => setSong(value);
+
+// The first flight uses the menu's freshly chosen song; retries and subsequent full flights
+// get a different random choice. Called by Fly only, never by crash recovery or resume.
+function prepareRun() {
+  if (preference === 'random' && hasFlown) requestSong(randomSong());
+  hasFlown = true;
+}
+
+function songStatus() {
+  if (songError) return songError;
+  if (requestedSong) return `Preparing ${songName(requestedSong)}…`;
+  return meta ? `Now playing: ${songName(meta.song)}` : 'Preparing music…';
 }
 
 // Call from a user gesture (the first one is what lets the page make sound).
@@ -7237,12 +7470,12 @@ function startSet(when, bar, fadeIn) {
   };
   for (const id of meta.STEMS) add(buffers.stems[id], [nodes.stems[id]]);
   add(buffers.pump, Object.values(nodes.pumpDepth));
-  return { sources, fades };
+  return { sources, fades, when };
 }
 
 // Fades a set out, ending at `at`. A set scheduled to start later simply never plays.
-function endSet(set, at) {
-  const from = Math.max(ctx.currentTime, at - SEAM_SEC), to = Math.max(from + 0.002, at);
+function endSet(set, at, fade = SEAM_SEC) {
+  const from = Math.max(ctx.currentTime, at - fade), to = Math.max(from + 0.002, at);
   for (const f of set.fades) { f.gain.cancelScheduledValues(from); f.gain.setValueAtTime(f.gain.value, from); f.gain.linearRampToValueAtTime(0, to); }
   for (const s of set.sources) s.stop(to + 0.01);
 }
@@ -7422,8 +7655,10 @@ function setVolumes(v) {
 }
 
 GAME.sound = {
-  load, unlock, setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, muffle, setVolumes,
-  state: () => ({ loaded: !!buffers, unlocked: !!ctx, playing: started, context: ctx ? ctx.state : null, level, volumes: { ...volumes }, plays: { ...plays } }),
+  load, unlock, setSong, prepareRun, songStatus, setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, muffle, setVolumes,
+  state: () => ({ loaded: !!buffers, unlocked: !!ctx, playing: started, context: ctx ? ctx.state : null, level,
+    song: meta?.song ?? null, requestedSong, preference, songError,
+    volumes: { ...volumes }, plays: { ...plays } }),
 };
 
 })();
@@ -9939,7 +10174,10 @@ function loop(now) {
   timerEnd();
   resolution.adapt(dt);
   soundtrack.frame(run.next / course.gates.length);
-  if (settingsPanel.isOpen) settingsPanel.note('quality', `drawing ${w} × ${h}`);
+  if (settingsPanel.isOpen) {
+    settingsPanel.note('quality', `drawing ${w} × ${h}`);
+    settingsPanel.note('musicTrack', GAME.sound.songStatus());
+  }
   hudFrame(view);
   api.frames++;
   requestAnimationFrame(loop);
@@ -10012,6 +10250,7 @@ const applyVolumes = () => GAME.sound.setVolumes({ master: GAME.settings.get('ma
 // Settings the game applies itself; the camera and the input read theirs every frame.
 function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
+  else if (key === 'musicTrack') GAME.sound.setSong(value);
   else if (key === 'theme') renderer.setTheme(GAME.themes.theme(value));
   else if (key === 'quality') resolution.setBudget(value);
   else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
@@ -10306,6 +10545,7 @@ async function fly({ calibrate = false, seed = null } = {}) {
   hideScreens();
   hud.show(true);
   newRun();
+  GAME.sound.prepareRun();
   startCountdown(COUNT_TICKS);
   if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
 }
@@ -10454,7 +10694,7 @@ async function boot() {
   soundtrack = GAME.soundtrack.create(GAME.sound);
   applyVolumes();
   // Music renders while the shaders compile; it starts playing at the first press once ready.
-  GAME.sound.load().catch(fail);
+  GAME.sound.load(GAME.settings.get('musicTrack'));
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
   resolution.setBudget(GAME.settings.get('quality'));
   renderer.setTheme(GAME.themes.theme(params.get('theme') ?? GAME.settings.get('theme')));
