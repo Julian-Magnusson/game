@@ -16,7 +16,8 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
   /* A transformed stage keeps the game visually on its Fly-side landscape axis if a phone's
      browser rotates despite rejecting the native orientation lock. */
-  #game-stage { position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;
+  #game-stage { --stick-size: 128px; --stick-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;
     transform-origin: 0 0; touch-action: none; }
   /* CSS sees a portrait viewport before some browsers deliver their orientation event. Phones
      with a portrait-natural screen can keep the Fly-side stage in landscape during that gap. */
@@ -227,8 +228,8 @@
   .hud.touch .hud-pause { display: block; }
   .hud.touch .hud-tag { display: none; }
 
-  .touch-stick { position: absolute; z-index: 2; left: calc(24px + var(--safe-l)); bottom: calc(100px + env(safe-area-inset-bottom, 0px));
-    width: 128px; height: 128px; padding: 0; border: 1px solid rgba(95, 227, 255, 0.5); border-radius: 50%;
+  .touch-stick { position: absolute; z-index: 2; left: calc(24px + var(--safe-l)); bottom: var(--stick-bottom);
+    width: var(--stick-size); height: var(--stick-size); padding: 0; border: 1px solid rgba(95, 227, 255, 0.5); border-radius: 50%;
     background: radial-gradient(circle, rgba(95, 227, 255, 0.1) 35%, rgba(4, 8, 22, 0.35) 36%);
     color: var(--cyan); touch-action: none; user-select: none; -webkit-user-select: none; }
   .touch-stick[hidden] { display: none; }
@@ -240,6 +241,7 @@
 
   .hud-alt, .hud-spd { position: absolute; bottom: 22px; }
   .hud-alt { left: calc(40px + var(--safe-l)); text-align: left; }
+  .touch-steering .hud-alt { bottom: calc(var(--stick-bottom) + var(--stick-size) + 12px); }
   .hud-spd { right: calc(26px + var(--safe-r)); text-align: right; }
   .hud-alt .hud-big { font-size: 46px; font-weight: 300; line-height: 1; text-shadow: var(--halo), 0 0 14px rgba(95, 227, 255, 0.6); }
   .hud-spd .hud-big { font-size: 30px; font-weight: 300; line-height: 1; text-shadow: var(--halo), 0 0 12px rgba(95, 227, 255, 0.5); }
@@ -271,6 +273,7 @@
   .hud-toast.bad { color: #ff9aa6; text-shadow: var(--halo), 0 0 12px var(--red); }
   @keyframes toast { 0% { opacity: 0; transform: translateY(8px) scale(0.9); } 12% { opacity: 1; transform: none; } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
   .hud-hint { position: absolute; left: 22%; right: 22%; bottom: 26px; text-align: center; font-size: 13px; letter-spacing: 0.08em; opacity: 0.85; transition: opacity 1.2s; }
+  .touch-steering .hud-hint { left: calc(var(--stick-size) + 40px + var(--safe-l)); right: calc(96px + var(--safe-r)); }
   .hud-hint.gone { opacity: 0; }
 
   /* A compact title menu. Equal columns keep Fly on the screen centre. */
@@ -372,6 +375,7 @@
     .hud-alt, .hud-spd { bottom: 14px; }
     .hud-alt .hud-big { font-size: 38px; } .hud-spd .hud-big { font-size: 26px; }
     .hud-bar { height: 76px; }
+    .touch-steering .hud-bar { height: 64px; }
     .hud-hint { bottom: 16px; font-size: 12px; }
     .hud-message.count { top: 18%; font-size: 96px; }
     .hud-message.pop { animation: msgpop-phone 0.35s ease-out; }
@@ -8907,11 +8911,16 @@ function freeBand(hud, zoom) {
       top: e.offsetTop * zoom, bottom: (e.offsetTop + e.offsetHeight) * zoom,
       width: e.offsetWidth * zoom, height: e.offsetHeight * zoom }
     : e.getBoundingClientRect()).filter(r => r.width && r.height);
-  const top = rects(TOP_PARTS), bottom = rects(BOTTOM_PARTS), all = [...top, ...bottom];
+  // With thumb steering, altitude sits above the stick in the left column. Reserve that column
+  // instead of raising the entire band's bottom edge, which would squeeze arrows on short phones.
+  const raisedAlt = hud.parentElement.classList.contains('touch-steering');
+  const top = rects(TOP_PARTS), bottom = rects(raisedAlt ? '.hud-spd, .hud-hint' : BOTTOM_PARTS);
+  const all = [...top, ...bottom], altitude = raisedAlt ? rects('.hud-alt') : [];
   const pad = (ARROW.len / 2 + ARROW.gap) * zoom;
   return {
     pad,
-    left: Math.min(...all.map(r => r.left)) + pad, right: Math.max(...all.map(r => r.right)) - pad,
+    left: Math.max(Math.min(...all.map(r => r.left)) + pad, ...altitude.map(r => r.right + pad)),
+    right: Math.max(...all.map(r => r.right)) - pad,
     top: Math.max(...top.map(r => r.bottom)) + pad, bottom: Math.min(...bottom.map(r => r.top)) - pad,
   };
 }
@@ -9523,7 +9532,15 @@ const resolution = GAME.resolution;
 // ---- World and run ----------------------------------------------------------------------------
 let renderer, hud, input, target, settingsPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
-const syncTouchStick = () => touchStick?.setEnabled(usesTouchStick() && mode === 'playing');
+const syncTouchStick = () => {
+  const selected = usesTouchStick();
+  // Keep the altitude gauge above the control through countdowns, crashes and pauses too.
+  if (stage.classList.contains('touch-steering') !== selected) {
+    stage.classList.toggle('touch-steering', selected);
+    hud?.relayout();
+  }
+  touchStick?.setEnabled(selected && mode === 'playing');
+};
 let seedCode, city, course, run, guide, pilot;
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
