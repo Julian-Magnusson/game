@@ -129,7 +129,8 @@
   .gold .medal-disc { background: radial-gradient(circle at 35% 30%, #fff6c8, var(--gold) 45%, #b87a00); box-shadow: 0 0 22px #ffb400, 0 0 50px rgba(255, 180, 0, 0.45); }
   .silver .medal-disc { background: radial-gradient(circle at 35% 30%, #ffffff, var(--silver) 45%, #7d8fb0); box-shadow: 0 0 20px #9fc4ff; }
   .bronze .medal-disc { background: radial-gradient(circle at 35% 30%, #ffe0c8, var(--bronze) 45%, #9a4a1c); box-shadow: 0 0 20px #ff7a2b; }
-  .res-medal.finished .medal-disc { display: none; }
+  .res-medal.finished .medal-disc, .res-medal.assisted .medal-disc { display: none; }
+  .res-medal.assisted { color: var(--green); }
   .gold .res-medal-name { color: var(--gold); text-shadow: 0 0 14px #ffb400; } .silver .res-medal-name { color: var(--silver); text-shadow: 0 0 12px #9fc4ff; }
   .bronze .res-medal-name { color: var(--bronze); text-shadow: 0 0 12px #ff7a2b; } .res-medal.finished .res-medal-name { opacity: 0.75; }
   .res-best { margin-top: 10px; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.75; animation: rise 0.4s ease-out 1.25s both; }
@@ -139,6 +140,7 @@
   .res-table .pen { color: #ff8a95; } .res-table .sum { padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.18); opacity: 1; }
   .res-ladder { margin-top: 14px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-size: 11px; letter-spacing: 0.14em; font-variant-numeric: tabular-nums; animation: rise 0.4s ease-out 1.5s both; }
   .rung { padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 2px; opacity: 0.5; text-transform: uppercase; }
+  .res-ladder[hidden] { display: none; }
   .rung.got { opacity: 1; } .rung.gold.got { border-color: var(--gold); color: var(--gold); } .rung.silver.got { border-color: var(--silver); color: var(--silver); }
   .rung.bronze.got { border-color: var(--bronze); color: var(--bronze); }
   .res-next { margin-top: 8px; font-size: 12px; letter-spacing: 0.14em; opacity: 0.7; animation: rise 0.4s ease-out 1.6s both; }
@@ -344,6 +346,89 @@
     #overlay:not([inert]) #start:not(:disabled)::after { animation: none; }
   }
 
+  /* ---- Star shop ---------------------------------------------------------------------------- */
+  .shop-opener { position: absolute; top: 16px; left: calc(18px + var(--safe-l)); min-height: 44px; padding: 8px 14px;
+    display: flex; gap: 12px; align-items: center; border-color: var(--gold); color: var(--gold); font-size: 12px; letter-spacing: 0.12em;
+    background: rgba(14, 13, 22, 0.9); box-shadow: 0 0 16px #ffd45a18; }
+  #pause-shop { left: auto; right: calc(18px + var(--safe-r)); }
+  #shop { z-index: 30; padding: 18px calc(18px + var(--safe-r)) 18px calc(18px + var(--safe-l));
+    background: rgba(1, 3, 12, 0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .shop-sheet { width: min(880px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; box-sizing: border-box;
+    padding: 26px; text-align: left; border: 1px solid #ffd45a55; border-radius: 8px;
+    background: radial-gradient(ellipse at top left, #24303166, transparent 65%), #070e1b; box-shadow: 0 20px 100px #0009; }
+  .shop-head { display: flex; align-items: center; gap: 24px; }
+  .shop-heading { flex: 1; }
+  .shop-eyebrow { color: var(--gold); font-size: 11px; letter-spacing: 0.23em; text-transform: uppercase; }
+  #shop-title { margin: 3px 0 0; font-size: 34px; font-weight: 300; letter-spacing: 0.17em; }
+  .shop-wallet { text-align: right; }
+  .shop-wallet span { display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #a5b5c4; }
+  #shop-balance { display: block; font-size: 28px; font-weight: 500; color: var(--gold); }
+  #shop-done { padding: 10px 18px; min-height: 44px; letter-spacing: 0.12em; }
+  .shop-section-label { display: flex; justify-content: space-between; margin: 24px 0 12px; padding-top: 16px;
+    border-top: 1px solid #c2def51e; color: #9caec1; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .shop-grid { display: grid; grid-template-columns: 1.65fr 1fr; gap: 18px; }
+  .shop-item { display: grid; grid-template-columns: 120px 1fr; gap: 18px; align-items: center; padding: 20px;
+    border: 1px solid #4dffc066; border-radius: 5px; background: linear-gradient(135deg, #4dffc00f, #4dffc003); }
+  .shop-art { position: relative; height: 156px; display: grid; place-items: center; border-radius: 50%;
+    background: radial-gradient(ellipse, #4dffc022, transparent 69%); }
+  .shop-art svg { width: 106px; height: 140px; overflow: visible; filter: drop-shadow(0 0 9px #4dffc055); }
+  .shop-jet { transform-origin: 60px 90px; animation: shop-thrust 1.5s ease-in-out infinite alternate; }
+  @keyframes shop-thrust { to { transform: scaleY(0.76); opacity: 0.55; } }
+  .shop-item h3 { margin: 6px 0; font-size: 25px; font-weight: 500; letter-spacing: 0.02em; }
+  .shop-item p, .shop-inventory p { margin: 8px 0; color: #b5c6d6; font-size: 13px; line-height: 1.5; }
+  .shop-badge { color: var(--green); text-transform: uppercase; font-size: 11px; letter-spacing: 0.15em; }
+  .shop-specs { display: flex; gap: 12px; margin: 12px 0; color: var(--green); font-size: 12px; }
+  .shop-buy-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  #shop-price { font-size: 23px; color: var(--gold); white-space: nowrap; }
+  #shop-buy { flex: 1; min-height: 44px; padding: 10px 12px; color: #ceffea; border-color: var(--green);
+    background: #4dffc026; letter-spacing: 0.06em; font-size: 12px; box-shadow: 0 0 16px #4dffc018; }
+  #shop-buy:disabled { opacity: 0.55; }
+  .shop-inventory { padding: 20px; border: 1px solid #c2def526; border-radius: 5px; background: #ffffff03; }
+  .shop-inventory h3 { margin: 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #e6f8ff; }
+  #shop-owned { display: block; margin-top: 8px; color: var(--green); font-size: 13px; }
+  #shop-slots { display: flex; gap: 8px; margin: 16px 0; }
+  .shop-slot { width: 42px; height: 44px; display: grid; place-items: center; font-size: 24px;
+    border: 1px dashed #b5c6d644; border-radius: 4px; color: #b5c6d655; }
+  .shop-slot.filled { border: 1px solid #4dffc099; color: var(--green); background: #4dffc018; }
+  .shop-inventory .shop-small { font-size: 12px; color: #92a6ba; }
+  .shop-footer { margin-top: 18px; font-size: 12px; line-height: 1.5; color: #9bafc4; }
+  #shop-message { min-height: 1.5em; margin: 7px 0 0; color: var(--green); font-size: 12px; }
+  #shop-storage { color: var(--amber); }
+  .hud-lift { position: absolute; right: calc(24px + var(--safe-r)); bottom: 118px; min-width: 92px; min-height: 52px;
+    padding: 8px 12px; border: 1px solid var(--green); border-radius: 6px; background: #061b20da; color: #caffeb;
+    pointer-events: auto; touch-action: none; font: 600 13px/1.3 system-ui, sans-serif; letter-spacing: 0.07em; cursor: pointer;
+    box-shadow: 0 0 15px #4dffc022; }
+  .hud-lift span { display: block; margin-top: 3px; color: #a2c5bc; font-size: 11px; font-weight: 400; letter-spacing: 0.04em; }
+  .hud-lift:disabled { opacity: 0.5; cursor: default; }
+  .hud-lift[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { .shop-jet { animation: none; } }
+  @media (max-height: 500px) {
+    .shop-opener { top: 9px; left: calc(10px + var(--safe-l)); }
+    #pause-shop { right: calc(10px + var(--safe-r)); }
+    #shop { padding-top: 8px; padding-bottom: 8px; }
+    .shop-sheet { padding: 14px 20px; }
+    #shop-title { font-size: 25px; }
+    #shop-balance { font-size: 24px; }
+    .shop-section-label { margin: 10px 0 8px; padding-top: 8px; }
+    .shop-grid { gap: 12px; }
+    .shop-item { padding: 12px; grid-template-columns: 94px 1fr; gap: 12px; }
+    .shop-art { height: 120px; } .shop-art svg { width: 86px; height: 114px; }
+    .shop-item h3 { font-size: 22px; margin: 3px 0; }
+    .shop-item p, .shop-inventory p { margin: 5px 0; font-size: 12px; }
+    .shop-specs { margin: 6px 0; }
+    .shop-buy-row { margin-top: 8px; }
+    .shop-inventory { padding: 12px; }
+    #shop-slots { margin: 8px 0; }
+    .shop-footer { margin-top: 10px; }
+    #shop-message { margin-top: 3px; }
+    .hud-lift { bottom: 86px; right: calc(24px + var(--safe-r)); min-height: 48px; }
+  }
+  @media (max-width: 600px) and (orientation: portrait) {
+    .shop-grid { grid-template-columns: 1fr; }
+    .shop-head { gap: 12px; } #shop-title { font-size: 24px; }
+    .shop-item { grid-template-columns: 80px 1fr; padding: 12px; }
+  }
+
   /* ---- Short landscape screens (phones) ------------------------------------------------------ */
   @media (max-height: 500px), (orientation: portrait) and (pointer: coarse) {
     .screen { padding: 10px 24px; }
@@ -408,6 +493,7 @@
 <div id="game-stage">
 <canvas id="c"></canvas>
 <div id="overlay" class="screen">
+  <button id="title-shop" class="btn shop-opener" type="button" aria-controls="shop" aria-expanded="false" disabled><span>★ 0</span> shop</button>
   <button id="title-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div id="title">NEON FLIGHT</div>
   <div class="menu-course">
@@ -439,6 +525,7 @@
   </div>
 </div>
 <div id="pause" class="screen hidden">
+  <button id="pause-shop" class="btn shop-opener" type="button" aria-controls="shop" aria-expanded="false"><span>★ 0</span> shop</button>
   <button id="pause-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div class="pause-title">PAUSED</div>
   <div class="pause-run" id="pause-run"></div>
@@ -469,6 +556,10 @@
       <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
       <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Each is saved once per course and difficulty, even if you crash or retry. Stars are optional; collecting one adds no time bonus or penalty.</p>
     </section>
+    <section class="info-section"><h3>Star shop</h3>
+      <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
+      <p>Using one makes the flight <strong>assisted</strong>: collected stars still save, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
+    </section>
     <section class="info-section"><h3>Difficulty</h3>
       <ul class="info-difficulties">
         <li><strong>Easy:</strong> open avenues and regular rings; no side streets or course obstacles.</li>
@@ -486,6 +577,46 @@
       <p>Copy a course code or share the page URL to fly the same course and difficulty again. Your best time is saved in this browser. Medals use your flight time plus penalties. Earn Gold or Diamond on Hard to unlock Extreme for that course.</p>
       <p><b>Diamond</b> matches the clean reference run with no extra time allowance. Keep every gate, cut corners where there is room and use clean dives to gain speed.</p>
     </section>
+  </div>
+</div>
+<div id="shop" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+  <div class="shop-sheet">
+    <header class="shop-head">
+      <div class="shop-heading"><div class="shop-eyebrow">Neon Flight / supply depot</div><h2 id="shop-title">STAR SHOP</h2></div>
+      <div class="shop-wallet"><span>your wallet</span><strong id="shop-balance">★ 0</strong></div>
+      <button id="shop-done" class="btn" type="button">back</button>
+    </header>
+    <div class="shop-section-label"><span>Flight gear</span><span>Earn stars. Gear up.</span></div>
+    <div class="shop-grid">
+      <article class="shop-item">
+        <div class="shop-art" aria-hidden="true">
+          <svg viewBox="0 0 120 150" fill="none">
+            <ellipse cx="60" cy="128" rx="42" ry="10" stroke="#4dffc0" opacity=".25"/>
+            <path d="M43 88L49 125L60 143L71 125L77 88" fill="#4dffc0" opacity=".25" class="shop-jet"/>
+            <path d="M52 89L60 126L68 89" fill="#caffeb" class="shop-jet"/>
+            <path d="M38 77L26 94V61L38 48M82 77L94 94V61L82 48" fill="#123e40" stroke="#4dffc0" stroke-width="2"/>
+            <path d="M38 37L60 14L82 37V84L60 94L38 84Z" fill="#0b292f" stroke="#83ffdb" stroke-width="2"/>
+            <path d="M60 74V37M47 50L60 37L73 50" stroke="#caffeb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M44 81L60 87L76 81" stroke="#4dffc0" stroke-width="2"/>
+          </svg>
+        </div>
+        <div>
+          <span class="shop-badge">Single-use power-up</span><h3>Lift Boost</h3>
+          <p>A burst of upward thrust when you need a little more height. Watch for pipes overhead.</p>
+          <div class="shop-specs"><span id="shop-height">+18 lift</span><span>1 per flight</span></div>
+          <div class="shop-buy-row"><strong id="shop-price">★ 2</strong><button id="shop-buy" class="btn" type="button">buy lift · 2 ★</button></div>
+        </div>
+      </article>
+      <aside class="shop-inventory">
+        <h3>Your inventory</h3><strong id="shop-owned">0 / 3 ready</strong>
+        <div id="shop-slots"><span class="shop-slot">·</span><span class="shop-slot">·</span><span class="shop-slot">·</span></div>
+        <p id="shop-how">Press Space during flight.</p>
+        <p class="shop-small">Saved until used. Crashing or retrying never uses another boost automatically.</p>
+      </aside>
+    </div>
+    <div class="shop-footer" id="shop-rules">Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
+    <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
+    <div id="shop-message" role="status" aria-live="polite"></div>
   </div>
 </div>
 <div id="settings" class="screen hidden">
@@ -4157,6 +4288,7 @@ const PENALTY = { missed: 2, crash: 3, offCourse: 5 };
 const BOUNDARY = { warn: 34, returnAt: 125, travel: 150, gateMargin: 24 };
 const BOUNDARY_STEP = 6; // 20 Hz is enough for a warning; collisions still run at 120 Hz
 const LIFT_RATE = 45;     // units/s: how fast a booster's lift is delivered (it arrives over ~1 s)
+const POWER_LIFT = 18, POWER_RATE = 22.5; // shop boost: smooth extra lift over 0.8 seconds
 const MISS_REACH = 45;    // passing the next gate within radius + this to either side, at any height, is a miss
 const FINISH_GRACE = 6;   // the finish forgives a near miss: it still ends the run (with the miss penalty)
 const RETRY_LIFT = 15;    // each crash without passing a new gate respawns this much higher ...
@@ -4176,6 +4308,7 @@ function create(city, course) {
     boundary: { distance: 0, travel: 0, intensity: 0, tick: BOUNDARY_STEP - 1 },
     retries: 0,           // crashes since the last gate passed
     lift: 0,              // booster lift still to deliver (units of height)
+    powerLift: 0, powerUsed: false,
     used: new Set(),      // boosters unavailable on this attempt (also used by the test pilot to skip one)
     taken: new Set(),     // boosters actually collected since the last return before them
     stars: new Set(),     // never re-armed by a crash; the browser also restores previously banked stars
@@ -4291,8 +4424,11 @@ function step(run, stick, dt) {
   if (run.finished || run.crashed) return events;
   const g = run.glider;
   const p0 = [g.x, g.y, g.z];
-  const wind = Math.min(LIFT_RATE, run.lift / dt);
+  let wind = Math.min(LIFT_RATE, run.lift / dt);
   run.lift -= wind * dt;
+  const power = Math.min(POWER_RATE, run.powerLift / dt);
+  run.powerLift -= power * dt;
+  wind += power;
   GAME.flight.step(g, stick, dt, () => wind);
   run.time += dt;
   const p1 = [g.x, g.y, g.z];
@@ -4372,6 +4508,7 @@ function respawn(run) {
   run.glider = GAME.flight.create(respawnPose(run), run.course.difficulty);
   run.crashed = null;
   run.lift = 0;
+  run.powerLift = 0;
   run.boundary = { distance: 0, travel: 0, intensity: 0, tick: BOUNDARY_STEP - 1 };
   rearm(run);
 }
@@ -4396,7 +4533,16 @@ const medals = course => MEDALS.map(([name, f]) => ({ name, time: Math.ceil(cour
 // The best medal a total earns on a ladder, or null.
 const medalFor = (time, ladder) => ladder.find(m => time <= m.time)?.name ?? null;
 
-GAME.run = { create, step, respawn, respawnPose, routeDistance, total, medals, medalFor, PENALTY, BOUNDARY, LIFT_RATE, MISS_REACH };
+const canPowerBoost = run => !run.powerUsed && !run.finished && !run.crashed;
+function powerBoost(run) {
+  if (!canPowerBoost(run)) return false;
+  run.powerUsed = true;
+  run.powerLift = POWER_LIFT;
+  return true;
+}
+
+GAME.run = { create, step, respawn, respawnPose, routeDistance, total, medals, medalFor, canPowerBoost, powerBoost,
+  PENALTY, BOUNDARY, LIFT_RATE, MISS_REACH, POWER_LIFT };
 
 })();
 
@@ -6634,7 +6780,79 @@ window.addEventListener('storage', e => {
   if (!valid(e.key)) return;
   if (e.newValue === '1') claims.add(e.key); else claims.delete(e.key);
 });
-GAME.starBank = { load, claim, collected, total: () => claims.size };
+// Purchases may only spend claims that actually reached storage, not session-only finds.
+function savedTotal() {
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (valid(key) && localStorage.getItem(key) === '1') total++;
+  }
+  return total;
+}
+GAME.starBank = { load, claim, collected, savedTotal, total: () => claims.size };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/game/shop.js ----
+// Star claims remain permanent. One saved ledger holds both spending and inventory so a failed
+// write cannot charge for an item without granting it. Web Locks serialize purchases/uses across tabs.
+const KEY = 'neonflight.shop.v1';
+const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
+const listeners = new Set();
+let ledger = { bought: 0, used: 0 }, storageOK = true;
+function read() {
+  const raw = localStorage.getItem(KEY);
+  if (raw === null) return { bought: 0, used: 0 };
+  const value = JSON.parse(raw);
+  if (!value || !Number.isSafeInteger(value.bought) || !Number.isSafeInteger(value.used)
+      || value.used < 0 || value.bought < value.used || value.bought > Number.MAX_SAFE_INTEGER / LIFT.price
+      || value.bought - value.used > LIFT.capacity) throw new Error('invalid shop save');
+  return { bought: value.bought, used: value.used };
+}
+function refresh() {
+  try { ledger = read(); GAME.starBank.savedTotal(); storageOK = true; }
+  catch { storageOK = false; }
+  for (const listener of listeners) listener();
+}
+function state() {
+  return { balance: Math.max(0, GAME.starBank.total() - ledger.bought * LIFT.price),
+    spent: ledger.bought * LIFT.price, lifts: ledger.bought - ledger.used,
+    available: storageOK && !!navigator.locks?.request };
+}
+async function transaction(change) {
+  if (!navigator.locks?.request) return { ok: false, message: 'Open the online game to use the shop.' };
+  try {
+    return await navigator.locks.request(KEY, () => {
+      const next = read(), earned = GAME.starBank.savedTotal();
+      const result = change(next, earned);
+      if (!result.ok) return result;
+      localStorage.setItem(KEY, JSON.stringify(next));
+      ledger = next;
+      result.activate?.();
+      return { ok: true };
+    });
+  } catch { return { ok: false, message: 'Could not save. Your stars and items have not been spent.' }; }
+  finally { refresh(); }
+}
+function buyLift() {
+  return transaction((next, earned) => {
+    if (next.bought - next.used >= LIFT.capacity) return { ok: false, message: 'Your lift inventory is full.' };
+    if (earned - next.bought * LIFT.price < LIFT.price) return { ok: false, message: 'Find more stars to buy this boost.' };
+    next.bought++;
+    return { ok: true };
+  });
+}
+function useLift(canUse, activate) {
+  return transaction(next => {
+    if (!canUse() || next.bought <= next.used) return { ok: false };
+    next.used++;
+    return { ok: true, activate };
+  });
+}
+window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.v1.')) refresh(); });
+GAME.shop = { LIFT, state, refresh, buyLift, useLift, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -9428,7 +9646,7 @@ const ARROW_FROM = { x: 0.92, y: 0.88 };
 // on the screen, the UI zoom and the phone layout. Sizes in px before the zoom.
 const ARROW = { len: 40, gap: 6 };
 const TOP_PARTS = '.hud-gates, .hud-stars, .hud-timer, .hud-penalty, .hud-tag, .hud-pause';
-const BOTTOM_PARTS = '.hud-alt, .hud-spd, .hud-hint';
+const BOTTOM_PARTS = '.hud-alt, .hud-spd, .hud-hint, .hud-lift';
 // Pointing right: a shaft and a head, so it reads as a direction at any rotation.
 const ARROW_SVG = '<svg viewBox="0 0 40 28"><path d="M2 10 H22 V3 L38 14 L22 25 V18 H2 Z"/></svg>';
 
@@ -9479,7 +9697,7 @@ function freeBand(hud, zoom) {
   // With thumb steering, altitude sits above the stick in the left column. Reserve that column
   // instead of raising the entire band's bottom edge, which would squeeze arrows on short phones.
   const raisedAlt = hud.parentElement.classList.contains('touch-steering');
-  const top = rects(TOP_PARTS), bottom = rects(raisedAlt ? '.hud-spd, .hud-hint' : BOTTOM_PARTS);
+  const top = rects(TOP_PARTS), bottom = rects(raisedAlt ? '.hud-spd, .hud-hint, .hud-lift' : BOTTOM_PARTS);
   const all = [...top, ...bottom], altitude = raisedAlt ? rects('.hud-alt') : [];
   const pad = (ARROW.len / 2 + ARROW.gap) * zoom;
   return {
@@ -9491,7 +9709,7 @@ function freeBand(hud, zoom) {
 }
 
 // opts: { touch: shows a pause button (phones have no Esc key), onPause }
-function create(root, { touch, onPause }) {
+function create(root, { touch, onPause, onLift }) {
   let zoom = fitZoom(root), band = null;
   const hud = el('div', `hud${touch ? ' touch' : ''}`, root);
   const boundary = el('div', 'hud-boundary', hud);
@@ -9513,6 +9731,13 @@ function create(root, { touch, onPause }) {
   const pauseBtn = el('button', 'hud-pause', hud, 'II');
   pauseBtn.setAttribute('aria-label', 'pause');
   pauseBtn.addEventListener('pointerdown', e => { e.stopPropagation(); onPause(); });
+  const lift = el('button', 'hud-lift', hud);
+  lift.id = 'use-lift'; lift.hidden = true;
+  const liftLabel = el('strong', '', lift);
+  const liftHint = el('span', '', lift, touch ? 'tap to boost' : 'Space');
+  // A second thumb must work while the first pointer is captured by the steering stick.
+  lift.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); if (!lift.disabled) onLift(); });
+  lift.addEventListener('click', e => { e.stopPropagation(); if (e.detail === 0) onLift(); lift.blur(); });
   const alt = el('div', 'hud-alt', hud);
   const altBar = el('div', 'hud-bar', alt);
   const altFill = el('div', 'hud-bar-fill', altBar);
@@ -9554,6 +9779,12 @@ function create(root, { touch, onPause }) {
         shownGate = gate; shownGates = info.gates;
       }
       tag.textContent = info.label;
+      const hideLift = !info.lifts && !info.powerUsed;
+      if (lift.hidden !== hideLift) { lift.hidden = hideLift; band = null; }
+      liftLabel.textContent = info.powerUsed ? '↑ USED' : `↑ LIFT ×${info.lifts}`;
+      liftHint.textContent = info.powerUsed ? 'assisted flight' : touch ? 'tap to boost' : 'Space';
+      lift.disabled = !info.canLift;
+      lift.setAttribute('aria-label', info.powerUsed ? 'Lift boost used this flight' : `Use lift boost, ${info.lifts} available${touch ? '' : ', Space'}`);
       stars.textContent = `★ ${info.stars} / ${info.starTotal}`;
       stars.setAttribute('aria-label', `${info.stars} of ${info.starTotal} course stars collected`);
       const danger = Math.max(0, Math.min(1, info.boundary || 0));
@@ -9674,7 +9905,7 @@ function countUp(node, value, seconds) {
 function showResults(panel, r) {
   const q = sel => panel.querySelector(sel);
   const total = r.time + r.penalty;
-  const m = r.medal || 'finished';
+  const m = r.assisted ? 'assisted' : r.medal || 'finished';
   countUp(q('.res-time'), total, 0.9);
   q('.res-medal').className = `res-medal ${m}`;
   q('.res-medal-name').textContent = m;
@@ -9682,8 +9913,9 @@ function showResults(panel, r) {
 
   const best = q('.res-best');
   const isBest = r.best === null || total < r.best;
-  best.textContent = r.best === null ? 'first finish on this course' : isBest ? `new best  ${fmtDelta(total - r.best)}` : `best ${fmtTime(r.best)}  ${fmtDelta(total - r.best)}`;
-  best.classList.toggle('new', isBest);
+  best.textContent = r.assisted ? 'Lift Boost used · stars saved · no medal or record'
+    : r.best === null ? 'first finish on this course' : isBest ? `new best  ${fmtDelta(total - r.best)}` : `best ${fmtTime(r.best)}  ${fmtDelta(total - r.best)}`;
+  best.classList.toggle('new', !r.assisted && isBest);
 
   const rows = [['flight', fmtTime(r.time), '']];
   if (r.missed) rows.push([`${r.missed} missed gate${r.missed === 1 ? '' : 's'}`, `+${r.missed * PENALTY.missed} s`, 'pen']);
@@ -9701,6 +9933,8 @@ function showResults(panel, r) {
   // The next medal up, as a reason to fly again; with the top one, the margin it was won by.
   const up = rank < 0 ? r.medals[r.medals.length - 1] : rank > 0 ? r.medals[rank - 1] : null;
   q('.res-next').textContent = up ? `${fmtSeconds(total - up.time)} s faster for ${up.name}` : `${fmtSeconds(r.medals[0].time - total)} s under ${r.medals[0].name}`;
+  ladder.hidden = !!r.assisted;
+  if (r.assisted) q('.res-next').textContent = 'Fly without a Lift Boost to compete for medals.';
   q('.res-code span').textContent = `course ${r.code} · ${r.difficulty}`;
   for (const node of panel.children) node.style.animation = 'none';
   void panel.offsetWidth;
@@ -9842,6 +10076,78 @@ function createSettingsPanel(panel, device) {
 }
 
 GAME.settingsPanel = { create: createSettingsPanel };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/ui/shop-panel.js ----
+// A focused shop overlay. Opening it from pause never resumes or recalibrates the flight.
+function create(panel, { touch }) {
+  const q = selector => panel.querySelector(selector), buy = q('#shop-buy');
+  let origin = null, opener = null, busy = false;
+  q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
+  function render() {
+    const s = GAME.shop.state(), item = GAME.shop.LIFT;
+    q('#shop-balance').textContent = `★ ${s.balance}`;
+    q('#shop-owned').textContent = `${s.lifts} / ${item.capacity} ready`;
+    q('#shop-price').textContent = `★ ${item.price}`;
+    q('#shop-height').textContent = `+${item.height} lift`;
+    for (const [i, slot] of [...panel.querySelectorAll('.shop-slot')].entries()) {
+      slot.classList.toggle('filled', i < s.lifts);
+      slot.textContent = i < s.lifts ? '↑' : '·';
+    }
+    q('#shop-slots').setAttribute('aria-label', `${s.lifts} lift boosts owned, capacity ${item.capacity}`);
+    const hadFocus = document.activeElement === buy;
+    buy.disabled = busy || !s.available || s.lifts >= item.capacity || s.balance < item.price;
+    if (hadFocus && buy.disabled) q('#shop-done').focus();
+    buy.textContent = busy ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
+      : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
+    q('#shop-storage').hidden = s.available;
+  }
+  async function purchase() {
+    if (busy) return;
+    busy = true; render();
+    const result = await GAME.shop.buyLift();
+    busy = false; render();
+    q('#shop-message').textContent = result.ok ? 'Lift Boost added to your inventory.' : result.message;
+  }
+  function close() {
+    if (!origin) return;
+    panel.classList.add('hidden');
+    origin.inert = false;
+    opener.setAttribute('aria-expanded', 'false');
+    opener.focus();
+    origin = opener = null;
+  }
+  buy.addEventListener('click', purchase);
+  q('#shop-done').addEventListener('click', close);
+  panel.addEventListener('click', e => { if (e.target === panel) close(); });
+  panel.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const buttons = [...panel.querySelectorAll('button:not(:disabled)')];
+      const first = buttons[0], last = buttons.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    e.stopPropagation();
+  });
+  GAME.shop.onChange(render);
+  return {
+    open(button) {
+      if (origin) return;
+      opener = button; origin = button.closest('.screen'); origin.inert = true;
+      opener.setAttribute('aria-expanded', 'true');
+      q('#shop-message').textContent = '';
+      GAME.shop.refresh(); render();
+      panel.classList.remove('hidden');
+      q('#shop-done').focus();
+    },
+    close, get isOpen() { return !!origin; },
+  };
+}
+GAME.shopPanel = { create };
 
 })();
 
@@ -10082,6 +10388,7 @@ const stage = $('game-stage');
 const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), infoScreen = $('info'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
 const courseDialog = $('course-dialog');
+const shopScreen = $('shop');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 // Running inside the native app wrapper (app/, Capacitor), which locks the orientation natively.
 document.body.classList.toggle('native-app', !!window.Capacitor?.isNativePlatform?.());
@@ -10104,7 +10411,7 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, hud, input, target, settingsPanel, soundtrack, touchStick;
+let renderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
 const syncTouchStick = () => {
   const selected = usesTouchStick();
@@ -10140,7 +10447,7 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
   const cached = GAME.courseLoader.has(seed, nextDifficulty);
   const loading = $('course-loading'), cancel = $('loading-cancel');
   const focus = document.activeElement;
-  const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen];
+  const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen];
   const inert = screens.map(screen => screen.inert);
   let patience;
   courseLoading = true;
@@ -10190,6 +10497,25 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
 // Boosters taken this run (run.used can't say: a respawn re-arms the boosters after the checkpoint).
 let boostsTaken = 0;
 let newStars = 0;
+let usingLift = false;
+function refreshShopButtons() {
+  const { balance } = GAME.shop.state();
+  for (const id of ['title-shop', 'pause-shop']) $(id).querySelector('span').textContent = `★ ${balance}`;
+}
+async function useLift() {
+  if (usingLift || mode !== 'playing' || !GAME.run.canPowerBoost(run)) return;
+  const flight = run;
+  usingLift = true;
+  try {
+    const result = await GAME.shop.useLift(() => run === flight && mode === 'playing' && GAME.run.canPowerBoost(run), () => {
+      GAME.run.powerBoost(run);
+      GAME.sound.play('boost');
+      boostGlow = 1;
+      hud.toast(`lift +${GAME.run.POWER_LIFT} · assisted flight`, 'good', 2);
+    });
+    if (!result.ok && result.message) hud.toast(result.message, 'bad', 3);
+  } finally { usingLift = false; }
+}
 
 function newRun() {
   boostsTaken = 0;
@@ -10247,6 +10573,7 @@ function handle(events) {
     else if (e.type === 'boost') { boostsTaken++; hud.toast(`lift +${Math.round(e.lift)}`, 'good'); boostGlow = 1; }
     else if (e.type === 'star') {
       if (GAME.starBank.claim(seedCode, difficulty, e.star)) newStars++;
+      GAME.shop.refresh();
       hud.toast(`★ star saved · ${GAME.starBank.total()} total`, 'star', 2);
       hud.starCollected();
     }
@@ -10348,17 +10675,17 @@ function showResults() {
   hud.show(false);
   if (document.pointerLockElement) document.exitPointerLock();
   const total = GAME.run.total(run), best = readBest(seedCode), medals = medalLadder(course);
-  const medal = medalFor(total, medals);
+  const medal = run.powerUsed ? null : medalFor(total, medals);
   const unlockMedal = medal === 'gold' || medal === 'diamond';
   const firstExtremeUnlock = difficulty === 'hard' && unlockMedal && !extremeUnlocked(seedCode);
   if (difficulty === 'hard' && unlockMedal) grantExtreme(seedCode);
   console.log(`[game] finished ${seedCode}: ${total.toFixed(2)} s (flight ${run.time.toFixed(2)}, penalty ${run.penalty}, missed ${run.missed}, crashes ${run.crashes}), ${medal || 'no medal'}`);
   resetCopy($('results-copy'));
   GAME.hud.showResults(results, { time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, medals, medal, best, code: seedCode, difficulty,
-    stars: run.stars.size, starTotal: course.stars.length, newStars, starBank: GAME.starBank.total() });
+    stars: run.stars.size, starTotal: course.stars.length, newStars, starBank: GAME.starBank.total(), assisted: run.powerUsed });
   $('extreme-result').textContent = difficulty === 'hard' && unlockMedal
     ? `${firstExtremeUnlock ? 'Extreme unlocked' : 'Extreme available'} for course ${seedCode} · select it from the menu` : '';
-  if (best === null || total < best) writeBest(seedCode, total);
+  if (!run.powerUsed && (best === null || total < best)) writeBest(seedCode, total);
 }
 
 // ---- Rendering --------------------------------------------------------------------------------
@@ -10407,6 +10734,7 @@ function hudFrame({ cam, next }) {
   hud.update(run.glider, {
     time: run.time, penalty: run.penalty, gate: run.next, gates: course.gates.length,
     stars: run.stars.size, starTotal: course.stars.length,
+    lifts: GAME.shop.state().lifts, powerUsed: run.powerUsed, canLift: mode === 'playing' && !usingLift && GAME.run.canPowerBoost(run),
     aimScreen, nextScreen: offCourseCrash ? null : next ? gateOnScreen(cam, next) : null,
     groundH: GAME.collide.groundHeight(city, run.glider.x, run.glider.z),
     boundary: offCourseCrash ? 1 : mode === 'playing' ? run.boundary.intensity : 0,
@@ -10490,6 +10818,7 @@ function closeInfo(restoreFocus = true) {
 }
 
 function hideScreens() {
+  shopPanel?.close();
   closeInfo(false);
   closeCourseOptions(false);
   for (const s of [overlay, pausePanel, results]) s.classList.add('hidden');
@@ -10888,6 +11217,7 @@ document.addEventListener('fullscreenchange', () => {
   else if (TOUCH && ['countdown', 'playing', 'crashed'].includes(mode)) pause();
 });
 window.addEventListener('keydown', e => {
+  if (shopPanel?.isOpen) return;
   if (courseLoading) {
     if (e.code === 'Escape' && course) { e.preventDefault(); GAME.courseLoader.cancel(); }
     if (e.key === 'Tab') { e.preventDefault(); if (!$('loading-cancel').hidden) $('loading-cancel').focus(); }
@@ -10903,6 +11233,7 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
+  if (e.code === 'Space' && mode === 'playing') { e.preventDefault(); if (!e.repeat) useLift().catch(fail); return; }
   if (e.code === 'KeyI') { input.toggleInvert(); if (!infoScreen.classList.contains('hidden')) refreshInfo(); }
   if (!infoScreen.classList.contains('hidden') && e.key === 'Tab') { e.preventDefault(); $('info-done').focus(); }
   if (e.code === 'Escape' && !infoScreen.classList.contains('hidden')) { e.preventDefault(); closeInfo(); return; }
@@ -10946,15 +11277,17 @@ $('info-done').addEventListener('click', () => closeInfo());
 infoScreen.addEventListener('click', e => { if (e.target === infoScreen) closeInfo(); });
 $('title-settings').addEventListener('click', action(() => openSettings(overlay, showTitle)));
 $('pause-settings').addEventListener('click', action(() => openSettings(pausePanel, showPause)));
+for (const id of ['title-shop', 'pause-shop']) $(id).addEventListener('click', () => shopPanel.open($(id)));
 $('rotate-sideways').addEventListener('click', action(playSideways));
 
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
   GAME.settings.load();
   GAME.starBank.load();
+  GAME.shop.refresh();
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
-  hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause });
+  hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause, onLift: () => useLift().catch(fail) });
   input = GAME.input.create(canvas);
   if (TOUCH) touchStick = GAME.touchStick.create(stage, (x, y) => input.setTouchStick(x, y));
   soundtrack = GAME.soundtrack.create(GAME.sound);
@@ -10962,6 +11295,9 @@ async function boot() {
   // Music renders while the shaders compile; it starts playing at the first press once ready.
   GAME.sound.load(GAME.settings.get('musicTrack'));
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
+  shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH });
+  GAME.shop.onChange(refreshShopButtons);
+  refreshShopButtons();
   resolution.setBudget(GAME.settings.get('quality'));
   applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
   GAME.settings.onChange(applySetting);
@@ -10974,7 +11310,7 @@ async function boot() {
   console.log(`[gfx] ${GAME.gfx.programs.length} programs compiled in ${((performance.now() - t0) / 1000).toFixed(2)}s`);
 
   if (params.has('freeze')) return startFrozen();
-  startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('course-load').disabled = false;
+  startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('title-shop').disabled = $('course-load').disabled = false;
   startBtn.textContent = 'fly';
   api.ready = true;
   api.state = () => ({
@@ -10991,6 +11327,7 @@ async function boot() {
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
     proof: course.proof, medals: medalLadder(course),
     stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), newStars, starBank: GAME.starBank.total(),
+    shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
     view: { ...drawn, theme: renderer.theme.id, maxPixels: resolution.maxPixels },
   });
