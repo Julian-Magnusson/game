@@ -220,6 +220,11 @@
   .hud-gates { position: absolute; top: 16px; left: calc(24px + var(--safe-l)); text-align: left; }
   .hud-gates-value { display: inline-block; transform-origin: left center; font-size: 24px; font-weight: 300; letter-spacing: 0.04em; }
   .hud-gates-value small { font-size: 15px; opacity: 0.6; }
+  .hud-stars { position: absolute; top: 30px; left: calc(152px + var(--safe-l)); font-size: 15px; color: var(--star, #ffd76b); text-shadow: var(--halo), 0 0 10px var(--star, #ffd76b); white-space: nowrap; }
+  .hud-stars.pulse { animation: star-pickup 0.6s ease-out; }
+  .hud-toast.star, .star-summary { color: var(--star, #ffd76b); }
+  .star-summary { margin-top: 8px; font-size: 12px; letter-spacing: 0.08em; }
+  @keyframes star-pickup { 0% { transform: scale(1.4); filter: brightness(2); } 100% { transform: scale(1); filter: brightness(1); } }
   .hud-gates.pulse .hud-gates-value { animation: gatepulse 0.5s ease-out; }
   @keyframes gatepulse { 0% { color: #fff; text-shadow: var(--halo), 0 0 16px var(--magenta), 0 0 30px var(--magenta); transform: scale(1.35); }
     40% { color: #ffd0ea; text-shadow: var(--halo), 0 0 14px var(--magenta); } 100% { transform: none; } }
@@ -373,6 +378,8 @@
     .hud-timer { top: 10px; font-size: 26px; }
     .hud-penalty { top: 44px; }
     .hud-gates { top: 10px; } .hud-gates-value { font-size: 20px; }
+    .hud-stars { top: 23px; left: calc(130px + var(--safe-l)); font-size: 13px; }
+    .star-summary { margin-top: 5px; font-size: 11px; }
     .hud-alt, .hud-spd { bottom: 14px; }
     .hud-alt .hud-big { font-size: 38px; } .hud-spd .hud-big { font-size: 26px; }
     .hud-bar { height: 76px; }
@@ -409,6 +416,7 @@
       <button id="course-options" class="course-summary" type="button" aria-controls="course-dialog" aria-expanded="false"><span>course</span><strong id="card-code">----</strong><span class="summary-edit" aria-hidden="true">⌄</span></button>
       <button id="difficulty-options" class="course-summary" type="button" aria-controls="course-dialog" aria-expanded="false"><span>difficulty</span><strong id="card-difficulty">medium</strong><span class="summary-edit" aria-hidden="true">⌄</span></button>
     </div>
+    <div id="title-stars" class="star-summary"></div>
   </div>
   <div class="panel-buttons"><button id="shuffle" class="btn alt" disabled>new course</button><button id="start" class="btn primary" disabled>loading</button><button id="title-settings" class="btn" disabled>settings</button></div>
   <div id="status"></div>
@@ -434,6 +442,7 @@
   <button id="pause-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div class="pause-title">PAUSED</div>
   <div class="pause-run" id="pause-run"></div>
+  <div id="pause-stars" class="star-summary"></div>
   <div class="panel-buttons"><button id="resume" class="btn primary">resume</button><button id="restart" class="btn">restart</button><button id="pause-new" class="btn alt">new course</button><button id="pause-title" class="btn">menu</button><button id="pause-settings" class="btn">settings</button></div>
   <div id="pause-control-error" class="control-error" role="status"></div>
 </div>
@@ -442,6 +451,7 @@
   <div class="res-time"></div>
   <div class="res-medal"><span class="medal-disc"></span><span class="res-medal-name"></span></div>
   <div class="res-best"></div>
+  <div class="res-stars star-summary"></div>
   <div class="res-table"></div>
   <div class="res-ladder"></div>
   <div class="res-next"></div>
@@ -457,6 +467,7 @@
     <section class="info-section"><h3>Course rules</h3>
       <p>Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
+      <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Each is saved once per course and difficulty, even if you crash or retry. Stars are optional; collecting one adds no time bonus or penalty.</p>
     </section>
     <section class="info-section"><h3>Difficulty</h3>
       <ul class="info-difficulties">
@@ -3331,11 +3342,15 @@ function renderSfx() {
   out.click = uiClick();
   out.build = buildUp();
   out.impact = dropImpact();
+  // A short rising sparkle, distinct from gate chimes and the longer finish fanfare.
+  const star = makeBuffer(1.1);
+  [85, 90, 97].forEach((note, i) => bell(star, { at: i * 0.075, note, gain: 0.3, tau: 0.13, bright: 0.8, tine: 0.4 }));
+  glints(star, { at: 0.16, notes: [97, 102, 109], count: 5, over: 0.22, gain: 0.04, seed: 211 });
+  out.star = master(star, -6);
   return out;
 }
 
 AUDIO.renderSfx = renderSfx;
-
 
 })();
 </script>
@@ -4163,6 +4178,7 @@ function create(city, course) {
     lift: 0,              // booster lift still to deliver (units of height)
     used: new Set(),      // boosters unavailable on this attempt (also used by the test pilot to skip one)
     taken: new Set(),     // boosters actually collected since the last return before them
+    stars: new Set(),     // never re-armed by a crash; the browser also restores previously banked stars
     crashed: null, finished: false,
   };
 }
@@ -4319,6 +4335,7 @@ function step(run, stick, dt) {
   const hit = GAME.collide.sphere(run.city, g.x, g.y, g.z, FLIGHT.RADIUS);
   if (hit && !run.finished) crash(run, hit, events);
   else if (!run.finished) checkBoundary(run, p0, events);
+  if (!run.crashed && !run.finished) events.push(...GAME.stars.collect(run, p0, p1));
   return events;
 }
 
@@ -4457,6 +4474,9 @@ function lowStart(course, b) {
 
 function fly(city, course, mistakes = null) {
   const run = GAME.run.create(city, course);
+  const steeringCourse = mistakes?.line ? { ...course, line: mistakes.line } : course;
+  const path = mistakes?.tracePath ? [] : null;
+  let pathTick = 0;
   // Where each skipped booster is behind the pilot, and where each low approach starts.
   const skips = new Map((mistakes?.skipBoosters || []).map(id => booster(course, id)).map(b => [b.id, b.s + b.radius]));
   const lowAt = new Map((mistakes?.lowInto || []).map(id => [id, lowStart(course, booster(course, id))]));
@@ -4474,7 +4494,7 @@ function fly(city, course, mistakes = null) {
   const events = [];
   let wobble = { x: 0, y: 0 };
   while (!run.finished && run.time < limit) {
-    const stick = steer(pilot, run.glider, course);
+    const stick = steer(pilot, run.glider, steeringCourse);
     const s = pilot.k * course.sample;
     for (const [id, past] of skips) if (s > past) skips.delete(id); else run.used.add(id);
     for (const [id, at] of lowAt) if (s >= at) { lowAt.delete(id); run.glider.y -= mistakes.lowBy; }
@@ -4491,6 +4511,7 @@ function fly(city, course, mistakes = null) {
       heightTrace.low[pilot.k] = Math.min(heightTrace.low[pilot.k], run.glider.y);
       heightTrace.high[pilot.k] = Math.max(heightTrace.high[pilot.k], run.glider.y);
     }
+    if (path && pathTick++ % 6 === 0 && !run.crashed) path.push({ x: run.glider.x, y: run.glider.y, z: run.glider.z });
     if (run.crashed) {
       GAME.run.respawn(run);
       const cp = run.checkpoint >= 0 ? course.gates[run.checkpoint].s : 0;
@@ -4499,10 +4520,114 @@ function fly(city, course, mistakes = null) {
   }
   const boosts = events.filter(e => e.type === 'boost').length;
   return { finished: run.finished, time: run.time, total: GAME.run.total(run), crashes: run.crashes,
-    missed: run.missed, gate: run.next, boosts, events, ...(heightTrace ? { heightTrace } : {}) };
+    missed: run.missed, gate: run.next, boosts, events, ...(heightTrace ? { heightTrace } : {}), ...(path ? { path } : {}) };
 }
 
 GAME.autopilot = { steer, fly };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/game/stars.js ----
+// Optional, seeded detours. The normal racing line and medal proof remain unchanged; a second
+// real-physics flight proves that all stars can be taken together without missing a gate.
+const COUNTS = Object.freeze({ easy: 1, medium: 1, hard: 2, extreme: 3 });
+const RADIUS = 3.2, PICKUP = 4.2;
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+
+function segmentDistance(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const t = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy + (p.z - a.z) * dz) / (dx * dx + dy * dy + dz * dz || 1), 0, 1);
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy, p.z - a.z - t * dz);
+}
+
+// Cosine shoulders turn out from the racing line and back before the next mandatory marker.
+function detourLine(course, stars = course.stars) {
+  const L = course.line, line = { n: L.n, x: Float32Array.from(L.x), y: Float32Array.from(L.y), z: Float32Array.from(L.z) };
+  for (const star of stars) {
+    const { k, span, dx, dy, dz } = star.detour;
+    for (let j = Math.max(0, k - span); j <= Math.min(L.n - 1, k + span); j++) {
+      const f = (1 + Math.cos(Math.PI * (j - k) / span)) / 2;
+      line.x[j] += dx * f; line.y[j] += dy * f; line.z[j] += dz * f;
+    }
+  }
+  return line;
+}
+
+function collect(run, from, to) {
+  const a = { x: from[0], y: from[1], z: from[2] }, b = { x: to[0], y: to[1], z: to[2] };
+  const events = [];
+  for (const star of run.course.stars || []) {
+    if (run.stars.has(star.id) || segmentDistance(star, a, b) > PICKUP + GAME.flight.FLIGHT.RADIUS) continue;
+    // A nearby star on the other side of a wall cannot be picked up through it.
+    const dist = Math.hypot(star.x - b.x, star.y - b.y, star.z - b.z);
+    let clear = true;
+    for (let t = 0; t <= dist; t += 0.8) {
+      const f = dist ? t / dist : 0;
+      if (GAME.collide.sphere(run.city, b.x + (star.x - b.x) * f, b.y + (star.y - b.y) * f, b.z + (star.z - b.z) * f, 0.15)) { clear = false; break; }
+    }
+    if (!clear) continue;
+    run.stars.add(star.id);
+    events.push({ type: 'star', star: star.id });
+  }
+  return events;
+}
+
+function place(city, course, seed) {
+  const count = COUNTS[course.difficulty], L = course.line, sample = course.sample;
+  const rng = GAME.rng.stream(seed, `stars:${course.difficulty}`);
+  const baseline = GAME.autopilot.fly(city, course, { tracePath: true }).path;
+  const markers = [0, ...course.gates.map(g => g.s), ...course.boosters.flatMap(b => [b.pickup - 15, b.climbEnd + 15])].sort((a, b) => a - b);
+  const chosen = [];
+  let tries = 0;
+  for (let id = 0; id < count; id++) {
+    const target = course.length * (id + 1) / (count + 1);
+    const candidates = [];
+    for (let k = 40; k < L.n - 40; k += 4) {
+      const s = k * sample;
+      if (chosen.some(v => Math.abs(v.s - s) < 340)) continue;
+      const before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
+      const span = Math.floor(Math.min(108, s - before - 16, after - s - 20) / sample);
+      if (span * sample < 52) continue;
+      const a = Math.max(0, k - 4), b = Math.min(L.n - 1, k + 4);
+      const length = Math.hypot(L.x[b] - L.x[a], L.z[b] - L.z[a]);
+      if (length < 1) continue;
+      const nx = -(L.z[b] - L.z[a]) / length, nz = (L.x[b] - L.x[a]) / length;
+      for (const offset of [14, -14, 10, -10, 7, -7, 4, -4]) for (const dy of [0, -6, 5]) {
+        if (Math.hypot(offset, dy) < 7) continue;
+        const star = { id, s, x: L.x[k] + nx * offset, y: L.y[k] + dy, z: L.z[k] + nz * offset,
+          radius: RADIUS, phase: rng() * Math.PI * 2, detour: { k, span, dx: nx * offset, dy, dz: nz * offset } };
+        if (GAME.collide.sphere(city, star.x, star.y, star.z, RADIUS + 0.8)) continue;
+        // Keep it optional: the clean racing flight must go outside its collection bubble.
+        if (baseline.some((p, i) => i && segmentDistance(star, baseline[i - 1], p) < PICKUP + GAME.flight.FLIGHT.RADIUS + 1)) continue;
+        const line = detourLine(course, [star]);
+        let clear = true;
+        for (let j = k - span; j <= k + span; j++) {
+          if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], GAME.flight.FLIGHT.RADIUS + 0.8)) { clear = false; break; }
+        }
+        if (!clear) continue;
+        const scenery = GAME.collide.sphere(city, star.x, star.y, star.z, 16) ? 100 : 0;
+        candidates.push({ star, score: Math.abs(s - target) - scenery + Math.abs(offset) * 2 + rng() * 50 });
+      }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    let picked = null;
+    for (const { star } of candidates) {
+      const stars = [...chosen, star], trial = { ...course, stars };
+      tries++;
+      const proof = GAME.autopilot.fly(city, trial, { line: detourLine(course, stars) });
+      if (proof.finished && !proof.crashes && !proof.missed && proof.events.filter(e => e.type === 'star').length === stars.length) { picked = star; break; }
+    }
+    if (!picked) throw new Error(`no reachable star ${id + 1}/${count} for ${seed} ${course.difficulty}`);
+    chosen.push(picked);
+  }
+  course.stars = chosen;
+  course.starTries = tries;
+  return chosen;
+}
+
+GAME.stars = { COUNTS, RADIUS, PICKUP, place, collect, detourLine, segmentDistance };
 
 })();
 
@@ -6323,6 +6448,7 @@ function generate(city, seed, difficulty = 'medium') {
           finalCourse.difficulty = difficulty;
           finalCourse.proof = proof;
           finalCourse.rejected = reasons;
+          GAME.stars.place(city, finalCourse, seed);
           return finalCourse;
         }
         if (!STREETS[difficulty]) city.clearCourseProps();
@@ -6474,6 +6600,46 @@ GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, onChange: fn =
 
 ;(function () {
 'use strict';
+// ---- src/game/star-bank.js ----
+// One permanent claim per course/difficulty/star. Individual keys keep different tabs from
+// overwriting each other's finds. Settings reset never touches this collection.
+const PREFIX = 'neonflight.star.v1.';
+const claims = new Set();
+const keyFor = (code, difficulty, id) => `${PREFIX}${code}.${difficulty}.${id}`;
+function valid(key) {
+  const match = /^neonflight\.star\.v1\.([0-9A-HJ-NP-Z]{1,6})\.(easy|medium|hard|extreme)\.([0-2])$/.exec(key);
+  return !!match && Number(match[3]) < GAME.stars.COUNTS[match[2]];
+}
+function load() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (valid(key) && localStorage.getItem(key) === '1') claims.add(key);
+    }
+  } catch { /* the current session still keeps its stars */ }
+}
+function claim(code, difficulty, id) {
+  const key = keyFor(code, difficulty, id);
+  if (!valid(key)) throw new Error('invalid star claim');
+  try { if (localStorage.getItem(key) === '1') claims.add(key); } catch { /* session only */ }
+  if (claims.has(key)) return false;
+  claims.add(key);
+  try { localStorage.setItem(key, '1'); } catch { /* session only */ }
+  return true;
+}
+const collected = (code, difficulty) => Array.from({ length: GAME.stars.COUNTS[difficulty] }, (_, id) => id)
+  .filter(id => claims.has(keyFor(code, difficulty, id)));
+window.addEventListener('storage', e => {
+  if (e.key === null) { claims.clear(); return; }
+  if (!valid(e.key)) return;
+  if (e.newValue === '1') claims.add(e.key); else claims.delete(e.key);
+});
+GAME.starBank = { load, claim, collected, total: () => claims.size };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/themes.js ----
 // City themes: surfaces, colour and atmosphere. The city layout and the course never depend on the
 // theme, so a course code is the same course in every theme. Gameplay colours (gates magenta /
@@ -6498,7 +6664,7 @@ GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, onChange: fn =
 
 const THEMES = [
   {
-    id: 'neon', name: 'Neon Night',
+    id: 'neon', name: 'Neon Night', collectibleStar: [1, 0.65, 0.12],
     neon: [[1.0, 0.16, 0.62], [0.1, 0.72, 1.0], [0.55, 0.28, 1.0], [1.0, 0.55, 0.18]],
     windows: [[1.0, 0.6, 0.3], [0.55, 0.78, 1.0]],
     roof: [0.01, 0.009, 0.016],
@@ -6507,7 +6673,7 @@ const THEMES = [
     stars: 1, sun: null, rain: 0,
   },
   {
-    id: 'sunset', name: 'Synthwave Sunset',
+    id: 'sunset', name: 'Synthwave Sunset', collectibleStar: [1, 0.32, 0.12],
     neon: [[1.0, 0.15, 0.55], [1.0, 0.42, 0.1], [0.6, 0.2, 1.0], [0.1, 0.8, 1.0]],
     windows: [[1.0, 0.55, 0.3], [1.0, 0.4, 0.55]],
     roof: [0.02, 0.008, 0.02],
@@ -6519,7 +6685,7 @@ const THEMES = [
     rain: 0,
   },
   {
-    id: 'rain', name: 'Tokyo Rain',
+    id: 'rain', name: 'Tokyo Rain', collectibleStar: [0.15, 0.85, 1],
     neon: [[1.0, 0.1, 0.18], [0.1, 0.85, 1.0], [0.85, 0.9, 1.0], [1.0, 0.55, 0.12]],
     windows: [[0.85, 0.9, 1.0], [1.0, 0.72, 0.45]],
     roof: [0.008, 0.01, 0.014],
@@ -6528,7 +6694,7 @@ const THEMES = [
     stars: 0, sun: null, rain: 1,
   },
   {
-    id: 'toxic', name: 'Toxic Haze',
+    id: 'toxic', name: 'Toxic Haze', collectibleStar: [0.65, 1, 0.12],
     neon: [[0.5, 1.0, 0.1], [1.0, 0.85, 0.1], [0.1, 1.0, 0.7], [1.0, 0.2, 0.6]],
     windows: [[0.75, 1.0, 0.45], [1.0, 0.9, 0.5]],
     roof: [0.008, 0.014, 0.006],
@@ -6538,7 +6704,7 @@ const THEMES = [
     booster: [1.0, 0.38, 0.06],   // lime would vanish in a green city: boosters go orange here
   },
   {
-    id: 'arctic', name: 'Arctic Dawn',
+    id: 'arctic', name: 'Arctic Dawn', collectibleStar: [0.6, 0.45, 1],
     neon: [[0.35, 0.8, 1.0], [0.9, 0.95, 1.0], [0.6, 0.45, 1.0], [1.0, 0.45, 0.65]],
     windows: [[1.0, 0.75, 0.5], [0.7, 0.85, 1.0]],
     // The blue hour before sunrise: snowy roofs under a deep blue sky, a small warm sun low on the
@@ -6551,7 +6717,7 @@ const THEMES = [
     rain: 0,
   },
   {
-    id: 'amber', name: 'Amber Haze',
+    id: 'amber', name: 'Amber Haze', collectibleStar: [0.1, 1, 0.9],
     neon: [[1.0, 0.45, 0.08], [0.1, 0.7, 0.9], [1.0, 0.18, 0.06], [1.0, 0.2, 0.5]],
     windows: [[1.0, 0.65, 0.3], [1.0, 0.5, 0.2]],
     roof: [0.03, 0.012, 0.003],
@@ -6564,7 +6730,7 @@ const THEMES = [
     rain: 0,
   },
   {
-    id: 'overgrown', name: 'Overgrown City',
+    id: 'overgrown', name: 'Overgrown City', collectibleStar: [0.4, 1, 0.35],
     neon: [[0.28, 0.52, 0.16], [0.12, 0.48, 0.4], [0.75, 0.5, 0.2], [0.22, 0.38, 0.16]],
     windows: [[0.6, 0.42, 0.18], [0.25, 0.42, 0.3]],
     wall: [0.026, 0.033, 0.02], roof: [0.034, 0.052, 0.018], growth: 1,
@@ -6576,7 +6742,7 @@ const THEMES = [
     booster: [1.0, 0.38, 0.06],
   },
   {
-    id: 'aurora', name: 'Aurora Night',
+    id: 'aurora', name: 'Aurora Night', collectibleStar: [0.75, 0.32, 1],
     neon: [[0.12, 0.82, 0.65], [0.36, 0.32, 0.95], [0.26, 0.64, 1.0], [0.75, 0.32, 0.88]],
     windows: [[0.75, 0.68, 0.5], [0.35, 0.6, 0.8]],
     roof: [0.025, 0.036, 0.065], aurora: 1,
@@ -6585,7 +6751,7 @@ const THEMES = [
     stars: 0.85, sun: null, rain: 0,
   },
   {
-    id: 'ember', name: 'Ember City',
+    id: 'ember', name: 'Ember City', collectibleStar: [1, 0.75, 0.2],
     neon: [[1.0, 0.13, 0.025], [0.85, 0.32, 0.06], [0.7, 0.065, 0.04], [0.12, 0.42, 0.5]],
     windows: [[1.0, 0.34, 0.1], [0.65, 0.2, 0.08]],
     wall: [0.014, 0.006, 0.004], roof: [0.025, 0.013, 0.009],
@@ -6610,6 +6776,7 @@ function check(t) {
   if (t.windows.length !== 2) throw new Error(`theme ${t.id}: windows needs 2 colours`);
   t.windows.forEach((c, i) => colour(c, `windows[${i}]`));
   colour(t.roof, 'roof');
+  colour(t.collectibleStar, 'collectibleStar');
   ['zenith', 'horizon', 'glow'].forEach(k => colour(t.sky[k], `sky.${k}`));
   ['low', 'high'].forEach(k => colour(t.fog[k], `fog.${k}`));
   if (!(t.fog.density > 0)) throw new Error(`theme ${t.id}: fog.density must be positive`);
@@ -7808,6 +7975,9 @@ uniform vec2 uPathM[PATH_POINTS];              // their distance along the cours
 uniform vec4 uPathB[PATH_CHUNKS];              // bounding sphere of each chunk's segments (w = 0: none)
 
 uniform vec3 uBoost;                           // booster colour
+uniform vec4 uCollectibles[3];                 // centre xyz, radius (0 = hidden/collected)
+uniform vec4 uCollectiblePhases;
+uniform vec3 uCollectibleColour;
 // Course lights share a look no tower has: a white-hot core in a coloured halo, and motion.
 const vec3 HOT = vec3(1.0, 0.86, 0.95);
 const vec3 GATE_NEXT = vec3(1.0, 0.1, 0.5);
@@ -7991,7 +8161,69 @@ vec3 overScene(vec3 scene, vec3 light) {
   return scene * (1.0 - 0.8 * saturate(3.0 * max(light.r, max(light.g, light.b)))) + light;
 }
 
-// The rings, the finish beacon and the guide line along a ray whose city hit is at tMax. (Booster
+// Signed distance to a five-point star, with crisp anti-aliased edges at any render scale.
+float starDistance(vec2 p, float radius) {
+  float nearest = 1e6;
+  bool inside = false;
+  vec2 a = vec2(0.0, radius);
+  for (int j = 1; j <= 10; j++) {
+    float angle = float(j) * TAU / 10.0;
+    vec2 b = vec2(sin(angle), cos(angle)) * radius * (j % 2 == 0 ? 1.0 : 0.46);
+    vec2 edge = b - a;
+    nearest = min(nearest, length(p - a - edge * clamp(dot(p - a, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (b.x - a.x) * (p.y - a.y) / (b.y - a.y)) inside = !inside;
+    }
+    a = b;
+  }
+  return inside ? -nearest : nearest;
+}
+
+// A slowly turning coin-like star with a gentle bob, a breathing halo and orbiting glints.
+// All light respects the city's depth, so stars are discovered in pockets rather than through walls.
+vec3 collectibleLight(vec3 ro, vec3 rd, vec4 c, float phase, float tMax, float pixAngle) {
+  if (c.w <= 0.0) return vec3(0.0);
+  vec3 centre = c.xyz + vec3(0.0, sin(uTime * 2.0 + phase) * 0.55, 0.0);
+  vec3 delta = centre - ro;
+  float tc = dot(delta, rd);
+  if (tc <= 0.0 || tc >= tMax || tc > 550.0) return vec3(0.0);
+  float d = length(delta - rd * tc), px = max(0.02, tc * pixAngle);
+  if (d > c.w * 3.0 + px * 3.0) return vec3(0.0);
+  float pulse = 0.75 + 0.25 * sin(uTime * 3.0 + phase);
+  vec3 col = uCollectibleColour * exp(-d * d / (c.w * c.w * 1.7)) * 0.28 * pulse;
+  float angle = uTime * 1.1 + phase;
+  vec3 side = vec3(cos(angle), 0.0, -sin(angle));
+  vec3 normal = vec3(sin(angle), 0.0, cos(angle));
+  float den = dot(rd, normal);
+  if (abs(den) > 0.035) {
+    float t = dot(centre - ro, normal) / den;
+    if (t > 0.0 && t < tMax) {
+      vec3 q = ro + rd * t - centre;
+      vec2 p = vec2(dot(q, side), q.y);
+      float distance = starDistance(p, c.w);
+      float aa = max(px, px / max(abs(den), 0.2));
+      float face = 1.0 - smoothstep(-aa, aa, distance);
+      float facet = 0.8 + 0.3 * sin(atan(p.y, p.x + 0.0001) * 5.0 + angle);
+      float shine = pow(max(0.0, sin(angle + 0.6)), 12.0);
+      col += uCollectibleColour * face * facet * (1.5 + shine)
+        + mix(uCollectibleColour, vec3(1.0), 0.8) * tube(distance, 0.14, aa) * 1.8;
+    }
+  }
+  vec3 up = vec3(0.0, 1.0, 0.0);
+  vec3 right = normalize(cross(normalize(delta), up) + vec3(0.0001, 0.0, 0.0));
+  for (int j = 0; j < 3; j++) {
+    float a = -uTime * 0.85 + phase + float(j) * TAU / 3.0;
+    vec3 spark = centre + (right * cos(a) + up * sin(a)) * c.w * 1.65;
+    vec3 q = spark - ro;
+    float t = dot(q, rd);
+    if (t <= 0.0 || t >= tMax) continue;
+    float r = length(q - rd * t);
+    col += mix(uCollectibleColour, vec3(1.0), 0.65) * tube(r, 0.16, px) * (1.2 + pulse);
+  }
+  return col * (1.0 - smoothstep(300.0, 550.0, tc));
+}
+
+// The rings, stars, finish beacon and guide line along a ray whose city hit is at tMax. (Booster
 // columns are traced with the city's cells, which they stand in, and pads shaded with the street.)
 vec3 courseLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
   vec3 col = vec3(0.0);
@@ -8000,6 +8232,7 @@ vec3 courseLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
     col += ringLight(ro, rd, uRingC[i], uRingN[i], uRingF[i], tMax, pixAngle);
     if (uRingN[i].w == RING_FINISH) col += beaconLight(ro, rd, uRingC[i], tMax, pixAngle);
   }
+  for (int i = 0; i < 3; i++) col += collectibleLight(ro, rd, uCollectibles[i], uCollectiblePhases[i], tMax, pixAngle);
   return col + guideLight(ro, rd, tMax, pixAngle);
 }
 `;
@@ -8022,11 +8255,14 @@ function chunkBounds(guide) {
 // The uniforms for one frame's view of the course: rings [{ x, y, z, n, radius, kind, flare, xray }]
 // (kind: next, later, finish, boost or flare; xray: shown through towers) and guide line points
 // [[x, y, z, brightness, s, xray]] (s: distance along the course).
-function uniforms(rings, guide) {
+function uniforms(rings, guide, stars = []) {
   if (rings.length > MAX_RINGS) throw new Error(`${rings.length} rings, the shader draws ${MAX_RINGS}`);
   if (guide.length > PATH_POINTS) throw new Error(`${guide.length} guide points, the shader draws ${PATH_POINTS}`);
   const ringC = new Float32Array(MAX_RINGS * 4), ringN = new Float32Array(MAX_RINGS * 4), ringF = new Float32Array(MAX_RINGS * 2);
   const path = new Float32Array(PATH_POINTS * 4), pathM = new Float32Array(PATH_POINTS * 2);
+  const collectibles = new Float32Array(12), phases = new Float32Array(4);
+  if (stars.length > 3) throw new Error('at most three stars per course');
+  stars.forEach((s, i) => { collectibles.set([s.x, s.y, s.z, s.radius], i * 4); phases[i] = s.phase; });
   rings.forEach((r, i) => {
     if (!RING_KIND[r.kind]) throw new Error(`unknown ring kind ${r.kind}`);
     if (typeof r.flare !== 'number' || typeof r.xray !== 'number') throw new Error(`ring ${i} (${r.kind}) needs flare and xray`);
@@ -8039,7 +8275,7 @@ function uniforms(rings, guide) {
     path.set(p.slice(0, 4), i * 4);
     pathM.set(p.slice(4), i * 2);
   });
-  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide) };
+  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases };
 }
 
 // The boosters' colour in a city theme (GAME.themes): lime, unless the theme brings its own.
@@ -8718,6 +8954,7 @@ function themeUniforms(t) {
     uSunDir: normalize(sun ? sun.dir : [0, 1, 0]), uSunSize: sun ? sun.size : 0, uSunStripes: sun ? sun.stripes : 0, uSunSoft: sun ? sun.soft : 0,
     uSunTop: sun ? sun.top : [0, 0, 0], uSunBottom: sun ? sun.bottom : [0, 0, 0], uSunHalo: sun ? sun.halo : [0, 0, 0],
     uBoost: GAME.overlay.boosterColour(t),
+    uCollectibleColour: t.collectibleStar,
   };
 }
 
@@ -8778,7 +9015,7 @@ function create(gfx) {
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
-  function draw(cam, rings, guide) {
+  function draw(cam, rings, guide, stars = []) {
     if (!theme) throw new Error('draw before setTheme');
     const city = world.city;
     fullscreen(prog, {
@@ -8788,7 +9025,7 @@ function create(gfx) {
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
       ...rain(cam.pos, performance.now() / 1000),
-      ...GAME.overlay.uniforms(rings, guide),
+      ...GAME.overlay.uniforms(rings, guide, stars),
     });
   }
 
@@ -9190,7 +9427,7 @@ const ARROW_FROM = { x: 0.92, y: 0.88 };
 // numbers the player is reading. The band is measured from those parts, since their size depends
 // on the screen, the UI zoom and the phone layout. Sizes in px before the zoom.
 const ARROW = { len: 40, gap: 6 };
-const TOP_PARTS = '.hud-gates, .hud-timer, .hud-penalty, .hud-tag, .hud-pause';
+const TOP_PARTS = '.hud-gates, .hud-stars, .hud-timer, .hud-penalty, .hud-tag, .hud-pause';
 const BOTTOM_PARTS = '.hud-alt, .hud-spd, .hud-hint';
 // Pointing right: a shaft and a head, so it reads as a direction at any rotation.
 const ARROW_SVG = '<svg viewBox="0 0 40 28"><path d="M2 10 H22 V3 L38 14 L22 25 V18 H2 Z"/></svg>';
@@ -9268,6 +9505,8 @@ function create(root, { touch, onPause }) {
   const gates = el('div', 'hud-gates', hud);
   el('div', 'hud-label', gates, 'GATE');
   const gatesValue = el('div', 'hud-gates-value', gates);
+  const stars = el('div', 'hud-stars', hud);
+  stars.setAttribute('aria-label', 'Course stars');
   const timer = el('div', 'hud-timer', hud, '00:00.0');
   const penalty = el('div', 'hud-penalty', hud);
   const tag = el('div', 'hud-tag', hud);
@@ -9315,6 +9554,8 @@ function create(root, { touch, onPause }) {
         shownGate = gate; shownGates = info.gates;
       }
       tag.textContent = info.label;
+      stars.textContent = `★ ${info.stars} / ${info.starTotal}`;
+      stars.setAttribute('aria-label', `${info.stars} of ${info.starTotal} course stars collected`);
       const danger = Math.max(0, Math.min(1, info.boundary || 0));
       boundary.style.opacity = danger ? String(0.28 + 0.72 * danger) : '0';
       boundary.style.backgroundSize = `${18 + 50 * danger}% ${18 + 50 * danger}%`;
@@ -9345,6 +9586,7 @@ function create(root, { touch, onPause }) {
       setTimeout(() => t.remove(), seconds * 1000);
     },
     gatePassed() { replay(gates, 'pulse'); },
+    starCollected() { replay(stars, 'pulse'); },
     relayout,
     // A hint can wrap to two lines on a phone, which moves the band's lower edge.
     hint(text, seconds = 8) { hint.textContent = text; hint.classList.remove('gone'); hintUntil = performance.now() + seconds * 1000; relayout(); },
@@ -9402,6 +9644,7 @@ function showTitle(panel, c) {
   }
   document.querySelector('#course-code').textContent = c.code;
   document.querySelector('#card-facts').textContent = `${c.gates} gates`;
+  panel.querySelector('#title-stars').textContent = `★ ${c.stars} / ${c.starTotal} found · ${c.starBank} saved`;
   const best = document.querySelector('#card-best');
   best.textContent = c.best === null ? 'no time yet' : `your best ${fmtTime(c.best)}${c.bestMedal ? ` · ${c.bestMedal}` : ''}`;
   best.className = `card-best ${c.best === null ? 'none' : c.bestMedal || ''}`;
@@ -9411,6 +9654,7 @@ function showTitle(panel, c) {
 // r: { time, gate, gates, code, difficulty }
 function showPause(panel, r) {
   panel.querySelector('#pause-run').textContent = `${fmtTime(r.time)}  ·  gate ${Math.min(r.gate + 1, r.gates)} / ${r.gates}  ·  ${r.code} ${r.difficulty}`;
+  panel.querySelector('#pause-stars').textContent = `★ ${r.stars} / ${r.starTotal} found · ${r.starBank} saved`;
   panel.classList.remove('hidden');
 }
 
@@ -9434,6 +9678,7 @@ function showResults(panel, r) {
   countUp(q('.res-time'), total, 0.9);
   q('.res-medal').className = `res-medal ${m}`;
   q('.res-medal-name').textContent = m;
+  q('.res-stars').textContent = `★ ${r.stars} / ${r.starTotal} found · +${r.newStars} this flight · ${r.starBank} saved`;
 
   const best = q('.res-best');
   const isBest = r.best === null || total < r.best;
@@ -9744,7 +9989,8 @@ function create(sound) {
         if (e.type === 'gate') {
           if (!finishing) sound.play(`gate${sound.chord()}-${gateVoicing(streak)}`);
           streak++;
-        } else if (e.type === 'missed') { streak = 0; sound.play('missed'); }
+        } else if (e.type === 'star') sound.play('star');
+        else if (e.type === 'missed') { streak = 0; sound.play('missed'); }
         else if (e.type === 'boost') { boosted = true; sound.play('boost'); }
         else if (e.type === 'crash') { streak = 0; sound.play('crash'); sound.muffle('crash'); }
         else if (e.type === 'finish') { sound.cut(); sound.play('finish'); }
@@ -9943,11 +10189,14 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
 
 // Boosters taken this run (run.used can't say: a respawn re-arms the boosters after the checkpoint).
 let boostsTaken = 0;
+let newStars = 0;
 
 function newRun() {
   boostsTaken = 0;
+  newStars = 0;
   soundtrack?.reset();
   run = GAME.run.create(city, course);
+  for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   stepBefore = null;
   guide = GAME.guide.create(course);
   pilot = { k: 0 };
@@ -9996,6 +10245,11 @@ function handle(events) {
     // A near miss of the finish still ends the run: say so, rather than "missed gate" under FINISH.
     else if (e.type === 'missed') hud.toast(`${course.gates[e.gate].finish ? 'outside the ring' : 'missed gate'} +${GAME.run.PENALTY.missed} s`, 'bad');
     else if (e.type === 'boost') { boostsTaken++; hud.toast(`lift +${Math.round(e.lift)}`, 'good'); boostGlow = 1; }
+    else if (e.type === 'star') {
+      if (GAME.starBank.claim(seedCode, difficulty, e.star)) newStars++;
+      hud.toast(`★ star saved · ${GAME.starBank.total()} total`, 'star', 2);
+      hud.starCollected();
+    }
     else if (e.type === 'crash') {
       const offCourse = e.hit.kind === 'offCourse';
       const retryBooster = e.hit.retryBooster !== undefined;
@@ -10100,7 +10354,8 @@ function showResults() {
   if (difficulty === 'hard' && unlockMedal) grantExtreme(seedCode);
   console.log(`[game] finished ${seedCode}: ${total.toFixed(2)} s (flight ${run.time.toFixed(2)}, penalty ${run.penalty}, missed ${run.missed}, crashes ${run.crashes}), ${medal || 'no medal'}`);
   resetCopy($('results-copy'));
-  GAME.hud.showResults(results, { time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, medals, medal, best, code: seedCode, difficulty });
+  GAME.hud.showResults(results, { time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, medals, medal, best, code: seedCode, difficulty,
+    stars: run.stars.size, starTotal: course.stars.length, newStars, starBank: GAME.starBank.total() });
   $('extreme-result').textContent = difficulty === 'hard' && unlockMedal
     ? `${firstExtremeUnlock ? 'Extreme unlocked' : 'Extreme available'} for course ${seedCode} · select it from the menu` : '';
   if (best === null || total < best) writeBest(seedCode, total);
@@ -10115,7 +10370,7 @@ function render(now, w, h) {
   const view = GAME.guide.frame(guide, run, run.time);
   GAME.gfx.setFrame({ t: now / 1000, width: w, height: h });
   bindTarget(target);
-  renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide);
+  renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, course.stars.filter(s => !run.stars.has(s.id)));
   const post = GAME.post.defaults();
   const over = Math.max(0, (g.speed - FLIGHT.CRUISE) / (FLIGHT.MAX_SPEED - FLIGHT.CRUISE));
   post.bloom = 0.1 + boostGlow * 0.05;
@@ -10151,6 +10406,7 @@ function hudFrame({ cam, next }) {
   }
   hud.update(run.glider, {
     time: run.time, penalty: run.penalty, gate: run.next, gates: course.gates.length,
+    stars: run.stars.size, starTotal: course.stars.length,
     aimScreen, nextScreen: offCourseCrash ? null : next ? gateOnScreen(cam, next) : null,
     groundH: GAME.collide.groundHeight(city, run.glider.x, run.glider.z),
     boundary: offCourseCrash ? 1 : mode === 'playing' ? run.boundary.intensity : 0,
@@ -10162,6 +10418,8 @@ function hudFrame({ cam, next }) {
 function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
+  // Another tab can bank a find too; already saved stars disappear here on the next frame.
+  for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
@@ -10246,12 +10504,17 @@ function openSettings(screen, showAgain) {
 
 const VOLUME_KEYS = ['masterVolume', 'musicVolume', 'effectsVolume'];
 const applyVolumes = () => GAME.sound.setVolumes({ master: GAME.settings.get('masterVolume'), music: GAME.settings.get('musicVolume'), effects: GAME.settings.get('effectsVolume') });
+function applyTheme(id) {
+  const theme = GAME.themes.theme(id);
+  renderer.setTheme(theme);
+  stage.style.setProperty('--star', `rgb(${theme.collectibleStar.map(v => Math.round(v ** (1 / 2.2) * 255)).join(', ')})`);
+}
 
 // Settings the game applies itself; the camera and the input read theirs every frame.
 function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
   else if (key === 'musicTrack') GAME.sound.setSong(value);
-  else if (key === 'theme') renderer.setTheme(GAME.themes.theme(value));
+  else if (key === 'theme') applyTheme(value);
   else if (key === 'quality') resolution.setBudget(value);
   else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
   else if (key === 'invertY' && mode === 'paused' && !settingsPanel.isOpen) showPause();
@@ -10262,7 +10525,8 @@ function showTitle() {
   statusEl.classList.remove('control-error');
   const best = readBest(seedCode), medals = medalLadder(course);
   resetCopy($('title-copy'));
-  GAME.hud.showTitle(overlay, { code: seedCode, difficulty, gates: course.gates.length, medals, best, bestMedal: best === null ? null : medalFor(best, medals) });
+  GAME.hud.showTitle(overlay, { code: seedCode, difficulty, gates: course.gates.length, medals, best, bestMedal: best === null ? null : medalFor(best, medals),
+    stars: GAME.starBank.collected(seedCode, difficulty).length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
   const unlocked = extremeUnlocked(seedCode);
   for (const button of document.querySelectorAll('[data-difficulty]')) {
     button.setAttribute('aria-pressed', String(button.dataset.difficulty === difficulty));
@@ -10572,7 +10836,8 @@ function pause() {
 }
 
 function showPause() {
-  GAME.hud.showPause(pausePanel, { time: GAME.run.total(run), gate: run.next, gates: course.gates.length, code: seedCode, difficulty });
+  GAME.hud.showPause(pausePanel, { time: GAME.run.total(run), gate: run.next, gates: course.gates.length, code: seedCode, difficulty,
+    stars: run.stars.size, starTotal: course.stars.length, starBank: GAME.starBank.total() });
 }
 
 // Back into the run through a short countdown, so the player has their hands ready.
@@ -10686,6 +10951,7 @@ $('rotate-sideways').addEventListener('click', action(playSideways));
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
   GAME.settings.load();
+  GAME.starBank.load();
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause });
@@ -10697,7 +10963,7 @@ async function boot() {
   GAME.sound.load(GAME.settings.get('musicTrack'));
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
   resolution.setBudget(GAME.settings.get('quality'));
-  renderer.setTheme(GAME.themes.theme(params.get('theme') ?? GAME.settings.get('theme')));
+  applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
   GAME.settings.onChange(applySetting);
   refreshInfo();
   await loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
@@ -10724,6 +10990,7 @@ async function boot() {
     glider: { ...run.glider }, next: run.next, checkpoint: run.checkpoint, checkpointPose: GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
     proof: course.proof, medals: medalLadder(course),
+    stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), newStars, starBank: GAME.starBank.total(),
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
     view: { ...drawn, theme: renderer.theme.id, maxPixels: resolution.maxPixels },
   });
@@ -10749,6 +11016,13 @@ const MISTAKES = {
 
 function autopilotTools() {
   return {
+    collectStars() {
+      let source = null, routed;
+      pilotStick = () => {
+        if (source !== course) { source = course; routed = { ...course, line: GAME.stars.detourLine(course) }; }
+        return GAME.autopilot.steer(pilot, run.glider, routed);
+      };
+    },
     speed(k) { if (!(k > 0 && k <= 16)) throw new Error(`time scale ${k} out of range`); timeScale = k; },
     skipBooster(id) {
       if (mode !== 'playing' || !course.boosters[id] || run.used.has(id)) throw new Error(`cannot skip booster ${id}`);
@@ -10821,7 +11095,7 @@ function startFrozen() {
     return { width: canvas.width, height: canvas.height, results: out };
   };
   api.glider = () => run.glider;
-  api.course = { code: seedCode, gates: course.gates.length, boosters: course.boosters.map(b => ({ type: b.type, s: b.s })), start: course.start };
+  api.course = { code: seedCode, gates: course.gates.length, boosters: course.boosters.map(b => ({ type: b.type, s: b.s })), stars: course.stars, start: course.start };
   requestAnimationFrame(frozen);
   api.ready = true;
 }
