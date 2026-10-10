@@ -3523,7 +3523,7 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       city.obstacles = seededObstacles.slice();
     },
     placeCourseProps(course) { return placeCourseProps(city, course); },
-    placeBridgePipes(course) { return placeBridgePipes(city, course); },
+    placeBridgePipes(course, fill = false) { return placeBridgePipes(city, course, fill); },
     setBridgeHeight(pipe, y) {
       const delta = y - pipe.y;
       for (let n = 0; n < 2; n++) {
@@ -3735,15 +3735,17 @@ function placeCourseProps(city, course) {
 }
 
 // A cross-street pipe is made of two solid segments, one in each facing wall cell. The renderer
-// reads these same compact segments. A full Hard run aims for ten and Extreme for eleven, while
-// shorter approaches get fewer and Medium stays gentler. The seeded stream varies positions,
-// height, and high/low order without changing the buildings or course for a given seed.
-function placeBridgePipes(city, course) {
-  for (const pipe of city.bridgePipes) for (const cell of pipe.cells) {
-    city.bridgeA.fill(0, cell * 4, cell * 4 + 4);
-    city.bridgeB.fill(0, cell * 4, cell * 4 + 4);
+// reads these same compact segments. Establish the original crossings first so required altitude
+// dips have room. Hard and Extreme then fill spare facade slots around the finished flight line.
+// Each seeded pass varies positions, heights and high/low order; Medium keeps its original density.
+function placeBridgePipes(city, course, fill = false) {
+  if (!fill) {
+    for (const pipe of city.bridgePipes) for (const cell of pipe.cells) {
+      city.bridgeA.fill(0, cell * 4, cell * 4 + 4);
+      city.bridgeB.fill(0, cell * 4, cell * 4 + 4);
+    }
+    city.bridgePipes = [];
   }
-  city.bridgePipes = [];
   if (city.difficulty === 'easy') return city.bridgePipes;
   const { line, sample, gates, boosters, heightTrace } = course;
   const slots = [city.bridgeA, city.bridgeB];
@@ -3818,8 +3820,8 @@ function placeBridgePipes(city, course) {
       const len = hi - lo;
       if (len < 42) continue;
       const extreme = city.difficulty === 'extreme';
-      const wanted = Math.min(medium ? 5 : extreme ? 11 : 10,
-        Math.max(1, Math.round(len / (medium ? 42 : extreme ? 21 : 22))));
+      const wanted = Math.min(medium ? 5 : fill ? (extreme ? 24 : 16) : (extreme ? 11 : 10),
+        Math.max(1, Math.round(len / (medium ? 42 : fill ? 18 : extreme ? 21 : 22))));
       // Keep a rough density per run, but move each crossing within its own share of the street.
       // Shuffling an even high/low mix avoids a predictable alternating sequence.
       const step = len / wanted, jitter = Math.min(7, step * 0.27);
@@ -5230,13 +5232,13 @@ const PLANS = 3;                    // candidate plans per attempt; the one with
 const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
-// Keep earned Extreme unlocks and unchanged difficulty records. Hard's smaller rings need fresh
-// times; Extreme retains its own version for the denser inward buildings and 80-u/s pace.
+// Keep earned Extreme unlocks and unchanged Easy/Medium records. Denser pipes on Hard/Extreme
+// and more inward buildings on Extreme need fresh times for the changed obstacle layouts.
 const VERSION = 13;
 const EASY_VERSION = 12;
-const HARD_VERSION = 14;
+const HARD_VERSION = 16;
 const UNLOCK_VERSION = 12;
-const EXTREME_VERSION = 15;
+const EXTREME_VERSION = 16;
 const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: HARD_VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
@@ -5260,11 +5262,11 @@ const ALLEY_CORNER_CLEARANCE = 9.5;   // room for steering around the curved fli
 const ALLEY_TURN_MARGIN = 24;        // keep the outside turn clear but carry facades close to its ends
 const HARD_STREETS = Object.freeze({ wallHalf: 6.5, width: 19, maxLength: 600, minTurnWindow: 520,
   minFlank: 150, curveFlank: 40, minCount: 6, maxCount: 8, minTurns: 4,
-  minShare: 0.20, gap: 0, minProps: 2, minPipes: 2, minZigzags: 4, minBridges: 20, minActiveBridges: 1,
+  minShare: 0.20, gap: 0, minProps: 2, minPipes: 2, minZigzags: 4, minBridges: 30, minActiveBridges: 1,
   guards: true, islandHalf: 11.5, weave: 0 });
 const EXTREME_STREETS = Object.freeze({ wallHalf: 6.5, width: 19, shoulder: 0,
   minFlank: 3000, curveFlank: 40, minCount: 1, minTurns: 7, minShare: 0.55,
-  minProps: 6, minPipes: 6, minZigzags: 4, minBridges: 20, minActiveBridges: 1,
+  minProps: 6, minPipes: 6, minZigzags: 4, minBridges: 60, minActiveBridges: 1,
   guards: false, islandHalf: 11.5, weave: 0 });
 const STREETS = Object.freeze({
   medium: Object.freeze({ wallHalf: 3, width: 26, maxLength: 760, minTurnWindow: 560,
@@ -5829,7 +5831,7 @@ function addInwardBuildings(city, course, pts, streets, wallCells, difficulty) {
   const sample = course.sample, line = course.line;
   const profile = difficulty === 'medium' ? { radius: 50, offset: 6, max: 1, min: 1 }
     : difficulty === 'hard' ? { radius: 58, offset: 4.5, max: 2, min: 2 }
-      : { radius: 84, offset: 4.5, max: 14, min: 8 };
+      : { radius: 72, offset: 4.5, max: 24, min: 16 };
   const r = GAME.rng.stream(city.seed, `inward-buildings-${difficulty}-${course.attempt}`);
   const intrusions = [], used = new Set();
   const occupied = new Set(city.courseProps.map(p => p.cell));
@@ -5862,16 +5864,19 @@ function addInwardBuildings(city, course, pts, streets, wallCells, difficulty) {
         candidates.push({ k, s, alongZ, pair });
       }
     }
-    // Seeded order and alternating sides keep these from forming another predictable straight
-    // strip. Medium uses one per passage; Hard may use two and Extreme several.
-    for (let j = candidates.length - 1; j > 0; j--) {
+    // Short passages use a seeded order. Fill Extreme's continuous route from front to back so
+    // isolated random picks do not waste space needed for the next dodge. Sides still alternate.
+    if (difficulty === 'extreme') candidates.sort((a, b) => a.s - b.s);
+    else for (let j = candidates.length - 1; j > 0; j--) {
       const other = r.int(0, j);
       [candidates[j], candidates[other]] = [candidates[other], candidates[j]];
     }
     let placed = 0;
     for (const c of candidates) {
       if (placed >= profile.max) break;
-      if (intrusions.some(p => Math.abs(p.s - c.s) < profile.radius * 2 + 38)) continue;
+      // Leave a straight gap so consecutive dodges never overlap, even on Extreme.
+      const gap = profile.radius * 2 + (difficulty === 'extreme' ? 16 : 38);
+      if (intrusions.some(p => Math.abs(p.s - c.s) < gap)) continue;
       const firstSide = (intrusions.length + (city.seed & 1)) % 2 ? 1 : -1;
       for (const side of [firstSide, -firstSide]) {
         if (occupied.has(c.pair[side < 0 ? 0 : 1])) continue;
@@ -6059,6 +6064,14 @@ function streetNetwork(city, course, pts, difficulty) {
     const inwardBuildings = addInwardBuildings(city, trial, pts, streets, new Set(cells), difficulty);
     if (!inwardBuildings) return null;
     trial.inwardBuildings = inwardBuildings;
+    if (difficulty === 'hard' || extreme) {
+      // Fill spare pipe locations after the altitude dips and building dodges are fixed. The
+      // actual flown heights keep new crossings clear of those maneuvers and avoid rejecting
+      // otherwise good layouts just because a required dip was crowded out by extra pipes.
+      const flown = GAME.autopilot.fly(city, trial, { traceHeights: true });
+      if (!flown.finished || flown.crashes || flown.missed) return null;
+      city.placeBridgePipes({ ...trial, narrowStreets: streets, heightTrace: flown.heightTrace }, true);
+    }
     const proof = GAME.autopilot.fly(city, trial);
     const shaky = proof.finished && !proof.crashes && !proof.missed
       ? GAME.autopilot.fly(city, trial, { noise: 0.35, seed: city.seed }) : null;
