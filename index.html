@@ -557,6 +557,7 @@
     <section class="info-section"><h3>Controls</h3><p id="controls"></p><p id="info-pitch"></p></section>
     <section class="info-section"><h3>Course rules</h3>
       <p>Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
+      <p>Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
       <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
       <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Each is saved once per course and difficulty, even if you crash or retry. Stars are optional; collecting one adds no time bonus or penalty.</p>
     </section>
@@ -569,7 +570,7 @@
         <li><strong>Easy:</strong> open avenues and regular rings; no side streets or course obstacles.</li>
         <li><strong>Medium:</strong> a few wider side streets and obstacles; regular rings.</li>
         <li><strong>Hard:</strong> more narrow turns and obstacles; smaller rings.</li>
-        <li><strong>Extreme:</strong> narrow streets throughout, smaller rings and faster flight.</li>
+        <li><strong>Extreme:</strong> tight streets and wooded parks, smaller rings and faster flight.</li>
       </ul>
       <p id="extreme-status" role="status"></p>
     </section>
@@ -3728,6 +3729,287 @@ GAME.structures = { TYPE, boxes, decorate };
 
 ;(function () {
 'use strict';
+// ---- src/world/street.js ----
+// Street furniture and parks share their exact solids with collision and the ray tracer.
+// Pieces are [minX,minY,minZ,maxX,maxY,maxZ,material,shape,object]; shape 1 is an ellipsoid.
+const MATERIAL = Object.freeze({ BARK: 1, LEAVES: 2, WOOD: 3, METAL: 4, GLASS: 5, STONE: 6, BRONZE: 7, SIGN: 8 });
+const MAX_PIECES = 16;
+
+function reset(city) {
+  for (const p of city.parkPatch || []) {
+    city.kind[p.cell] = p.kind;
+    city.boxA.set(p.a, p.cell * 4); city.boxB.set(p.b, p.cell * 4);
+  }
+  city.parkPatch = [];
+  city.streetBoxes = Array(city.n * city.n).fill(null);
+  city.park.fill(0);
+}
+
+const distance2 = (b, p) => Math.max(b[0] - p.x, 0, p.x - b[3]) ** 2
+  + Math.max(b[1] - p.y, 0, p.y - b[4]) ** 2 + Math.max(b[2] - p.z, 0, p.z - b[5]) ** 2;
+const box = (x, y, z, hx, hy, hz, material, shape = 0) =>
+  [x - hx, y - hy, z - hz, x + hx, y + hy, z + hz, material, shape];
+
+function tree(x, z, h, width) {
+  return [box(x, h * 0.3, z, 0.42 + h * 0.008, h * 0.3, 0.42 + h * 0.008, MATERIAL.BARK),
+    box(x, h * 0.59, z, width, h * 0.24, width * 0.82, MATERIAL.LEAVES, 1),
+    box(x - width * 0.23, h * 0.78, z + width * 0.13, width * 0.74, h * 0.22, width * 0.72, MATERIAL.LEAVES, 1),
+    box(x + width * 0.42, h * 0.63, z - width * 0.25, width * 0.67, h * 0.19, width * 0.68, MATERIAL.LEAVES, 1)];
+}
+
+function bench(x, z, alongZ = false) {
+  const turn = b => alongZ ? [x + b[2], b[1], z + b[0], x + b[5], b[4], z + b[3], ...b.slice(6)]
+    : [x + b[0], b[1], z + b[2], x + b[3], b[4], z + b[5], ...b.slice(6)];
+  return [box(0, 1.05, 0, 2.5, 0.16, 0.65, MATERIAL.WOOD),
+    box(0, 1.7, 0.58, 2.5, 0.48, 0.12, MATERIAL.WOOD),
+    ...[-1.9, 1.9].map(x => box(x, 0.47, 0, 0.12, 0.47, 0.51, MATERIAL.METAL))].map(turn);
+}
+
+function shelter(x, z, alongZ) {
+  const turn = b => alongZ ? [x + b[2], b[1], z + b[0], x + b[5], b[4], z + b[3], ...b.slice(6)]
+    : [x + b[0], b[1], z + b[2], x + b[3], b[4], z + b[5], ...b.slice(6)];
+  return [box(0, 4.05, 0, 4.7, 0.18, 1.7, MATERIAL.METAL),
+    box(0, 2, 1.48, 4.4, 1.8, 0.1, MATERIAL.GLASS),
+    ...[-4.3, 4.3].map(x => box(x, 2, 1.3, 0.14, 2, 0.14, MATERIAL.METAL)),
+    box(3.7, 2.55, 1.26, 0.45, 0.72, 0.12, MATERIAL.SIGN),
+    box(-1, 1.05, 0.8, 2.6, 0.15, 0.5, MATERIAL.WOOD),
+    box(-3, 0.5, 0.8, 0.13, 0.5, 0.4, MATERIAL.METAL),
+    box(1, 0.5, 0.8, 0.13, 0.5, 0.4, MATERIAL.METAL)].map(turn);
+}
+
+function decorate(city, course) {
+  city.clearGeometryCache();
+  const { line, sample } = course, finish = course.gates.at(-1);
+  course.parks = []; course.sculptures = [];
+  let nextObject = 1;
+  const removedObjects = new Set();
+  // Keep supporting buildings and the established difficulty hazards intact at park edges.
+  const protectedCells = new Set([...(city.turnIslandCells || []), ...city.obstacles,
+    ...(course.inwardBuildings || []).map(p => p.cell), ...(course.overhangs || []).map(p => p.cell),
+    ...city.courseProps.map(p => p.cell), ...city.bridgePipes.flatMap(p => p.cells)]);
+  const marked = new Set();
+  function park(s0, s1, isFinish) {
+    const cells = new Set();
+    for (let k = Math.max(0, Math.floor(s0 / sample)); k <= Math.min(line.n - 1, Math.ceil(s1 / sample)); k += 2) {
+      const ix = Math.floor(line.x[k] / city.cell), iz = Math.floor(line.z[k] / city.cell);
+      for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        if (ix + dx < 1 || iz + dz < 1 || ix + dx >= city.n - 1 || iz + dz >= city.n - 1) continue;
+        const cell = (iz + dz) * city.n + ix + dx;
+        if (protectedCells.has(cell)) continue;
+        cells.add(cell);
+        if (marked.has(cell)) continue;
+        marked.add(cell);
+        const a = cell * 4;
+        city.parkPatch.push({ cell, kind: city.kind[cell], a: city.boxA.slice(a, a + 4), b: city.boxB.slice(a, a + 4) });
+        city.kind[cell] = city.KIND.PLAZA; city.boxA.fill(0, a, a + 4); city.boxB.fill(0, a, a + 4);
+        city.structure.fill(0, a, a + 4); city.park[cell] = isFinish ? 2 : 1;
+      }
+    }
+    course.parks.push({ s0, s1, finish: isFinish, cells: [...cells] });
+  }
+  // Turn an existing low stretch into an open park, without changing its energy/booster plan.
+  let start = -1, best = null;
+  for (let k = Math.round(160 / sample); k < line.n; k++) {
+    if (line.y[k] <= 38 && k * sample < finish.s - 500) {
+      if (start < 0) start = k;
+    } else if (start >= 0) {
+      if (k - start >= 100 / sample && (!best || k - start > best[1] - best[0])) best = [start, k - 1];
+      start = -1;
+    }
+  }
+  if (best) park(best[0] * sample - 32, Math.min(best[0] * sample + 320, best[1] * sample + 32), false);
+  park(Math.max(0, finish.s - 320), finish.s + 32, true);
+
+  // A gentle weave in the finish park makes its trees obstacles to steer around. It starts
+  // after the final lift has settled; the finish itself and every boost stay in place.
+  const oldX = line.x.slice(), oldZ = line.z.slice(), oldGates = course.gates.map(g => [g.x, g.z]);
+  const lastBoost = Math.max(0, ...course.boosters.map(b => b.climbEnd + 100));
+  const from = Math.max(finish.s - 300, lastBoost), to = finish.s - 40;
+  const amp = course.difficulty === 'easy' ? 7 : 9;
+  if (to - from >= 160) {
+    const rx = -finish.n[2], rz = finish.n[0];
+    for (let k = Math.ceil(from / sample); k * sample < to; k++) {
+      const t = (k * sample - from) / (to - from);
+      const lateral = amp * Math.sin(t * Math.PI * 4) * Math.sin(t * Math.PI);
+      line.x[k] += rx * lateral; line.z[k] += rz * lateral;
+    }
+    course.gates.forEach(g => { const k = Math.round(g.s / sample); g.x = line.x[k]; g.z = line.z[k]; });
+    const proof = GAME.autopilot.fly(city, course);
+    if (!proof.finished || proof.crashes || proof.missed || course.gates.some(g => !GAME.plan.ringClear(city, g))) {
+      line.x.set(oldX); line.z.set(oldZ);
+      course.gates.forEach((g, i) => { [g.x, g.z] = oldGates[i]; });
+    }
+  }
+  // Bucket the flown path and guide locally, keeping detail placement linear in city size.
+  const paths = Array.from({ length: city.n * city.n }, () => []);
+  const addPath = p => { const c = city.cellIndex(p.x, p.z); if (c >= 0) paths[c].push(p); };
+  for (let k = 0; k < line.n; k++) addPath({ x: line.x[k], y: line.y[k], z: line.z[k] });
+  for (const p of GAME.autopilot.fly(city, course, { tracePath: true }).path) addPath(p);
+  const rings = [...course.gates, ...course.boosters.filter(b => b.type === 'ring')];
+  function safe(b) {
+    const ix = Math.floor((b[0] + b[3]) / 2 / city.cell), iz = Math.floor((b[2] + b[5]) / 2 / city.cell);
+    const margin = course.difficulty === 'easy' || course.difficulty === 'medium' ? 4.5 : 3.8;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (ix + dx < 0 || iz + dz < 0 || ix + dx >= city.n || iz + dz >= city.n) continue;
+      if (paths[(iz + dz) * city.n + ix + dx].some(p => distance2(b, p) < margin ** 2)) return false;
+    }
+    // Preserve entire ring rims and the full ground-pad pickup circle, including low arrivals.
+    for (const g of rings) {
+      if (Math.hypot((b[0] + b[3]) / 2 - g.x, (b[2] + b[5]) / 2 - g.z) > g.radius + 24) continue;
+      const right = [-g.n[2], g.n[0]];
+      for (let j = 0; j < 24; j++) {
+        const a = j / 24 * Math.PI * 2, radius = g.radius + 1;
+        if (distance2(b, { x: g.x + right[0] * Math.cos(a) * radius, y: g.y + Math.sin(a) * radius,
+          z: g.z + right[1] * Math.cos(a) * radius }) < 2.2 ** 2) return false;
+      }
+    }
+    for (const p of course.pads) {
+      const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]);
+      if (dx * dx + dz * dz < (p.radius + 3) ** 2) return false;
+    }
+    return true;
+  }
+  // Split furniture crossing a cell boundary. Ellipsoids always fit wholly in one cell;
+  // splitting their envelope would change their curved geometry.
+  function place(pieces, check = true) {
+    if (check && pieces.some(b => !safe(b))) return false;
+    const additions = new Map();
+    for (const b of pieces) {
+      const ix0 = Math.floor(b[0] / city.cell), ix1 = Math.floor((b[3] - 1e-5) / city.cell);
+      const iz0 = Math.floor(b[2] / city.cell), iz1 = Math.floor((b[5] - 1e-5) / city.cell);
+      if (b[7] && (ix0 !== ix1 || iz0 !== iz1)) return false;
+      for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+        if (ix < 0 || iz < 0 || ix >= city.n || iz >= city.n) return false;
+        const cell = iz * city.n + ix;
+        const part = [Math.max(b[0], ix * city.cell), b[1], Math.max(b[2], iz * city.cell),
+          Math.min(b[3], (ix + 1) * city.cell), b[4], Math.min(b[5], (iz + 1) * city.cell), b[6], b[7], nextObject];
+        if (city.buildingBoxes(cell).some(w => w[0] < part[3] && w[3] > part[0] && w[2] < part[5] && w[5] > part[2])) return false;
+        if (!additions.has(cell)) additions.set(cell, []);
+        additions.get(cell).push(part);
+      }
+    }
+    for (const [cell, parts] of additions) if ((city.streetBoxes[cell]?.length || 0) + parts.length > MAX_PIECES) return false;
+    for (const [cell, parts] of additions) (city.streetBoxes[cell] ||= []).push(...parts);
+    return nextObject++;
+  }
+  // Twin bronze figures raise stepped wings around a real ring. Their opening is wider than
+  // the illuminated rim, and their plinths leave the ground underneath the gate open too.
+  function sculpture(g) {
+    if (Math.max(Math.abs(g.n[0]), Math.abs(g.n[2])) < 0.995 || g.y > 60) return;
+    const alongZ = Math.abs(g.n[2]) > 0.9, opening = g.radius + 3.8, pieces = [];
+    const make = (u, y, hx, hy, depth, material) => alongZ
+      ? box(g.x + u, y, g.z, hx, hy, depth, material)
+      : box(g.x, y, g.z + u, depth, hy, hx, material);
+    for (const side of [-1, 1]) {
+      const u = side * (opening + 1.6);
+      pieces.push(make(u, 0.6, 2, 0.6, 2.4, MATERIAL.STONE),
+        ...[-0.62, 0.62].map(offset => make(u + offset, g.y * 0.25, 0.37, g.y * 0.25 - 0.6, 0.55, MATERIAL.BRONZE)),
+        make(u, g.y * 0.65, 1.15, g.y * 0.24, 0.85, MATERIAL.BRONZE),
+        make(u, g.y * 0.95, 0.75, g.y * 0.07, 0.8, MATERIAL.BRONZE));
+      for (let j = 0; j < 2; j++) {
+        const y = g.y + opening * (j + 0.5) / 2;
+        pieces.push(make(side * (opening + 1.4 - j * 0.65), y, 0.7, opening / 4 + 0.1, 0.65, MATERIAL.BRONZE));
+      }
+      pieces.push(make(side * opening * 0.5, g.y + opening + 0.5, opening * 0.5 + 0.7, 0.6, 0.75, MATERIAL.BRONZE));
+    }
+    const object = place(pieces);
+    if (object) course.sculptures.push({ object, s: g.s, finish: !!g.finish, booster: g.type === 'ring' });
+  }
+  sculpture(finish);
+  const parkRing = [...rings].sort((a, b) => (b.type === 'ring') - (a.type === 'ring')).find(g => !g.finish && g.y < 38 && course.parks.some(p => g.s >= p.s0 && g.s <= p.s1));
+  if (parkRing) sculpture(parkRing);
+
+  course.parkTrees = [];
+  // Place a few slim trees near the old straight shortcut, where the finish weave avoids them.
+  for (let k = Math.ceil(from / sample); k < Math.min(line.n, Math.floor(to / sample)); k += 3) {
+    if (Math.hypot(line.x[k] - oldX[k], line.z[k] - oldZ[k]) < 5.0) continue;
+    const offsetX = line.x[k] - oldX[k], offsetZ = line.z[k] - oldZ[k];
+    const len = Math.hypot(offsetX, offsetZ);
+    const x = oldX[k] - offsetX / len * 2.2, z = oldZ[k] - offsetZ / len * 2.2;
+    const cell = city.cellIndex(x, z);
+    if (!city.park[cell] || course.parkTrees.some(t => Math.hypot(t.x - x, t.z - z) < 30)) continue;
+    const h = Math.min(72, Math.max(36, line.y[k] / 0.68));
+    const pieces = tree(x, z, h, 1.8), bypass = { x: oldX[k], y: line.y[k], z: oldZ[k] };
+    if (!pieces.some(b => b[7] && GAME.collide.ellipsoidDistance2(b, bypass.x, bypass.y, bypass.z) <= GAME.flight.FLIGHT.RADIUS ** 2)) continue;
+    if (place(pieces)) course.parkTrees.push({ cell, x, z, h, shortcut: true,
+      s: k * sample, bypass: { x: oldX[k], y: line.y[k], z: oldZ[k] } });
+  }
+  for (let i = 0; i < city.kind.length; i++) {
+    const r = GAME.rng.stream(city.seed, `street-${i}`), [cx, cz] = city.cellCenter(i);
+    const isPark = city.park[i] > 0, plaza = city.kind[i] === city.KIND.PLAZA;
+    if (isPark || plaza) {
+      if (!isPark) city.park[i] = 1;
+      for (let j = 0; j < (isPark ? 2 : 1); j++) {
+        const x = cx + (j ? 1 : -1) * r.range(4, 9), z = cz + r.range(-8, 8);
+        const h = isPark ? r.range(21, 42) : r.range(8, 15), width = isPark ? r.range(3.2, 6.2) : r.range(2.1, 3.5);
+        if (place(tree(x, z, h, width)) && isPark) course.parkTrees.push({ cell: i, x, z, h });
+      }
+      if (r() < 0.55) place(bench(cx + 9, cz - 10, r() < 0.5));
+    } else if (city.kind[i] === city.KIND.AVENUE) {
+      const alongZ = i % city.n % GAME.city.AVENUE_X === 0;
+      if (r() < 0.16) place(shelter(cx + (alongZ ? 12 : 0), cz + (alongZ ? 0 : 12), alongZ));
+      else if (r() < 0.23) place(tree(cx + (alongZ ? -12 : 0), cz + (alongZ ? 0 : -12), r.range(7, 12), 2));
+    } else if (r() < 0.28) {
+      // Benches sit on the pavement outside the ground-floor shop fronts.
+      place(bench(cx, cz + 13.8));
+    }
+  }
+  city.cacheGeometry();
+  // Remove furniture in any new crash cell before accepting the decorated course. The existing
+  // course proof remains the fallback; park carving only removes old solids.
+  const ids = course.boosters.map(b => b.id);
+  const checks = [null, { noise: 0.35, seed: city.seed }, { skipBoosters: ids.slice(0, 2) },
+    { crashAt: [course.par * 0.3, course.par * 0.7] },
+    ...course.pads.map(b => ({ lowInto: [b.id], lowBy: Math.min(12, b.top - b.lift - 4) })),
+    ...(course.difficulty === 'extreme' ? ids.flatMap(id => [{ skipBoosters: [id] }, { crashAfterBoosters: [id] }]) : [])];
+  function remove(objects) {
+    for (const id of objects) removedObjects.add(id);
+    city.streetBoxes = city.streetBoxes.map(parts => {
+      const left = parts?.filter(b => !objects.has(b[8]));
+      return left?.length ? left : null;
+    });
+    city.clearGeometryCache(); city.cacheGeometry();
+  }
+  function validate() {
+    for (const mistakes of checks) {
+      let accepted = false;
+      for (let retry = 0; retry < 8; retry++) {
+        const p = GAME.autopilot.fly(city, course, mistakes);
+        const cells = [...new Set(p.events.filter(e => e.type === 'crash' && city.streetBoxes[e.hit.cell]?.length).map(e => e.hit.cell))];
+        if (!cells.length) {
+          accepted = p.finished && ((mistakes && !mistakes.lowInto) || (!p.crashes && !p.missed));
+          break;
+        }
+        // A sculpture can span several cells. Remove the whole object, leaving no severed arms.
+        remove(new Set(cells.flatMap(c => city.streetBoxes[c].map(b => b[8]))));
+      }
+      if (!accepted) return false;
+    }
+    return true;
+  }
+  if (!validate()) {
+    line.x.set(oldX); line.z.set(oldZ);
+    course.gates.forEach((g, i) => { [g.x, g.z] = oldGates[i]; });
+    const endPark = course.parks.find(p => p.finish);
+    remove(new Set(endPark.cells.flatMap(c => (city.streetBoxes[c] || []).map(b => b[8]))));
+    if (!validate()) {
+      remove(new Set(city.streetBoxes.flatMap(parts => (parts || []).map(b => b[8]))));
+    }
+  }
+  course.sculptures = course.sculptures.filter(s => !removedObjects.has(s.object));
+  course.parkTrees = course.parkTrees.filter(t => city.streetBoxes[t.cell]?.some(b => b[6] === MATERIAL.BARK
+    && t.x >= b[0] && t.x <= b[3] && t.z >= b[2] && t.z <= b[5]));
+  course.proof = GAME.autopilot.fly(city, course);
+  if (!course.proof.finished || course.proof.crashes || course.proof.missed)
+    throw new Error('street decoration must preserve a clean course proof');
+}
+
+GAME.street = { MATERIAL, MAX_PIECES, reset, decorate };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/world/city.js ----
 // The city as data: a square grid of cells, each empty or holding a composite building.
 // Plain towers have a base and setback; structures.js supplies terraces, wings and open arches.
@@ -3830,6 +4112,7 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
   const city = {
     seed, difficulty, cell: CELL, n: N, size: N * CELL, kind, boxA, boxB, propA, propB, bridgeA, bridgeB, structure,
     maxHeight, obstacles, seededObstacles, courseProps: [], bridgePipes: [],
+    streetBoxes: Array(N * N).fill(null), park: new Uint8Array(N * N), parkPatch: [],
     KIND,
     cellIndex(x, z) {
       const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
@@ -3853,11 +4136,12 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       if (structure[a]) out.push(...GAME.structures.boxes(city, i));
       return out;
     },
-    // All solid boxes as [minX, minY, minZ, maxX, maxY, maxZ], with bridges last.
+    // Solid bounds [minX,minY,minZ,maxX,maxY,maxZ], with optional street material/shape/object
+    // metadata. Building pieces stay first and course equipment/bridges stay last.
     boxes(i) {
       if (solidCache) return solidCache[i];
       const out = city.buildingBoxes(i);
-      if (!out.length) return out;
+      if (city.streetBoxes[i]) out.push(...city.streetBoxes[i]);
       const a = i * 4;
       if (!propA[a + 2] && !bridgeA[a + 3] && !bridgeB[a + 3]) return out;
       const [cx, cz] = city.cellCenter(i);
@@ -3954,6 +4238,7 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
     },
     clearCourseProps() {
       solidCache = null;
+      GAME.street.reset(city);
       structure.fill(0);
       for (const pipe of city.bridgePipes) for (const cell of pipe.cells) {
         bridgeA.fill(0, cell * 4, cell * 4 + 4);
@@ -4343,10 +4628,12 @@ function sphere(city, x, y, z, r) {
       if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
       const cell = cz * n + cx;
       for (const b of city.boxes(cell)) {
-        const px = Math.max(b[0] - x, 0, x - b[3]);
         const py = Math.max(b[1] - y, 0, y - b[4]);
+        if (py > r) continue; // Skip low furniture/crowns immediately when flying above them.
+        const px = Math.max(b[0] - x, 0, x - b[3]);
         const pz = Math.max(b[2] - z, 0, z - b[5]);
-        if (px * px + py * py + pz * pz <= r * r) return { kind: 'tower', cell };
+        if (px * px + py * py + pz * pz <= r * r
+          && (!b[7] || ellipsoidDistance2(b, x, y, z) <= r * r)) return { kind: 'tower', cell };
       }
     }
   }
@@ -4358,11 +4645,35 @@ function groundHeight(city, x, z) {
   const i = city.cellIndex(x, z);
   if (i < 0) return 0;
   let h = 0;
-  for (const b of city.boxes(i)) if (x >= b[0] && x <= b[3] && z >= b[2] && z <= b[5]) h = Math.max(h, b[4]);
+  for (const b of city.boxes(i)) if (x >= b[0] && x <= b[3] && z >= b[2] && z <= b[5]) {
+    let top = b[4];
+    if (b[7]) {
+      const q = ((x - (b[0] + b[3]) / 2) / ((b[3] - b[0]) / 2)) ** 2
+        + ((z - (b[2] + b[5]) / 2) / ((b[5] - b[2]) / 2)) ** 2;
+      if (q > 1) continue;
+      top = (b[1] + b[4]) / 2 + (b[4] - b[1]) / 2 * Math.sqrt(1 - q);
+    }
+    h = Math.max(h, top);
+  }
   return h;
 }
 
-GAME.collide = { sphere, groundHeight };
+// Closest point on an ellipsoid. The multiplier search gives the true contact distance for
+// a spherical glider, including thin crowns and their rounded envelope corners.
+function ellipsoidDistance2(b, x, y, z) {
+  const p = [x, y, z].map((v, i) => Math.abs(v - (b[i] + b[i + 3]) / 2));
+  const r2 = [0, 1, 2].map(i => ((b[i + 3] - b[i]) / 2) ** 2);
+  if (p.reduce((sum, v, i) => sum + v * v / r2[i], 0) <= 1) return 0;
+  let lo = 0, hi = Math.max(...r2) + Math.hypot(...p) * Math.sqrt(Math.max(...r2));
+  for (let k = 0; k < 28; k++) {
+    const mid = (lo + hi) / 2;
+    const q = p.reduce((sum, v, i) => sum + r2[i] * v * v / (mid + r2[i]) ** 2, 0);
+    if (q > 1) lo = mid; else hi = mid;
+  }
+  return p.reduce((sum, v, i) => sum + (v * hi / (hi + r2[i])) ** 2, 0);
+}
+
+GAME.collide = { sphere, groundHeight, ellipsoidDistance2 };
 
 })();
 
@@ -5141,7 +5452,7 @@ const { samples: u, SAMPLE, R_TURN } = GAME.route;
 const START_ALT = 105;
 const GATE_RADIUS = [8.5, 6.2];     // early → late: the course tightens
 const FINISH_RADIUS = 11;
-const FINISH_Y = [22, 44];          // the finish sits low in the avenue ...
+const FINISH_Y = [22, 30];          // the park finish sits among the trees ...
 const FINISH_DROP = 12;             // ... and at least this far below the glide: the final straight is a sprint down to it
 const GATE_MARGIN = 6;              // gates sit at least this far below the energy plan
 const RESERVE = 0.06;               // the plan sinks this much faster than a perfect glide: slack for imperfect flying
@@ -5822,13 +6133,13 @@ const PLANS = 3;                    // candidate plans per attempt; the one with
 const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
-// New architecture opens shortcuts and adds upper-floor hazards. Start fresh race records while
+// Parks add tree obstacles and change the finish approach. Start fresh race records while
 // preserving earned Extreme unlocks, permanent star claims and the shop inventory.
-const VERSION = 14;
-const EASY_VERSION = 13;
-const HARD_VERSION = 17;
+const VERSION = 15;
+const EASY_VERSION = 14;
+const HARD_VERSION = 18;
 const UNLOCK_VERSION = 12;
-const EXTREME_VERSION = 17;
+const EXTREME_VERSION = 18;
 const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: HARD_VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
@@ -6757,6 +7068,7 @@ function generate(city, seed, difficulty = 'medium') {
           finalCourse.proof = proof;
           finalCourse.rejected = reasons;
           GAME.structures.decorate(city, finalCourse);
+          GAME.street.decorate(city, finalCourse);
           GAME.stars.place(city, finalCourse, seed);
           return finalCourse;
         }
@@ -8885,6 +9197,132 @@ GAME.themeDetails = { GLSL };
 
 ;(function () {
 'use strict';
+// ---- src/render/street-details.js ----
+// Street materials use the same box/ellipsoid bounds as gameplay. Small surface details are
+// filtered at flight speed; park grass and painted storefronts do not add invisible obstacles.
+const GLSL = `
+float shopLetter(vec2 q, int letter, float px) {
+  // Four by six pixel capitals: C A F E / S H O P, packed a row per nibble.
+  uint bits = letter == 0 ? 0x698896u : letter == 1 ? 0x99f996u
+    : letter == 2 ? 0x888e8fu : letter == 3 ? 0xf88e8fu
+    : letter == 4 ? 0x691687u : letter == 5 ? 0x999f99u
+    : letter == 6 ? 0x699996u : 0x888e9eu;
+  ivec2 at = ivec2(floor(q));
+  if (at.x < 0 || at.x >= 4 || at.y < 0 || at.y >= 6) return 0.0;
+  float on = float((bits >> uint((5 - at.y) * 4 + 3 - at.x)) & 1u);
+  return on * plateAA(fract(q) - 0.5, vec2(0.42), vec2(px));
+}
+
+vec3 storefront(vec3 col, vec2 uv, float halfU, float seed, vec2 fp, vec3 tint) {
+  if (halfU < 3.5) return col;
+  float centre = halfU, halfWidth = max(halfU - 1.0, 1.0);
+  float cafe = step(0.45, hash11(seed * 91.0));
+  vec3 warm = mix(vec3(0.34, 0.21, 0.1), vec3(0.3, 0.14, 0.065), cafe);
+  float front = plateAA(vec2(uv.x - centre, uv.y - 2.0), vec2(halfWidth, 1.7), fp);
+  float panes = pulseAA((uv.x - centre) / 2.8, 0.92, fp.x / 2.8);
+  float lower = bandAA(uv.y - 0.6, 0.25, fp.y);
+  float counter = bandAA(uv.y - 1.2, 0.11, fp.y);
+  float shelf = pulseAA(uv.y / 1.1, 0.07, fp.y / 1.1);
+  float objects = pulseAA(uv.x / 0.75 + floor(uv.y / 1.1) * 0.23, 0.28, fp.x / 0.75);
+  vec3 interior = warm * (0.32 + 0.35 * panes) + vec3(0.07, 0.045, 0.023) * objects * shelf;
+  interior = mix(interior, vec3(0.023, 0.033, 0.035), max(lower, counter));
+  float door = plateAA(vec2(uv.x - centre + halfWidth * 0.6, uv.y - 1.65), vec2(0.73, 1.4), fp);
+  interior = mix(interior, vec3(0.025, 0.042, 0.055) + warm * 0.12, door);
+  interior += vec3(0.34, 0.27, 0.12) * bandAA(uv.x - centre + halfWidth * 0.6 - 0.49, 0.04, fp.x)
+    * bandAA(uv.y - 1.55, 0.3, fp.y);
+  col = mix(col, interior, front);
+  float awning = plateAA(vec2(uv.x - centre, uv.y - 3.8), vec2(halfWidth, 0.23), fp);
+  float stripe = pulseAA(uv.x / 0.75, 0.5, fp.x / 0.75);
+  col = mix(col, mix(vec3(0.19, 0.17, 0.12), tint * 0.12, stripe), awning);
+  float sign = plateAA(vec2(uv.x - centre, uv.y - 4.65), vec2(min(halfWidth, 4.5), 0.55), fp);
+  vec3 signCol = vec3(0.016, 0.024, 0.027) + tint * 0.05;
+  float near = 1.0 - smoothstep(0.09, 0.28, max(fp.x, fp.y));
+  if (near > 0.0) {
+    vec2 q = vec2((uv.x - centre + 2.6) / 0.26, (uv.y - 4.05) / 0.17);
+    int slot = int(floor(q.x / 5.0));
+    if (slot >= 0 && slot < 4) signCol += mix(tint, vec3(0.75, 0.53, 0.25), cafe)
+      * shopLetter(vec2(mod(q.x, 5.0), q.y), slot + (cafe < 0.5 ? 4 : 0), max(fp.x / 0.26, fp.y / 0.17)) * near;
+  }
+  col = mix(col, signCol, sign);
+  // Warm pendants hanging inside the display windows, and café cups along the counter.
+  float lamp = discAA(vec2(mod(uv.x + seed * 4.0, 3.2) - 1.6, uv.y - 3.15), 0.13, max(fp.x, fp.y));
+  col += vec3(0.85, 0.47, 0.16) * lamp * front;
+  float cups = plateAA(vec2(mod(uv.x, 1.65) - 0.825, uv.y - 1.43), vec2(0.12, 0.17), fp) * cafe;
+  col += vec3(0.3, 0.26, 0.19) * cups * front;
+  return col;
+}
+
+vec3 parkGround(vec3 p, vec2 local, float pix) {
+  float grain = tnoise(vec3(p.xz * 0.25, 3.0));
+  float light = uSunSize > 0.0 ? 0.9 : 0.45;
+  vec3 grass = foliageColour(grain * 0.48 + 0.18, light) * 0.75;
+  grass = mix(grass, vec3(0.065, 0.048, 0.02), uSurface.z * 0.75 + uSurface.w * 0.15);
+  grass = mix(grass, vec3(0.12, 0.17, 0.24), uSurface.y * (0.65 + grain * 0.3));
+  // Connected walking paths through each park cell, with paving joints and a pale stone curb.
+  float d = min(abs(local.x), abs(local.y)), path = bandAA(d, 1.25, pix);
+  float curb = bandAA(d - 1.38, 0.13, pix);
+  float seam = max(pulseAA(p.x / 1.8, 0.03, pix / 1.8), pulseAA(p.z / 1.8, 0.03, pix / 1.8));
+  vec3 stone = vec3(0.062, 0.072, 0.071) * (0.8 + grain * 0.4) * (1.0 - seam * 0.5);
+  return mix(grass, stone, path) + vec3(0.09, 0.105, 0.1) * curb;
+}
+
+vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
+  vec3 centre = vec3(0.5 * (h.a.x + h.a.z), 0.5 * (h.b.x + h.b.y), 0.5 * (h.a.y + h.a.w));
+  vec3 local = p - centre;
+  float fp = pix / max(abs(dot(h.n, rd)), 0.2), detail = 1.0 - smoothstep(0.15, 0.7, fp);
+  float light = 0.48 + 0.72 * max(dot(h.n, uSunSize > 0.0 ? uSunDir : normalize(vec3(-0.6, 0.8, -0.3))), 0.0);
+  float material = h.b.z;
+  vec3 col;
+  if (material < 1.5) {
+    float bark = detail > 0.0 ? tnoise(p * vec3(3.0, 0.24, 3.0)) : 0.5;
+    float splits = pulseAA((p.x + p.z) * 3.3 + bark, 0.12, fp * 4.7);
+    col = vec3(0.095, 0.05, 0.022) * (0.7 + bark * 0.8) * (1.0 - splits * detail * 0.4);
+  } else if (material < 2.5) {
+    float mass = tnoise(p * 0.48);
+    float leaf = detail > 0.0 ? tnoise(p * 3.7) : 0.5;
+    float variation = hash12(centre.xz * 0.04);
+    col = foliageColour(0.18 + mass * 0.5 + variation * 0.16, light);
+    col *= 0.68 + mass * 0.22 + leaf * 0.34;
+    col = mix(col, vec3(0.21, 0.095, 0.028) * (0.6 + mass * 0.5), uSurface.z * variation * 0.6);
+    col = mix(col, vec3(0.13, 0.2, 0.28), max(h.n.y, 0.0) * uSurface.y * (0.55 + mass * 0.35));
+    return col + vec3(0.008, 0.016, 0.006) * pow(max(dot(-rd, uSunDir), 0.0), 4.0);
+  } else if (material < 3.5) {
+    float grain = sin(p.x * 2.4 + tnoise(p * 0.4) * 4.0);
+    col = vec3(0.14, 0.074, 0.028) * (0.8 + grain * detail * 0.1);
+    col *= 1.0 - pulseAA((h.n.y > 0.5 ? p.z : p.y) / 0.22, 0.075, fp / 0.22) * 0.5 * detail;
+  } else if (material < 4.5) {
+    col = vec3(0.065, 0.095, 0.11);
+    float edge = min(abs(local.x), abs(local.z));
+    col += vec3(0.04, 0.16, 0.18) * neonLine(edge - 0.1, 0.04, fp) * 0.35;
+  } else if (material < 5.5) {
+    col = vec3(0.024, 0.063, 0.075) + skyGlow(reflect(rd, h.n)) * 0.23;
+    float stripe = bandAA(p.y - 1.6, 0.06, fp);
+    col += vec3(0.16, 0.33, 0.36) * stripe;
+  } else if (material < 6.5) {
+    col = vec3(0.11, 0.12, 0.12) * (0.8 + tnoise(p * 2.7) * 0.35);
+  } else if (material < 7.5) {
+    float patina = tnoise(p * 0.5);
+    col = mix(vec3(0.24, 0.13, 0.045), vec3(0.035, 0.105, 0.085), smoothstep(0.43, 0.8, patina));
+    col += vec3(0.12, 0.085, 0.035) * pow(1.0 - abs(dot(h.n, rd)), 3.0);
+  } else {
+    // Bus route panel: bright header, three line colours and a compact timetable below.
+    vec2 q = abs(h.n.x) > 0.5 ? local.zy : local.xy;
+    col = vec3(0.018, 0.038, 0.055);
+    float header = bandAA(q.y - 0.45, 0.12, fp);
+    float rows = pulseAA((q.y + 0.55) / 0.25, 0.22, fp / 0.25) * bandAA(q.x, 0.29, fp);
+    col += vec3(0.2, 0.8, 0.65) * header + vec3(0.25, 0.34, 0.39) * rows;
+    return col;
+  }
+  return themeEquipment(col * light, p, h.n, pix);
+}
+`;
+
+GAME.streetDetails = { GLSL };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/city.js ----
 // Draws the city data (src/world/city.js) by ray tracing: each ray walks the grid cell by cell
 // (2D DDA over x/z) and intersects that cell's tower boxes exactly, so edges are sharp and the
@@ -8899,6 +9337,8 @@ const FRAG = `
 uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
 uniform vec2 uTanHalf;
 uniform highp sampler2D uBoxA, uBoxB, uStructure, uPropA, uPropB, uBridgeA, uBridgeB, uPads; // shared solid boxes / pads
+uniform highp sampler2D uStreet, uStreetInfo;
+uniform float uStreetMaxH;
 uniform float uCell, uN, uMaxH, uSize;
 uniform vec2 uAvenue;                          // avenue spacing in cells along x and z
 
@@ -8925,7 +9365,7 @@ const float FAR = 2800.0;
 
 const float FLOOR_BANDS = 4.0;                 // floors between neon bands on banded towers
 
-const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4;
+const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4, STREET = 5;
 struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; };
 
 vec3 neon(float h) {
@@ -8979,6 +9419,18 @@ float boxHit(vec3 ro, vec3 inv, vec3 bmin, vec3 bmax, out vec3 n) {
   return s.x <= s.y && s.y > 0.0 ? max(s.x, 0.0) : 1e9;
 }
 
+float ellipsoidHit(vec3 ro, vec3 rd, vec3 lo, vec3 hi, out vec3 n) {
+  vec3 c = 0.5 * (lo + hi), r = 0.5 * (hi - lo);
+  vec3 q = (ro - c) / r, d = rd / r;
+  float a = dot(d, d), b = dot(q, d), disc = b * b - a * (dot(q, q) - 1.0);
+  if (disc < 0.0) return 1e9;
+  float t = (-b - sqrt(disc)) / a;
+  if (t < 0.0) t = (-b + sqrt(disc)) / a;
+  if (t < 0.0) return 1e9;
+  n = normalize((ro + rd * t - c) / (r * r));
+  return t;
+}
+
 // ---- Course overlay ----------------------------------------------------------------------------
 ${GAME.overlay.GLSL}
 
@@ -9000,6 +9452,22 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     for (int i = 0; i < maxCells; i++) {
       float tExit = min(tMax.x, tMax.y);
       vec4 A = texelFetch(uBoxA, cell, 0);
+      float tStreet = 1e9;
+      vec3 nStreet;
+      vec4 streetA, streetB;
+      // High rays skip all street data; lower rays fetch bounds only in occupied cells.
+      float lowY = min(ro.y + rd.y * t, ro.y + rd.y * min(tExit, span.y));
+      if (lowY < uStreetMaxH && t < 640.0) {
+        vec4 info = texelFetch(uStreetInfo, cell, 0);
+        if (lowY < info.y) for (int part = 0; part < ${GAME.street.MAX_PIECES}; part++) {
+          if (float(part) >= info.x) break;
+          ivec2 at = cell + ivec2(0, part * 2 * int(uN));
+          vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
+          vec3 lo = vec3(P.x, Q.x, P.y), hi = vec3(P.z, Q.y, P.w), normal;
+          float tp = Q.w > 0.5 ? ellipsoidHit(ro, rd, lo, hi, normal) : boxHit(ro, inv, lo, hi, normal);
+          if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; }
+        }
+      }
       float tBridge = 1e9;
       vec3 nBridge;
       vec4 bridgeData;
@@ -9080,12 +9548,12 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
             tp = boxHit(ro, inv, vec3(pc.x - P.z, Q.x, pc.y - P.w),
               vec3(pc.x + P.z, Q.y, pc.y + P.w), np);
           }
-          if (tp < tb && tp < tBridge && tp < tGround && tp < 1e8) {
+          if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
             h.kind = PROP; h.t = tp; h.n = np; h.cell = cell; h.a = P; h.b = Q;
             return h;
           }
         }
-        if (tb < tBridge && tb < tGround && tb < 1e8) {
+        if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
           h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB;
           return h;
         }
@@ -9093,6 +9561,10 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         // Empty cell: a booster's light column stands wholly inside it, so only the ground can hide it.
         vec4 pad = texelFetch(uPads, cell, 0);
         if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
+      }
+      if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
+        h.kind = STREET; h.t = tStreet; h.n = nStreet; h.cell = cell; h.a = streetA; h.b = streetB;
+        return h;
       }
       if (tBridge < tGround && tBridge < 1e8) {
         h.kind = BRIDGE; h.t = tBridge; h.n = nBridge; h.cell = cell; h.a = bridgeData;
@@ -9224,6 +9696,7 @@ vec2 rainRipple(vec2 p, float pix) {
 }
 
 ${GAME.themeDetails.GLSL}
+${GAME.streetDetails.GLSL}
 
 // Flush roof panels, recessed maintenance hatches and drainage channels. These are surface
 // details on the shared solid roof, so a visible fitting never creates an invisible obstacle.
@@ -9365,6 +9838,7 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   float rim = neonLine(top - p.y - 0.9, 0.14, fp.y);
   col += tint * (band * 2.0 + corner * 3.0 + rim * 2.4);
   col = themeFacade(col, vec2(u, p.y), top, floorH, seed, fp, glass, tint);
+  if (h.b.x < 0.5 && p.y < 6.5) col = storefront(col, vec2(u, p.y), halfU, seed, fp, tint);
   if (uGrowth > 0.0) col = overgrowth(col, u, p.y, top, seed, fp, h.n);
 
   // Giants carry a red aircraft beacon, blinking.
@@ -9500,6 +9974,7 @@ vec3 shadeGround(vec3 p, float pix) {
     }
   }
   col = themeGround(col, p, pix);
+  if (texelFetch(uStreetInfo, cell, 0).z > 0.5) col = parkGround(p, local, pix);
   vec4 pad = texelFetch(uPads, cell, 0);
   if (pad.x > 0.0) col += padLight(local, pad, pix);
   return col;
@@ -9525,8 +10000,13 @@ void main() {
       col = shadeProp(h, p, rd, pix);
     } else if (h.kind == BRIDGE) {
       col = shadeBridge(h, p, rd, pix);
+    } else if (h.kind == STREET) {
+      col = shadeStreet(h, p, rd, pix);
     } else {
       col = shadeGround(p, pix);
+      bool inCity = all(greaterThanEqual(h.cell, ivec2(0))) && all(lessThan(h.cell, ivec2(int(uN))));
+      float gloss = inCity && texelFetch(uStreetInfo, h.cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
+      if (gloss > 0.01) {
       // Wet street: a rippled mirror. Ripples fade out once they would be smaller than a pixel,
       // where they would only shimmer. The reflection is a shorter trace, without its own reflection.
       float ripple = 0.035 * saturate(1.3 - pix * 2.5);
@@ -9538,10 +10018,12 @@ void main() {
       Hit r = trace(p + vec3(0.0, 0.01, 0.0), rr, REFLECT_CELLS, pixAngle, rglow);
       vec3 refl = r.kind == TOWER ? shadeTower(r, p + rr * r.t, rr, pix + r.t * pixAngle, true)
         : r.kind == PROP ? shadeProp(r, p + rr * r.t, rr, pix + r.t * pixAngle)
-        : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, rr, pix + r.t * pixAngle) : sky(rr, pixAngle);
+        : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, rr, pix + r.t * pixAngle)
+        : r.kind == STREET ? shadeStreet(r, p + rr * r.t, rr, pix + r.t * pixAngle) : sky(rr, pixAngle);
       refl = applyFog(refl + rglow, p, rr, r.t);
       float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);   // rain: wetter
-      col += refl * fres * groundGloss(p);
+      col += refl * fres * gloss;
+      }
     }
     col = applyFog(col, ro, rd, h.t);
   }
@@ -9630,6 +10112,9 @@ function create(gfx) {
     // come directly from collision; props and bridge pipes retain their existing compact data.
     const boundsA = new Float32Array(n * n * 4), boundsB = new Float32Array(n * n * 4);
     const extra = new Float32Array(n * n * 16);
+    const streetInfo = new Float32Array(n * n * 4);
+    const streetData = new Float32Array(n * n * GAME.street.MAX_PIECES * 8);
+    let streetMaxH = 0;
     for (let i = 0; i < n * n; i++) {
       const parts = city.buildingBoxes(i);
       if (parts.length > 3) throw new Error(`too many building pieces in cell ${i}`);
@@ -9642,12 +10127,24 @@ function create(gfx) {
           extra.set(a, offset); extra.set(b, offset + n * n * 4);
         }
       });
+      const furniture = city.streetBoxes[i] || [];
+      if (furniture.length > GAME.street.MAX_PIECES) throw new Error(`too much street furniture in cell ${i}`);
+      const height = Math.max(0, ...furniture.map(b => b[4]));
+      streetInfo.set([furniture.length, height, city.park[i], 0], i * 4);
+      streetMaxH = Math.max(streetMaxH, height);
+      furniture.forEach((b, part) => {
+        const offset = part * n * n * 8 + i * 4;
+        streetData.set([b[0], b[2], b[3], b[5]], offset);
+        streetData.set([b[1], b[4], b[6], b[7]], offset + n * n * 4);
+      });
     }
-    world = { city, textures: {
+    world = { city, streetMaxH, textures: {
       uBoxA: tex(boundsA), uBoxB: tex(boundsB),
       uStructure: createTexture(n, n * 4, { format: 'rgba32f', filter: 'nearest', data: extra }),
       uPropA: tex(city.propA), uPropB: tex(city.propB),
       uBridgeA: tex(city.bridgeA), uBridgeB: tex(city.bridgeB), uPads: tex(padData),
+      uStreetInfo: tex(streetInfo),
+      uStreet: createTexture(n, n * GAME.street.MAX_PIECES * 2, { format: 'rgba32f', filter: 'nearest', data: streetData }),
     } };
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
@@ -9659,6 +10156,7 @@ function create(gfx) {
       ...world.textures,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uCell: city.cell, uN: city.n, uMaxH: city.maxHeight + 1, uSize: city.size,
+      uStreetMaxH: world.streetMaxH,
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
       uAmbientTime: reducedMotion.matches ? 0 : performance.now() / 1000,
