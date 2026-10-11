@@ -7042,6 +7042,8 @@ GAME.shop = { LIFT, state, refresh, buyLift, useLift, onChange: fn => listeners.
 //   wall      optional ambient facade colour
 //   growth    optional 0..1 moss and hanging ivy on the existing building surfaces
 //   aurora    optional 0..1 northern lights in the sky
+//   wetness, snow, dust, soot, toxic, signs, clouds   optional 0..1 surface/sky detail weights
+//   motes     optional { kind: 'pollen'|'snow'|'dust'|'ember', amount: 0..1 }
 
 const THEMES = [
   {
@@ -7052,6 +7054,7 @@ const THEMES = [
     sky: { zenith: [0.006, 0.008, 0.03], horizon: [0.16, 0.035, 0.12], glow: [0.05, 0.008, 0.031] },
     fog: { low: [0.05, 0.012, 0.045], high: [0.02, 0.02, 0.06], density: 1 },
     stars: 1, sun: null, rain: 0,
+    wetness: 0.65, signs: 1, clouds: 0.22,
   },
   {
     id: 'sunset', name: 'Synthwave Sunset', collectibleStar: [1, 0.32, 0.12],
@@ -7064,6 +7067,7 @@ const THEMES = [
     // The retro sun sits at the end of the avenues running along +z.
     sun: { dir: [0.15, 0.17, 1.0], top: [1.5, 0.95, 0.1], bottom: [1.3, 0.05, 0.45], size: 0.17, stripes: 1, soft: 0, halo: [1.0, 0.3, 0.15] },
     rain: 0,
+    wetness: 0.3, dust: 0.12, signs: 0.45, clouds: 0.42,
   },
   {
     id: 'rain', name: 'Tokyo Rain', collectibleStar: [0.15, 0.85, 1],
@@ -7073,6 +7077,7 @@ const THEMES = [
     sky: { zenith: [0.012, 0.014, 0.022], horizon: [0.06, 0.07, 0.1], glow: [0.015, 0.025, 0.05] },
     fog: { low: [0.035, 0.04, 0.055], high: [0.03, 0.035, 0.05], density: 1.8 },
     stars: 0, sun: null, rain: 1,
+    wetness: 1, signs: 0.85, clouds: 0.9,
   },
   {
     id: 'toxic', name: 'Toxic Haze', collectibleStar: [0.65, 1, 0.12],
@@ -7082,6 +7087,7 @@ const THEMES = [
     sky: { zenith: [0.004, 0.012, 0.006], horizon: [0.08, 0.16, 0.02], glow: [0.06, 0.12, 0.01] },
     fog: { low: [0.04, 0.08, 0.015], high: [0.02, 0.05, 0.02], density: 1.5 },
     stars: 0.3, sun: null, rain: 0,
+    wetness: 0.7, toxic: 1, soot: 0.2, clouds: 0.8,
     booster: [1.0, 0.38, 0.06],   // lime would vanish in a green city: boosters go orange here
   },
   {
@@ -7096,6 +7102,7 @@ const THEMES = [
     stars: 0,
     sun: { dir: [-0.6, 0.1, 1.0], top: [5.0, 4.0, 3.2], bottom: [5.0, 3.4, 2.6], size: 0.03, stripes: 0, soft: 0, halo: [0.4, 0.18, 0.12] },
     rain: 0,
+    wetness: 0.12, snow: 1, clouds: 0.35, motes: { kind: 'snow', amount: 0.45 },
   },
   {
     id: 'amber', name: 'Amber Haze', collectibleStar: [0.1, 1, 0.9],
@@ -7109,17 +7116,19 @@ const THEMES = [
     // blurred by it.
     sun: { dir: [0.5, 0.3, 1.0], top: [0.9, 0.5, 0.18], bottom: [0.8, 0.38, 0.12], size: 0.1, stripes: 0, soft: 0.35, halo: [0.35, 0.14, 0.03] },
     rain: 0,
+    wetness: 0.08, dust: 1, clouds: 0.7, motes: { kind: 'dust', amount: 0.25 },
   },
   {
     id: 'overgrown', name: 'Overgrown City', collectibleStar: [0.4, 1, 0.35],
-    neon: [[0.28, 0.52, 0.16], [0.12, 0.48, 0.4], [0.75, 0.5, 0.2], [0.22, 0.38, 0.16]],
-    windows: [[0.6, 0.42, 0.18], [0.25, 0.42, 0.3]],
-    wall: [0.026, 0.033, 0.02], roof: [0.034, 0.052, 0.018], growth: 1,
-    sky: { zenith: [0.012, 0.029, 0.032], horizon: [0.105, 0.145, 0.078], glow: [0.055, 0.065, 0.023] },
-    fog: { low: [0.048, 0.075, 0.037], high: [0.06, 0.085, 0.052], density: 0.9 },
+    neon: [[0.34, 0.48, 0.18], [0.12, 0.42, 0.37], [0.62, 0.36, 0.12], [0.23, 0.35, 0.16]],
+    windows: [[0.48, 0.3, 0.12], [0.15, 0.24, 0.2]],
+    wall: [0.021, 0.029, 0.024], roof: [0.028, 0.043, 0.031], growth: 1,
+    sky: { zenith: [0.017, 0.043, 0.06], horizon: [0.13, 0.17, 0.135], glow: [0.075, 0.063, 0.028] },
+    fog: { low: [0.035, 0.062, 0.045], high: [0.065, 0.092, 0.078], density: 0.7 },
     stars: 0,
-    sun: { dir: [-0.4, 0.25, 1.0], top: [1.3, 1.2, 0.62], bottom: [0.9, 0.72, 0.32], size: 0.035, stripes: 0, soft: 0.2, halo: [0.22, 0.2, 0.09] },
+    sun: { dir: [-0.4, 0.25, 1.0], top: [1.5, 1.28, 0.72], bottom: [1.0, 0.76, 0.36], size: 0.035, stripes: 0, soft: 0.2, halo: [0.3, 0.22, 0.11] },
     rain: 0,
+    wetness: 0.24, clouds: 0.5, motes: { kind: 'pollen', amount: 0.3 },
     booster: [1.0, 0.38, 0.06],
   },
   {
@@ -7130,6 +7139,7 @@ const THEMES = [
     sky: { zenith: [0.004, 0.009, 0.028], horizon: [0.022, 0.047, 0.082], glow: [0.02, 0.015, 0.04] },
     fog: { low: [0.018, 0.032, 0.055], high: [0.028, 0.045, 0.09], density: 0.65 },
     stars: 0.85, sun: null, rain: 0,
+    wetness: 0.18, snow: 0.42, clouds: 0.18, motes: { kind: 'snow', amount: 0.13 },
   },
   {
     id: 'ember', name: 'Ember City', collectibleStar: [1, 0.75, 0.2],
@@ -7141,16 +7151,17 @@ const THEMES = [
     stars: 0.1,
     sun: { dir: [0.35, 0.18, 1.0], top: [1.8, 0.46, 0.08], bottom: [1.1, 0.07, 0.015], size: 0.065, stripes: 0, soft: 0.16, halo: [0.4, 0.045, 0.018] },
     rain: 0,
+    wetness: 0.12, soot: 1, clouds: 0.75, motes: { kind: 'ember', amount: 0.34 },
   },
 ];
 
 // A theme with a missing or misshapen field would reach the shader as zeros: refuse it at load.
 function check(t) {
   const colour = (v, what) => {
-    if (!Array.isArray(v) || v.length !== 3 || !v.every(x => typeof x === 'number' && x >= 0)) throw new Error(`theme ${t.id}: ${what} must be an RGB triple`);
+    if (!Array.isArray(v) || v.length !== 3 || !v.every(x => Number.isFinite(x) && x >= 0)) throw new Error(`theme ${t.id}: ${what} must be an RGB triple`);
   };
   const unit = (v, what) => {
-    if (typeof v !== 'number' || v < 0 || v > 1) throw new Error(`theme ${t.id}: ${what} must be 0..1`);
+    if (!Number.isFinite(v) || v < 0 || v > 1) throw new Error(`theme ${t.id}: ${what} must be 0..1`);
   };
   if (t.neon.length !== 4) throw new Error(`theme ${t.id}: neon needs 4 colours`);
   t.neon.forEach((c, i) => colour(c, `neon[${i}]`));
@@ -7171,7 +7182,12 @@ function check(t) {
   }
   if (t.booster) colour(t.booster, 'booster');
   if (t.wall) colour(t.wall, 'wall');
-  for (const key of ['growth', 'aurora']) if (t[key] !== undefined) unit(t[key], key);
+  for (const key of ['growth', 'aurora', 'wetness', 'snow', 'dust', 'soot', 'toxic', 'signs', 'clouds'])
+    if (t[key] !== undefined) unit(t[key], key);
+  if (t.motes) {
+    if (!['pollen', 'snow', 'dust', 'ember'].includes(t.motes.kind)) throw new Error(`theme ${t.id}: unknown mote kind`);
+    unit(t.motes.amount, 'motes.amount');
+  }
 }
 THEMES.forEach(check);
 
@@ -8670,6 +8686,205 @@ GAME.overlay = { GLSL, uniforms, boosterColour, MAX_RINGS, PATH_POINTS };
 
 ;(function () {
 'use strict';
+// ---- src/render/theme-details.js ----
+// Cosmetic surface and atmosphere details. All marks stay on existing solids; particles use
+// the scene depth. Pixel footprints filter small details so they fade rather than shimmer.
+const GLSL = `
+vec3 foliageColour(float variation, float light) {
+  return mix(vec3(0.012, 0.039, 0.019), vec3(0.105, 0.18, 0.038), variation)
+    * (0.7 + 0.6 * light);
+}
+
+vec3 overgrowth(vec3 col, float u, float y, float top, float seed, vec2 fp, vec3 normal) {
+  float px = max(fp.x, fp.y), near = 1.0 - smoothstep(0.35, 1.5, px);
+  float broad = tnoise(vec3(u * 0.14, y * 0.065, seed * 19.0));
+  float fine = near > 0.0 ? tnoise(vec3(u * 1.8, y * 1.3, seed * 31.0)) : 0.5;
+  float damp = smoothstep(0.43, 0.75, broad + exp(-y * 0.07) * 0.15);
+  float light = max(dot(normal, uSunDir), 0.0);
+  // Exposed concrete separates the plant masses; moss darkens cracks instead of tinting every wall.
+  col = mix(col, foliageColour(broad * 0.55, light) * (0.7 + fine * 0.6), damp * 0.76);
+  float column = floor(u / 5.8), key = hash11(column + seed * 131.0);
+  float vineLength = mix(12.0, 78.0, key);
+  float down = top - y;
+  float hang = 1.0 - smoothstep(vineLength * 0.7, vineLength, down);
+  hang *= smoothstep(0.17, 0.32, key);
+  float centre = (column + 0.2 + key * 0.6) * 5.8;
+  centre += sin(down * 0.085 + key * 13.0) * (0.5 + key)
+    + sin(down * 0.21 + key * 9.0) * 0.25;
+  // Small wind motion is strongest at the tips; roof attachments stay still.
+  centre += sin(uAmbientTime * 0.7 + down * 0.14 + key * 11.0) * 0.09 * saturate(down / vineLength);
+  float across = u - centre;
+  float row = floor((down + key * 5.0) / 0.9), leafKey = hash11(row + key * 67.0);
+  float side = mod(row, 2.0) * 2.0 - 1.0;
+  float stem = bandAA(across, 0.045 + key * 0.035, fp.x);
+  vec2 leaf = vec2((across * side - 0.36) / (0.48 + leafKey * 0.22),
+    (mod(down + key * 5.0, 0.9) - 0.45) / 0.48);
+  leaf.y += leaf.x * (0.38 + key * 0.25);
+  // Two intersecting discs form pointed leaves, with a dark edge and a sunlit centre vein.
+  float shape = max(length(leaf - vec2(0.0, 0.56)), length(leaf + vec2(0.0, 0.56))) - 1.0;
+  float aa = max(0.055, px * 1.7);
+  float leaves = 1.0 - smoothstep(-aa, aa, shape);
+  float shadow = 1.0 - smoothstep(-aa, aa, shape - 0.14);
+  float veil = bandAA(across, 0.7, fp.x) * 0.44;
+  leaves = mix(veil, leaves, near);
+  shadow = mix(veil, shadow, near);
+  float bunch = smoothstep(0.25, 0.6, broad) * bandAA(across, 1.3, fp.x) * 0.36;
+  float cover = max(max(leaves, stem), bunch) * hang;
+  col *= 1.0 - shadow * hang * 0.38;
+  float vein = bandAA(leaf.y, 0.035, aa) * near;
+  vec3 green = foliageColour(0.3 + leafKey * 0.45, light) * (0.68 + fine * 0.45 + vein * 0.28);
+  green *= 0.82 + 0.18 * smoothstep(-0.25, 0.2, leaf.y);
+  return mix(col, green, cover * uGrowth);
+}
+
+vec3 themeRoof(vec3 col, vec2 local, vec2 halfs, vec3 p, float fp) {
+  if (uGrowth + uSurface.y + uSurface.z + uSurface.w + uToxic < 0.01) return col;
+  float edge = min(halfs.x - abs(local.x), halfs.y - abs(local.y));
+  float grain = tnoise(vec3(p.xz * 0.19, 4.0));
+  float near = 1.0 - smoothstep(0.3, 1.4, fp);
+  if (uGrowth > 0.0) {
+    float small = near > 0.0 ? tnoise(vec3(p.xz * 1.7, 8.0)) : 0.5;
+    float coverage = smoothstep(0.32, 0.61, grain + exp(-edge * 0.65) * 0.12);
+    float tufts = smoothstep(0.38, 0.75, small);
+    vec3 green = foliageColour(grain * 0.65 + small * 0.22, 0.85);
+    green *= 0.65 + tufts * 0.5;
+    // Ground-cover leaves break up mats of moss; warm specks are tiny flowers, not pickup lights.
+    vec2 bed = p.xz * 1.6, q = fract(bed) - 0.5;
+    float leaf = discAA(q * vec2(0.8, 1.8), 0.25, fp * 2.0) * near;
+    green += vec3(0.016, 0.024, 0.005) * leaf;
+    float flower = step(0.978, hash12(floor(bed))) * discAA(q, 0.09, fp * 1.6) * near;
+    green = mix(green, vec3(0.28, 0.19, 0.055), flower * 0.7);
+    col = mix(col, green, coverage * uGrowth);
+  }
+  if (uSurface.y > 0.0) {
+    float drift = smoothstep(0.2, 0.55, grain + exp(-max(edge, 0.0) * 0.35) * 0.18);
+    float ripples = sin(p.x * 1.5 + p.z * 0.42 + grain * 4.0) * near;
+    vec3 snow = uRoof * (1.0 + drift * 0.35 + ripples * 0.06) + vec3(0.025, 0.035, 0.055);
+    col = mix(col, snow, drift * uSurface.y);
+  }
+  if (uSurface.z > 0.0) {
+    float dune = 0.5 + 0.5 * sin(p.x * 0.7 + p.z * 1.6 + grain * 5.0);
+    col = mix(col, vec3(0.11, 0.062, 0.024) * (0.75 + dune * 0.28),
+      smoothstep(0.2, 0.72, grain) * uSurface.z * 0.8);
+  }
+  if (uSurface.w > 0.0) col = mix(col, vec3(0.018, 0.012, 0.011) * (0.7 + grain), uSurface.w * 0.7);
+  if (uToxic > 0.0) col = mix(col, vec3(0.045, 0.095, 0.013), smoothstep(0.55, 0.8, grain) * uToxic * 0.7);
+  return col;
+}
+
+vec3 themeFacade(vec3 col, vec2 uv, float top, float floorH, float seed, vec2 fp, float glass, vec3 tint) {
+  float px = max(fp.x, fp.y), near = 1.0 - smoothstep(0.3, 1.3, px);
+  float rim = exp(-max(top - uv.y, 0.0) * 0.6);
+  if (uSurface.y > 0.0) {
+    float ice = tnoise(vec3(uv * vec2(1.3, 0.2), seed * 37.0));
+    float sill = pulseAA(uv.y / floorH - 0.29, 0.05, fp.y / floorH);
+    float frost = (rim * 0.65 + sill * 0.35) * smoothstep(0.18, 0.7, ice);
+    col = mix(col, vec3(0.14, 0.21, 0.29) * (0.7 + ice * 0.6), frost * uSurface.y);
+  }
+  if (uRain > 0.0 && near > 0.0) {
+    float streak = tnoise(vec3(uv * vec2(2.0, 0.04), seed * 23.0));
+    float drops = pulseAA(uv.y * 0.3 + streak * 4.0 + uAmbientTime * 0.2, 0.025, fp.y * 0.3);
+    col *= 1.0 - smoothstep(0.54, 0.8, streak) * glass * 0.32 * near;
+    col += vec3(0.025, 0.045, 0.06) * drops * glass * near;
+  }
+  if (uSurface.z + uSurface.w + uToxic > 0.0) {
+    float stain = tnoise(vec3(uv * vec2(0.55, 0.055), seed * 9.0));
+    float deposit = smoothstep(0.32, 0.75, stain) * (0.25 + rim * 0.5);
+    col = mix(col, vec3(0.09, 0.053, 0.023), deposit * uSurface.z);
+    col *= 1.0 - deposit * uSurface.w * 0.85;
+    col = mix(col, vec3(0.045, 0.07, 0.012), deposit * uToxic);
+    if (uSurface.w > 0.7) {
+      float vent = pulseAA(uv.y / (floorH * 8.0) - seed, 0.045, fp.y / (floorH * 8.0));
+      col += vec3(0.21, 0.043, 0.008) * vent * smoothstep(0.5, 0.8, stain) * near;
+    }
+  }
+  // Narrow luminous facade panels: abstract wayfinding bars, aligned with existing architecture.
+  if (uSigns > 0.0 && seed > 0.55 && near > 0.0) {
+    vec2 q = vec2(uv.x - 2.3, mod(uv.y + seed * 57.0, 37.0) - 18.5);
+    float panel = plateAA(q, vec2(0.85, 3.3), fp);
+    float inset = plateAA(q, vec2(0.72, 3.15), fp);
+    float row = floor((q.y + 3.0) / 0.75);
+    float dash = bandAA(q.x + (hash11(row + seed * 71.0) - 0.5) * 0.4, 0.32, fp.x)
+      * pulseAA((q.y + 3.0) / 0.75, 0.19, fp.y / 0.75);
+    vec3 sign = tint * (0.04 + 1.4 * (panel - inset) + dash * 0.85);
+    col = mix(col, sign, panel * near * uSigns);
+  }
+  return col;
+}
+
+vec3 themeEquipment(vec3 col, vec3 p, vec3 normal, float pix) {
+  float top = max(normal.y, 0.0);
+  if (uGrowth + uSurface.y + uSurface.z + uSurface.w + uToxic < 0.01) return col;
+  float stain = tnoise(p * vec3(0.35, 0.12, 0.35));
+  col = mix(col, foliageColour(stain * 0.5, 0.4), smoothstep(0.43, 0.75, stain) * (0.2 + top * 0.65) * uGrowth);
+  col = mix(col, vec3(0.16, 0.21, 0.28), top * uSurface.y * 0.8);
+  col = mix(col, vec3(0.12, 0.065, 0.027), (0.1 + top * 0.55) * stain * uSurface.z);
+  col *= 1.0 - stain * uSurface.w * 0.4;
+  col = mix(col, vec3(0.075, 0.11, 0.019), smoothstep(0.5, 0.8, stain) * uToxic * 0.35);
+  return col;
+}
+
+vec3 themeGround(vec3 col, vec3 p, float pix) {
+  float broad = tnoise(vec3(p.xz * 0.12, 11.0));
+  float near = 1.0 - smoothstep(0.3, 1.3, pix);
+  vec2 block = abs(fract((p.xz + vec2(0.7, 1.4)) / 6.0) - 0.5) * 6.0;
+  float crack = 1.0 - smoothstep(0.025, 0.06 + pix, min(block.x, block.y));
+  col *= 1.0 - crack * near * 0.5;
+  if (uGrowth > 0.0) {
+    float moss = smoothstep(0.42, 0.68, broad + crack * 0.18);
+    col = mix(col, foliageColour(broad * 0.6, 0.6) * 0.65, moss * uGrowth);
+  }
+  if (uSurface.y > 0.0) col = mix(col, uRoof * 0.85 + vec3(0.016, 0.023, 0.034),
+    smoothstep(0.36, 0.66, broad) * uSurface.y * 0.85);
+  if (uSurface.z > 0.0) {
+    float ripples = 0.85 + 0.15 * sin(p.x * 0.65 + p.z * 1.4 + broad * 5.0) * near;
+    col = mix(col, vec3(0.09, 0.046, 0.018) * ripples, smoothstep(0.24, 0.72, broad) * uSurface.z);
+  }
+  if (uSurface.w > 0.0) col = mix(col, vec3(0.027, 0.02, 0.019), broad * uSurface.w * 0.45);
+  if (uToxic > 0.0) {
+    float pool = smoothstep(0.55, 0.76, broad);
+    col += vec3(0.065, 0.13, 0.008) * pool * uToxic;
+  }
+  return col;
+}
+
+float groundGloss(vec3 p) {
+  float pool = smoothstep(0.35, 0.65, tnoise(vec3(p.xz * 0.075, 3.0)));
+  return mix(0.07, 0.36 + pool * 0.64, uSurface.x) * (1.0 - uSurface.y * 0.65);
+}
+
+vec3 ambientMotes(vec3 ro, vec3 rd, float tHit, float pixAngle) {
+  if (uMotes.y <= 0.0) return vec3(0.0);
+  vec3 velocity = uMotes.x < 1.5 ? vec3(0.4, 0.13, 0.2) : uMotes.x < 2.5 ? vec3(0.6, -1.1, 0.2)
+    : uMotes.x < 3.5 ? vec3(1.4, 0.07, 0.3) : vec3(0.4, 1.3, 0.2);
+  vec3 drift = velocity * uAmbientTime;
+  vec3 col = vec3(0.0);
+  for (int layer = 0; layer < 2; layer++) {
+    float distance = layer == 0 ? 14.0 : 38.0, spacing = layer == 0 ? 6.0 : 11.0;
+    vec3 sampleAt = ro + rd * distance - drift;
+    vec3 cell = floor(sampleAt / spacing), h = hash33(cell + float(layer) * 47.0);
+    if (h.z > uMotes.y) continue;
+    vec3 centre = (cell + 0.2 + h * 0.6) * spacing + drift;
+    centre.xz += vec2(sin(uAmbientTime * 0.65 + h.x * 20.0), cos(uAmbientTime * 0.45 + h.y * 17.0)) * 0.18;
+    float t = dot(centre - ro, rd);
+    if (t < 2.0 || t >= tHit) continue;
+    float fade = 1.0 - smoothstep(spacing * 0.2, spacing * 0.55, abs(t - distance));
+    float size = uMotes.x > 1.5 && uMotes.x < 2.5 ? 0.055 : 0.028;
+    float light = tube(length(centre - ro - rd * t), size, t * pixAngle) * fade;
+    vec3 tint = uMotes.x < 1.5 ? vec3(0.32, 0.34, 0.12) : uMotes.x < 2.5 ? vec3(0.28, 0.37, 0.48)
+      : uMotes.x < 3.5 ? vec3(0.24, 0.14, 0.055) : vec3(0.8, 0.14, 0.015);
+    col += tint * light;
+  }
+  return col;
+}
+`;
+
+GAME.themeDetails = { GLSL };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/city.js ----
 // Draws the city data (src/world/city.js) by ray tracing: each ray walks the grid cell by cell
 // (2D DDA over x/z) and intersects that cell's tower boxes exactly, so edges are sharp and the
@@ -8691,6 +8906,9 @@ uniform vec2 uAvenue;                          // avenue spacing in cells along 
 uniform vec3 uNeon[4];                         // neon strip colours, one picked per tower
 uniform vec3 uWindow[2], uWindowMean;          // warm and cool rooms; their mean on distant facades
 uniform vec3 uRoof, uWall;                     // roof surface and ambient facade colour
+uniform vec4 uSurface;                        // wetness, snow, dust, soot
+uniform vec2 uMotes;                          // particle kind, density
+uniform float uToxic, uSigns, uClouds, uAmbientTime;
 uniform float uGrowth, uAurora;                // surface vegetation and northern lights
 uniform vec3 uSkyZenith, uSkyHorizon, uSkyGlow;
 uniform vec3 uFogLow, uFogHigh;                // fog colour looking down / up
@@ -8921,18 +9139,33 @@ vec3 withSun(vec3 col, vec3 rd, float pixAngle) {
 }
 
 vec3 sky(vec3 rd, float pixAngle) {
-  vec2 sp = rd.xz / (rd.y + 0.25);
+  vec2 sp = rd.xz / max(rd.y + 0.25, 0.08);
   float star = step(0.9975, hash12(floor(sp * 220.0))) * smoothstep(0.15, 0.5, rd.y);
   vec3 col = skyGlow(rd) + star * 0.6 * uStars;
+  if (uClouds > 0.0 && rd.y > 0.015) {
+    // Two broad cloud scales give the horizon depth without a volumetric ray march. Warm
+    // edges face the sun; storm themes keep a darker, almost continuous ceiling.
+    vec2 q = rd.xz / (rd.y + 0.18);
+    q += vec2(uAmbientTime * 0.002, uAmbientTime * 0.001);
+    float broad = tnoise(vec3(q * vec2(0.7, 1.1), 17.0));
+    float wisps = tnoise(vec3(q * vec2(2.6, 3.1) + broad * 1.5, 19.0));
+    float cloud = smoothstep(0.39, 0.7, broad * 0.72 + wisps * 0.28);
+    float rim = smoothstep(0.4, 0.58, broad) * (1.0 - smoothstep(0.58, 0.8, broad));
+    float sunward = pow(max(dot(rd, uSunDir), 0.0), 6.0);
+    vec3 colour = uFogHigh * (0.65 + wisps * 0.55) + uSunHalo * sunward * (0.25 + rim * 0.65);
+    col = mix(col, colour, cloud * uClouds * smoothstep(0.015, 0.14, rd.y));
+  }
   if (uAurora > 0.0 && rd.y > 0.0) {
     float az = atan(rd.z, rd.x);
-    float bend = sin(az * 2.0 + uTime * 0.045) * 0.06 + sin(az * 5.0 - uTime * 0.025) * 0.022;
-    float height = rd.y - 0.22 - bend;
-    float curtain = exp(-abs(height) * (height < 0.0 ? 65.0 : 12.0));
-    float second = exp(-abs(rd.y - 0.43 + bend * 0.7) * 24.0) * 0.35;
-    float folds = 0.6 + 0.4 * sin(az * 31.0 + sin(az * 9.0) * 2.0 + uTime * 0.09);
-    vec3 colour = mix(vec3(0.045, 0.38, 0.18), vec3(0.22, 0.07, 0.38), smoothstep(0.01, 0.18, height));
-    col += colour * (curtain + second) * folds * smoothstep(0.03, 0.15, rd.y) * uAurora;
+    for (int layer = 0; layer < 3; layer++) {
+      float l = float(layer), phase = az * 2.0 + l * 1.7;
+      float bend = sin(phase + uAmbientTime * 0.035) * 0.065 + sin(az * 5.0 - l - uAmbientTime * 0.02) * 0.025;
+      float height = rd.y - 0.2 - l * 0.1 - bend;
+      float curtain = exp(-abs(height) * (height < 0.0 ? 80.0 : 15.0));
+      float folds = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(az * 32.0 + sin(az * 11.0 + l) * 2.0 + uAmbientTime * 0.07), 2.0);
+      vec3 colour = mix(vec3(0.035, 0.35, 0.19), vec3(0.23, 0.055, 0.33), smoothstep(0.0, 0.16, height));
+      col += colour * curtain * folds * (0.75 - l * 0.18) * smoothstep(0.03, 0.14, rd.y) * uAurora;
+    }
   }
   return withSun(col, rd, pixAngle);
 }
@@ -8990,6 +9223,8 @@ vec2 rainRipple(vec2 p, float pix) {
   return o / max(r, 1e-3) * (-x * exp(-x * x)) * (1.0 - age) * 0.35 * saturate(1.0 - pix * 6.0);
 }
 
+${GAME.themeDetails.GLSL}
+
 // Flush roof panels, recessed maintenance hatches and drainage channels. These are surface
 // details on the shared solid roof, so a visible fitting never creates an invisible obstacle.
 vec3 shadeRoof(vec2 halfs, vec2 c, vec3 p, vec3 tint, float fp) {
@@ -9015,33 +9250,8 @@ vec3 shadeRoof(vec2 halfs, vec2 c, vec3 p, vec3 tint, float fp) {
     col = mix(col, metal, cover * detail);
   }
   col += tint * (neonLine(edge - 0.45, 0.14, fp) * 2.2 + 0.03 * exp(-edge / 1.5));
-  if (uGrowth > 0.0) {
-    float moss = tnoise(vec3(p.xz * 0.16, 4.0));
-    float patches = smoothstep(0.28, 0.65, moss);
-    col = mix(col, mix(vec3(0.028, 0.06, 0.012), vec3(0.11, 0.19, 0.038), moss), patches * uGrowth);
-  }
+  col = themeRoof(col, local, halfs, p, fp);
   return col;
-}
-
-// Ivy is painted onto the existing solid walls. Broad moss patches read at flight speed;
-// roof-hanging vines resolve into alternating leaves nearby and fade to coverage at a distance.
-vec3 overgrowth(vec3 col, float u, float y, float top, float seed, vec2 fp) {
-  float moss = tnoise(vec3(u * 0.11, y * 0.045, seed * 17.0));
-  float patches = smoothstep(0.44, 0.68, moss) * 0.85;
-  float column = floor(u / 8.0);
-  float vineLength = 18.0 + hash11(column + seed * 123.0) * 55.0;
-  float hang = 1.0 - smoothstep(vineLength - 5.0, vineLength + 3.0, top - y);
-  float centre = (column + 0.5) * 8.0 + sin(y * 0.095 + column + seed * 40.0) * 1.6;
-  float across = u - centre;
-  float stem = bandAA(across, 0.13, fp.x);
-  float row = floor(y / 1.5), side = mod(row, 2.0) * 2.0 - 1.0;
-  vec2 leaf = vec2((across - side * 0.55) / 0.95, (fract(y / 1.5) - 0.5) * 1.5 / 0.48);
-  float blur = max(0.12, max(fp.x, fp.y));
-  float leaves = 1.0 - smoothstep(1.0 - min(blur, 0.8), 1.0 + blur, length(leaf));
-  leaves = mix(leaves, bandAA(across, 0.9, fp.x) * 0.5, smoothstep(0.5, 2.0, max(fp.x, fp.y)));
-  float coverage = max(patches, max(stem, leaves) * hang) * uGrowth;
-  vec3 green = mix(vec3(0.018, 0.043, 0.009), vec3(0.095, 0.19, 0.028), moss);
-  return mix(col, green * (0.8 + 0.2 * leaves), coverage);
 }
 
 // Windows on a facade (u across it from its left edge, v up), per-tower pitch, floor height and
@@ -9154,7 +9364,8 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   float corner = style.z > 0.35 ? neonLine(min(u, 2.0 * halfU - u), 0.15, fp.x) : 0.0;
   float rim = neonLine(top - p.y - 0.9, 0.14, fp.y);
   col += tint * (band * 2.0 + corner * 3.0 + rim * 2.4);
-  if (uGrowth > 0.0) col = overgrowth(col, u, p.y, top, seed, fp);
+  col = themeFacade(col, vec2(u, p.y), top, floorH, seed, fp, glass, tint);
+  if (uGrowth > 0.0) col = overgrowth(col, u, p.y, top, seed, fp, h.n);
 
   // Giants carry a red aircraft beacon, blinking.
   if (top > 140.0) col += vec3(1.0, 0.05, 0.02) * 10.0 * bandAA(top - p.y - 2.0, 0.6, fp.y) * bandAA(u - halfU, 0.8, fp.x) * step(0.5, fract(uTime * 0.7 + seed));
@@ -9231,7 +9442,7 @@ vec3 shadeProp(Hit h, vec3 p, vec3 rd, float pix) {
       vec2(0.15, 0.065), vec2(fp * 1.3, fp * 1.2));
     col += vec3(0.18, 0.2, 0.2) * labels * detail;
   } else col += vec3(0.12, 0.04, 0.1) * pulseAA((v + 1.0) * 3.2, 0.13, fp * 1.2);
-  return col * (0.85 + 0.3 * weather) + vec3(0.27, 0.3, 0.32) * screws;
+  return themeEquipment(col * (0.85 + 0.3 * weather) + vec3(0.27, 0.3, 0.32) * screws, p, h.n, pix);
 }
 
 vec3 shadeBridge(Hit h, vec3 p, vec3 rd, float pix) {
@@ -9261,7 +9472,7 @@ vec3 shadeBridge(Hit h, vec3 p, vec3 rd, float pix) {
       pulseAA((across + height + side) * 2.2, 0.5, fp * 3.0)), marking * detail);
   }
   metal += vec3(0.08, 0.42, 0.48) * neonLine(abs(height) - 0.56, 0.09, fp);
-  return metal;
+  return themeEquipment(metal, p, h.n, pix);
 }
 
 // Street surface: dark asphalt with lane lines and traffic streaks on the avenues, and the pads
@@ -9288,10 +9499,7 @@ vec3 shadeGround(vec3 p, float pix) {
       col += (dir > 0.0 ? vec3(1.0, 0.9, 0.8) : vec3(1.0, 0.1, 0.05)) * car * 2.5 * (1.0 - uGrowth * 0.9);
     }
   }
-  if (uGrowth > 0.0) {
-    float moss = smoothstep(0.48, 0.7, tnoise(vec3(p.xz * 0.12, 11.0)));
-    col = mix(col, vec3(0.018, 0.039, 0.008), moss * uGrowth * 0.8);
-  }
+  col = themeGround(col, p, pix);
   vec4 pad = texelFetch(uPads, cell, 0);
   if (pad.x > 0.0) col += padLight(local, pad, pix);
   return col;
@@ -9333,11 +9541,12 @@ void main() {
         : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, rr, pix + r.t * pixAngle) : sky(rr, pixAngle);
       refl = applyFog(refl + rglow, p, rr, r.t);
       float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);   // rain: wetter
-      col += refl * fres * (1.0 - uGrowth * 0.55);
+      col += refl * fres * groundGloss(p);
     }
     col = applyFog(col, ro, rd, h.t);
   }
   if (uRain > 0.0) col += rainLight(rd, h.t, pixAngle);
+  col += ambientMotes(ro, rd, h.t, pixAngle);
   fragColor = vec4(overScene(col, courseLight(ro, rd, h.t, pixAngle) + glow), 1.0);
 }`;
 
@@ -9352,6 +9561,9 @@ function themeUniforms(t) {
   return {
     uNeon: t.neon.flat(), uWindow: t.windows.flat(),
     uWindowMean: t.windows[0].map((w, i) => (w + t.windows[1][i]) * 0.125),
+    uSurface: [t.wetness ?? 0.5, t.snow ?? 0, t.dust ?? 0, t.soot ?? 0],
+    uMotes: [t.motes ? ['pollen', 'snow', 'dust', 'ember'].indexOf(t.motes.kind) + 1 : 0, t.motes?.amount ?? 0],
+    uToxic: t.toxic ?? 0, uSigns: t.signs ?? 0, uClouds: t.clouds ?? 0,
     uRoof: t.roof, uWall: t.wall ?? [0, 0, 0], uGrowth: t.growth ?? 0, uAurora: t.aurora ?? 0,
     uSkyZenith: t.sky.zenith, uSkyHorizon: t.sky.horizon, uSkyGlow: t.sky.glow,
     uFogLow: t.fog.low, uFogHigh: t.fog.high, uFogDensity: t.fog.density, uStars: t.stars, uRain: t.rain,
@@ -9400,6 +9612,7 @@ function create(gfx) {
   const { gl, createTexture, program, fullscreen } = gfx;
   const prog = program('city', FRAG);
   const rain = rainMotion();
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let world = null, theme = null, themed = null;
 
   function setWorld(city, pads) {
@@ -9448,6 +9661,7 @@ function create(gfx) {
       uCell: city.cell, uN: city.n, uMaxH: city.maxHeight + 1, uSize: city.size,
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
+      uAmbientTime: reducedMotion.matches ? 0 : performance.now() / 1000,
       ...rain(cam.pos, performance.now() / 1000),
       ...GAME.overlay.uniforms(rings, guide, stars),
     });
