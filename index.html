@@ -3596,9 +3596,141 @@ GAME.rng = { rng, stream, seedToCode, codeToSeed, randomSeed };
 
 ;(function () {
 'use strict';
+// ---- src/world/structures.js ----
+// Three solid pieces make each silhouette. The renderer uploads these very same boxes:
+// openings, ledges and undersides have exactly the same geometry in the picture and physics.
+const TYPE = Object.freeze({ TERRACES: 1, CANTILEVER: 2, L_WING: 3, SKY_ARCH: 4, OVERHANG: 5 });
+const templates = [null,
+  [[-1, 0, -1, 1, 0.5, 1], [-1, 0.5, -1, 0.65, 0.78, 0.8], [-0.8, 0.78, -0.75, 0.3, 1, 0.4]],
+  [[-1, 0, -1, 1, 0.15, 1], [-0.45, 0.15, -0.62, 0.45, 0.62, 0.62], [-1, 0.62, -1, 1, 1, 1]],
+  [[-1, 0, -1, 1, 0.13, 1], [-1, 0.13, 0.2, 1, 1, 1], [-1, 0.13, -1, -0.15, 0.72, 0.2]],
+  [[-1, 0, -1, -0.5, 0.72, 1], [0.5, 0, -1, 1, 0.72, 1], [-1, 0.72, -1, 1, 1, 1]],
+];
+// Pre-rotate normalized bounds; no trigonometry or per-box allocations for the rotation at runtime.
+const variants = templates.map(parts => parts && Array.from({ length: 4 }, (_, rotation) => parts.map(box => {
+  let [x0, y0, z0, x1, y1, z1] = box;
+  for (let k = 0; k < rotation; k++) [x0, z0, x1, z1] = [-z1, x0, -z0, x1];
+  return [x0, y0, z0, x1, y1, z1];
+})));
+
+function boxes(city, i) {
+  const a = i * 4, A = city.boxA, B = city.boxB, S = city.structure;
+  const [cx, cz] = city.cellCenter(i), x = cx + A[a], z = cz + A[a + 1];
+  const hx = A[a + 2], hz = A[a + 3], top = B[a];
+  if (S[a] !== TYPE.OVERHANG) return variants[S[a]][S[a + 2]].map(b =>
+    [x + hx * b[0], top * b[1], z + hz * b[2], x + hx * b[3], top * b[4], z + hz * b[5]]);
+  const alongZ = Math.abs(S[a + 2]) === 1, side = Math.sign(S[a + 2]);
+  const face = (alongZ ? x : z) + side * (alongZ ? hx : hz);
+  const inner = face - side, outer = face + side * S[a + 3];
+  return [alongZ
+    ? [Math.min(inner, outer), S[a + 1], z - hz * 0.85, Math.max(inner, outer), top, z + hz * 0.85]
+    : [x - hx * 0.85, S[a + 1], Math.min(inner, outer), x + hx * 0.85, top, Math.max(inner, outer)]];
+}
+
+// Style only after a route has passed its original proofs. Scenery replaces plain towers with
+// smaller solids contained in their old envelope, opening real courtyards and archways. Patched
+// course walls, equipment mounts and existing setbacks keep their original supporting geometry.
+function decorate(city, course) {
+  city.clearGeometryCache();
+  const protectedCells = new Set((city.alleyPatch?.patches || []).flatMap(p => [...p.saved.keys()]));
+  for (let i = 0; i < city.kind.length; i++) {
+    const a = i * 4;
+    if (city.kind[i] !== city.KIND.TOWER || protectedCells.has(i) || city.propA[a + 2]
+      || city.bridgeA[a + 3] || city.bridgeB[a + 3]
+      || city.boxB[a] !== Math.abs(city.boxB[a + 1]) || city.boxB[a] < 24) continue;
+    const r = GAME.rng.stream(city.seed, `architecture-${i}`);
+    if (r() > 0.72) continue;
+    city.structure.set([r.int(1, 4), 0, r.int(0, 3), 0], a);
+  }
+  course.overhangs = [];
+  if (course.difficulty !== 'hard' && course.difficulty !== 'extreme') {
+    city.cacheGeometry();
+    return;
+  }
+  const extreme = course.difficulty === 'extreme', { line, sample } = course;
+  const occupied = new Set((course.inwardBuildings || []).map(b => b.cell));
+  const candidates = [];
+  for (const cell of city.alleyCells || []) {
+    const a = cell * 4, A = city.boxA;
+    if (occupied.has(cell) || city.propA[a + 2]) continue;
+    const alongZ = A[a + 3] >= 12 && A[a + 2] < 10;
+    const alongX = A[a + 2] >= 12 && A[a + 3] < 10;
+    if (!alongZ && !alongX) continue;
+    const [cx, cz] = city.cellCenter(cell);
+    let best = null;
+    for (let k = 2; k < line.n - 2; k++) {
+      const s = k * sample;
+      if (s < 140 || s > course.gates.at(-1).s - 110) continue;
+      const along = alongZ ? line.z[k] - cz : line.x[k] - cx;
+      const cross = alongZ ? line.x[k] - cx : line.z[k] - cz;
+      if (Math.abs(along) > 4 || Math.abs(cross) < 12 || Math.abs(cross) > 20) continue;
+      const da = alongZ ? line.z[k + 2] - line.z[k - 2] : line.x[k + 2] - line.x[k - 2];
+      const dc = alongZ ? line.x[k + 2] - line.x[k - 2] : line.z[k + 2] - line.z[k - 2];
+      if (Math.abs(dc) > Math.abs(da) * 0.08) continue;
+      if (!best || Math.abs(along) < best.distance) best = { cell, k, s, side: Math.sign(cross), alongZ, distance: Math.abs(along) };
+    }
+    if (best) candidates.push(best);
+  }
+  candidates.sort((a, b) => a.s - b.s || a.cell - b.cell);
+  const flown = GAME.autopilot.fly(city, course, { traceHeights: true });
+  const markers = [...course.gates, ...course.boosters];
+  const rings = [...course.gates, ...course.boosters.filter(b => b.type === 'ring')];
+  for (const c of candidates) {
+    if (course.overhangs.length >= (extreme ? 9 : 5)) break;
+    if (course.overhangs.some(p => Math.abs(p.s - c.s) < 144)
+      || markers.some(m => Math.abs(m.s - c.s) < 52)) continue;
+    const a = c.cell * 4, cross = c.alongZ ? 0 : 1;
+    // Keep every part inside its DDA cell, including irregular walls pushed into the route.
+    const room = city.cell / 2 - c.side * city.boxA[a + cross] - city.boxA[a + cross + 2] - 0.25;
+    const reach = Math.min(extreme ? 5.6 : 4, room);
+    const y = Number.isFinite(flown.heightTrace.low[c.k]) ? flown.heightTrace.low[c.k] : line.y[c.k];
+    const bottom = Math.max(8, y - (extreme ? 7 : 5));
+    if (reach < 2 || city.boxB[a] < bottom + 10) continue;
+    city.structure.set([TYPE.OVERHANG, bottom, c.side * (c.alongZ ? 1 : 2), reach], a);
+    const box = boxes(city, c.cell)[0];
+    const radius = extreme ? 3.6 : 4.5;
+    // The entire line is checked: a second passage can pass the other face of the same wall.
+    const blocked = line.x.some((x, k) => {
+      const dx = Math.max(box[0] - x, 0, x - box[3]);
+      const dy = Math.max(box[1] - line.y[k], 0, line.y[k] - box[4]);
+      const dz = Math.max(box[2] - line.z[k], 0, line.z[k] - box[5]);
+      return dx * dx + dy * dy + dz * dz < radius * radius;
+    });
+    if (blocked || rings.some(m => !GAME.plan.ringClear(city, m))) {
+      city.structure.fill(0, a, a + 4);
+      continue;
+    }
+    course.overhangs.push({ cell: c.cell, s: c.s, reach, bottom, box });
+  }
+  // Validate the new hazards with the real glider, including recovery routes. If a ledge makes
+  // a layout unforgiving, remove it rather than rerunning the expensive course search.
+  const ids = course.boosters.map(b => b.id);
+  const checks = [undefined, { noise: 0.35, seed: city.seed },
+    { skipBoosters: ids.slice(0, 2) }, { crashAt: [course.par * 0.3, course.par * 0.7] },
+    ...(extreme ? ids.flatMap(id => [{ skipBoosters: [id] }, { crashAfterBoosters: [id] }]) : []),
+    ...course.boosters.filter(b => b.type === 'pad').map(b => ({ lowInto: [b.id], lowBy: Math.min(12, b.top - b.lift - 4) }))];
+  while (course.overhangs.length) {
+    city.cacheGeometry();
+    if (checks.every((mistakes, i) => {
+      const proof = GAME.autopilot.fly(city, course, mistakes);
+      return proof.finished && ((i !== 0 && !mistakes?.lowInto) || (!proof.crashes && !proof.missed));
+    })) break;
+    const removed = course.overhangs.pop();
+    city.structure.fill(0, removed.cell * 4, removed.cell * 4 + 4);
+    city.clearGeometryCache();
+  }
+  city.cacheGeometry();
+}
+
+GAME.structures = { TYPE, boxes, decorate };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/world/city.js ----
-// The city as data: a square grid of cells, each empty or holding one tower made of up to two
-// stacked boxes (a base and a narrower setback). Course props are extra small boxes on facades.
+// The city as data: a square grid of cells, each empty or holding a composite building.
+// Plain towers have a base and setback; structures.js supplies terraces, wings and open arches.
 // The renderer draws exactly these boxes and the physics collides against exactly these boxes.
 
 const CELL = 32;          // grid pitch in world units (footprint + half a street on each side)
@@ -3682,16 +3814,21 @@ function generate(seed, difficulty = 'medium') {
 function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
   // One compact prop per cell, with the same footprint/height consumed by rendering and physics.
   // propA = [centre offset x/z, half x/z]; propB = [bottom, top, style, unused].
-  // A negative boxB top marks a prop-bearing building so the shader only fetches prop textures
-  // for those few cells; box geometry always uses the top's absolute value.
+  // A negative boxB top marks a prop-bearing building in the generation data; box geometry uses
+  // its absolute value. The renderer packs a prop flag alongside each building's compiled bounds.
   const propA = new Float32Array(N * N * 4), propB = new Float32Array(N * N * 4);
   // Two bridge segments may occupy a wall cell. Each stores [along offset, altitude,
   // facade offset, direction]; +/-1 crosses x, +/-2 crosses z. A crossing has one segment
   // in each of its two wall cells, meeting exactly at their shared boundary.
   const bridgeA = new Float32Array(N * N * 4), bridgeB = new Float32Array(N * N * 4);
+  // [style, overhang bottom, rotation or signed overhang axis, overhang reach].
+  const structure = new Float32Array(N * N * 4);
   const seededObstacles = obstacles.slice();
+  // Final courses are immutable during play. Reuse their solid bounds for flight/star proofs
+  // and gameplay instead of allocating every building piece for every physics query.
+  let solidCache = null;
   const city = {
-    seed, difficulty, cell: CELL, n: N, size: N * CELL, kind, boxA, boxB, propA, propB, bridgeA, bridgeB,
+    seed, difficulty, cell: CELL, n: N, size: N * CELL, kind, boxA, boxB, propA, propB, bridgeA, bridgeB, structure,
     maxHeight, obstacles, seededObstacles, courseProps: [], bridgePipes: [],
     KIND,
     cellIndex(x, z) {
@@ -3699,18 +3836,31 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       return ix < 0 || iz < 0 || ix >= N || iz >= N ? -1 : iz * N + ix;
     },
     cellCenter(i) { return [((i % N) + 0.5) * CELL, (Math.floor(i / N) + 0.5) * CELL]; },
-    // The cell's solid boxes as [minX, minY, minZ, maxX, maxY, maxZ].
-    boxes(i) {
+    // Building silhouette only; the renderer uploads these exact bounds once per course.
+    buildingBoxes(i) {
       const a = i * 4;
       const building = kind[i] === KIND.TOWER || kind[i] === KIND.OBSTACLE;
       // Props mount only on buildings; most collision queries touch empty street cells.
       if (!building) return [];
+      if (structure[a] && structure[a] !== GAME.structures.TYPE.OVERHANG)
+        return GAME.structures.boxes(city, i);
       const [cx, cz] = city.cellCenter(i);
       const out = [];
       const x = cx + boxA[a], z = cz + boxA[a + 1];
       out.push([x - boxA[a + 2], 0, z - boxA[a + 3], x + boxA[a + 2], boxB[a], z + boxA[a + 3]]);
       const top = Math.abs(boxB[a + 1]);
       if (top > boxB[a]) out.push([x - boxB[a + 2], boxB[a], z - boxB[a + 3], x + boxB[a + 2], top, z + boxB[a + 3]]);
+      if (structure[a]) out.push(...GAME.structures.boxes(city, i));
+      return out;
+    },
+    // All solid boxes as [minX, minY, minZ, maxX, maxY, maxZ], with bridges last.
+    boxes(i) {
+      if (solidCache) return solidCache[i];
+      const out = city.buildingBoxes(i);
+      if (!out.length) return out;
+      const a = i * 4;
+      if (!propA[a + 2] && !bridgeA[a + 3] && !bridgeB[a + 3]) return out;
+      const [cx, cz] = city.cellCenter(i);
       if (propA[a + 2] > 0) {
         const x = cx + propA[a], z = cz + propA[a + 1];
         if (propB[a + 2] === PROP.PIPE) {
@@ -3755,6 +3905,10 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       }
       return out;
     },
+    cacheGeometry() {
+      if (!solidCache) solidCache = Array.from({ length: N * N }, (_, i) => city.boxes(i));
+    },
+    clearGeometryCache() { solidCache = null; },
     // Hide seeded avenue intrusions outside the chosen start-to-finish path. Ordinary city towers
     // remain scenery. The original cells are restored before another course is generated.
     focusCourseObstacles(course) {
@@ -3799,6 +3953,8 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       return city.obstacles.length;
     },
     clearCourseProps() {
+      solidCache = null;
+      structure.fill(0);
       for (const pipe of city.bridgePipes) for (const cell of pipe.cells) {
         bridgeA.fill(0, cell * 4, cell * 4 + 4);
         bridgeB.fill(0, cell * 4, cell * 4 + 4);
@@ -3829,9 +3985,10 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
       city.hiddenObstacles = [];
       city.obstacles = seededObstacles.slice();
     },
-    placeCourseProps(course) { return placeCourseProps(city, course); },
-    placeBridgePipes(course, fill = false) { return placeBridgePipes(city, course, fill); },
+    placeCourseProps(course) { solidCache = null; return placeCourseProps(city, course); },
+    placeBridgePipes(course, fill = false) { solidCache = null; return placeBridgePipes(city, course, fill); },
     setBridgeHeight(pipe, y) {
+      solidCache = null;
       const delta = y - pipe.y;
       for (let n = 0; n < 2; n++) {
         const cell = pipe.cells[n], data = pipe.slots[n] ? bridgeB : bridgeA;
@@ -3844,7 +4001,7 @@ function makeCity(seed, kind, boxA, boxB, maxHeight, obstacles, difficulty) {
     },
     // Change the skyline of patched minor-street walls before the flight proof. The lane-facing
     // face stays where the route builder put it; both rendering and collision read these boxes.
-    styleNarrowStreetWalls(cells, course) { return styleNarrowStreetWalls(city, cells, course); },
+    styleNarrowStreetWalls(cells, course) { solidCache = null; return styleNarrowStreetWalls(city, cells, course); },
   };
   return city;
 }
@@ -4161,6 +4318,7 @@ function restore(data) {
     if (ArrayBuffer.isView(city[key])) city[key].set(value);
     else city[key] = value;
   }
+  city.cacheGeometry();
   return city;
 }
 
@@ -5664,13 +5822,13 @@ const PLANS = 3;                    // candidate plans per attempt; the one with
 const MAX_ATTEMPTS = 40;
 const MAX_MEDIUM_ATTEMPTS = 160;
 const MAX_HARD_ATTEMPTS = 1200;      // tight street layouts need more route plans on rare seeds
-// Keep earned Extreme unlocks and unchanged Easy/Medium records. Denser pipes on Hard/Extreme
-// and more inward buildings on Extreme need fresh times for the changed obstacle layouts.
-const VERSION = 13;
-const EASY_VERSION = 12;
-const HARD_VERSION = 16;
+// New architecture opens shortcuts and adds upper-floor hazards. Start fresh race records while
+// preserving earned Extreme unlocks, permanent star claims and the shop inventory.
+const VERSION = 14;
+const EASY_VERSION = 13;
+const HARD_VERSION = 17;
 const UNLOCK_VERSION = 12;
-const EXTREME_VERSION = 16;
+const EXTREME_VERSION = 17;
 const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: HARD_VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
@@ -6598,6 +6756,7 @@ function generate(city, seed, difficulty = 'medium') {
           finalCourse.difficulty = difficulty;
           finalCourse.proof = proof;
           finalCourse.rejected = reasons;
+          GAME.structures.decorate(city, finalCourse);
           GAME.stars.place(city, finalCourse, seed);
           return finalCourse;
         }
@@ -8524,7 +8683,7 @@ const RAIN_ROW = 9, RAIN_ROWS = 256;           // rain cells along the streaks; 
 const FRAG = `
 uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
 uniform vec2 uTanHalf;
-uniform highp sampler2D uBoxA, uBoxB, uPropA, uPropB, uBridgeA, uBridgeB, uPads; // shared solid boxes / pads
+uniform highp sampler2D uBoxA, uBoxB, uStructure, uPropA, uPropB, uBridgeA, uBridgeB, uPads; // shared solid boxes / pads
 uniform float uCell, uN, uMaxH, uSize;
 uniform vec2 uAvenue;                          // avenue spacing in cells along x and z
 
@@ -8642,15 +8801,30 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         float tp = boxHit(ro, inv, lo, hi, nPipe);
         if (tp < tBridge) { tBridge = tp; nBridge = nPipe; bridgeData = C; }
       }
-      if (A.z > 0.0) {
+      if (A.z > A.x) {
         vec4 B = texelFetch(uBoxB, cell, 0);
-        bool hasProp = B.y < 0.0;
-        B.y = abs(B.y);
-        vec2 c = (vec2(cell) + 0.5) * uCell + A.xy;
-        vec3 n1, n2;
-        float t1 = boxHit(ro, inv, vec3(c.x - A.z, 0.0, c.y - A.w), vec3(c.x + A.z, B.x, c.y + A.w), n1);
-        float t2 = B.y > B.x ? boxHit(ro, inv, vec3(c.x - B.z, B.x, c.y - B.w), vec3(c.x + B.z, B.y, c.y + B.w), n2) : 1e9;
-        float tb = min(t1, t2);
+        bool hasProp = B.w > 0.5;
+        vec4 towerA, towerB;
+        vec3 towerN;
+        float tb = 1e9;
+        // Up to three pieces, already assembled from the collision geometry at upload time.
+        // Only composite buildings fetch extra bounds; no per-ray architecture/rotation work.
+        for (int part = 0; part < 3; part++) {
+          if (float(part) >= B.z) break;
+          vec4 P = A, Q = B;
+          if (part > 0) {
+            ivec2 at = cell + ivec2(0, (part - 1) * 2 * int(uN));
+            P = texelFetch(uStructure, at, 0);
+            Q = texelFetch(uStructure, at + ivec2(0, int(uN)), 0);
+          }
+          vec3 nPiece;
+          float tPiece = boxHit(ro, inv, vec3(P.x, Q.x, P.y), vec3(P.z, Q.y, P.w), nPiece);
+          if (tPiece < tb) {
+            tb = tPiece; towerN = nPiece;
+            towerA = vec4((P.xy + P.zw) * 0.5 - (vec2(cell) + 0.5) * uCell, (P.zw - P.xy) * 0.5);
+            towerB = Q;
+          }
+        }
         if (hasProp) {
           vec4 P = texelFetch(uPropA, cell, 0), Q = texelFetch(uPropB, cell, 0);
           vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
@@ -8694,7 +8868,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           }
         }
         if (tb < tBridge && tb < tGround && tb < 1e8) {
-          h.kind = TOWER; h.t = tb; h.n = t1 < t2 ? n1 : n2; h.cell = cell; h.a = A; h.b = B;
+          h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB;
           return h;
         }
       } else {
@@ -8907,13 +9081,21 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   vec2 c = (vec2(h.cell) + 0.5) * uCell + h.a.xy;
   float seed = hash12(vec2(h.cell) * 0.731 + 3.7);
   vec3 style = hash31(seed * 97.0);
-  bool upper = h.b.y > h.b.x && p.y > h.b.x + (h.n.y > 0.5 ? 0.01 : -0.01);
-  vec2 halfs = upper ? h.b.zw : h.a.zw;
-  float top = upper ? h.b.y : h.b.x;
+  vec2 halfs = h.a.zw;
+  float top = h.b.y;
   vec3 tint = neon(style.x);
   float cosv = max(abs(dot(h.n, rd)), 0.08);
 
   if (h.n.y > 0.5) return shadeRoof(halfs, c, p, tint, pix / cosv);
+  if (h.n.y < -0.5) {
+    // Exposed ceilings get ribbed metal and a continuous edge light: the underside of a
+    // cantilever reads clearly when approaching from below, including in dark themes.
+    vec2 q = p.xz - c;
+    float fp = pix / cosv;
+    float edge = neonLine(min(halfs.x - abs(q.x), halfs.y - abs(q.y)) - 0.3, 0.13, fp);
+    float ribs = pulseAA((q.x + q.y) / 2.4, 0.09, fp / 1.7);
+    return uRoof * (0.34 + ribs * 0.3) + vec3(0.012, 0.022, 0.03) + tint * (0.055 + edge * 3.0);
+  }
 
   // Facade coordinates and the pixel footprint along each (the ray cone's ellipse on the wall).
   bool xFace = abs(h.n.x) > 0.5;
@@ -9230,8 +9412,28 @@ function create(gfx) {
       if (p.radius > city.cell / 2) throw new Error(`pad radius ${p.radius} does not fit its cell: the column is traced per cell`);
       padData.set([p.lift, p.radius, p.height, (p.cell * GOLDEN) % 1], p.cell * 4);
     }
+    // Two base textures plus four N-by-N tiles for the optional second and third pieces.
+    // Bounds are [minX,minZ,maxX,maxZ] and [bottom,top,pieceCount,hasProp]. Building silhouettes
+    // come directly from collision; props and bridge pipes retain their existing compact data.
+    const boundsA = new Float32Array(n * n * 4), boundsB = new Float32Array(n * n * 4);
+    const extra = new Float32Array(n * n * 16);
+    for (let i = 0; i < n * n; i++) {
+      const parts = city.buildingBoxes(i);
+      if (parts.length > 3) throw new Error(`too many building pieces in cell ${i}`);
+      parts.forEach((box, part) => {
+        const a = [box[0], box[2], box[3], box[5]];
+        const b = [box[1], box[4], parts.length, city.propA[i * 4 + 2] > 0 ? 1 : 0];
+        if (!part) { boundsA.set(a, i * 4); boundsB.set(b, i * 4); }
+        else {
+          const offset = (part - 1) * n * n * 8 + i * 4;
+          extra.set(a, offset); extra.set(b, offset + n * n * 4);
+        }
+      });
+    }
     world = { city, textures: {
-      uBoxA: tex(city.boxA), uBoxB: tex(city.boxB), uPropA: tex(city.propA), uPropB: tex(city.propB),
+      uBoxA: tex(boundsA), uBoxB: tex(boundsB),
+      uStructure: createTexture(n, n * 4, { format: 'rgba32f', filter: 'nearest', data: extra }),
+      uPropA: tex(city.propA), uPropB: tex(city.propB),
       uBridgeA: tex(city.bridgeA), uBridgeB: tex(city.bridgeB), uPads: tex(padData),
     } };
     gl.bindTexture(gl.TEXTURE_2D, null);
