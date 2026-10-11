@@ -4701,7 +4701,7 @@ const FLIGHT = {
   TURN_RATE: 1.25,   // rad/s at full stick
   BANK: 0.55,        // rad of visual bank at full turn
   RADIUS: 1.2,       // collision sphere
-  EXTREME_CRUISE: 80, // units/s: Extreme's level-flight speed
+  EXTREME_CRUISE: 70, // units/s: Extreme's level-flight speed
 };
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -6139,7 +6139,8 @@ const VERSION = 15;
 const EASY_VERSION = 14;
 const HARD_VERSION = 18;
 const UNLOCK_VERSION = 12;
-const EXTREME_VERSION = 18;
+// The slower Extreme pace changes flight times and energy planning; its records start fresh.
+const EXTREME_VERSION = 19;
 const RECORD_VERSIONS = Object.freeze({ easy: EASY_VERSION, medium: VERSION, hard: HARD_VERSION, extreme: EXTREME_VERSION });
 const DIFFICULTIES = Object.freeze({
   easy: Object.freeze({ label: 'Easy', gate: 1, ring: 1, pad: 1, minObstacles: 0 }),
@@ -7372,6 +7373,7 @@ GAME.shop = { LIFT, state, refresh, buyLift, useLift, onChange: fn => listeners.
 //   sun       null, or { dir, top, bottom (disc colours), size (angular radius), stripes (0/1),
 //             soft (edge blur in radii, 0: sharp), halo (its glow in the sky and the fog) }
 //   rain      0..1: streaks in the air, drops rippling the wet streets
+//   snowfall  optional 0..1: round flakes falling and streaming past the glider
 //   booster   optional booster colour
 //   wall      optional ambient facade colour
 //   growth    optional 0..1 moss and hanging ivy on the existing building surfaces
@@ -7428,15 +7430,14 @@ const THEMES = [
     id: 'arctic', name: 'Arctic Dawn', collectibleStar: [0.6, 0.45, 1],
     neon: [[0.35, 0.8, 1.0], [0.9, 0.95, 1.0], [0.6, 0.45, 1.0], [1.0, 0.45, 0.65]],
     windows: [[1.0, 0.75, 0.5], [0.7, 0.85, 1.0]],
-    // The blue hour before sunrise: snowy roofs under a deep blue sky, a small warm sun low on the
-    // horizon. Dark enough that the course lights still stand out against the sky.
-    roof: [0.12, 0.15, 0.26],   // snow, lit by the blue sky
+    // Keep the blue hour, snowy roofs and warm sunrise; fuller snowfall uses the rain's flight motion.
+    roof: [0.12, 0.15, 0.26],
     sky: { zenith: [0.008, 0.025, 0.1], horizon: [0.06, 0.095, 0.22], glow: [0.14, 0.07, 0.05] },
     fog: { low: [0.05, 0.07, 0.13], high: [0.06, 0.09, 0.17], density: 0.8 },
     stars: 0,
     sun: { dir: [-0.6, 0.1, 1.0], top: [5.0, 4.0, 3.2], bottom: [5.0, 3.4, 2.6], size: 0.03, stripes: 0, soft: 0, halo: [0.4, 0.18, 0.12] },
-    rain: 0,
-    wetness: 0.12, snow: 1, clouds: 0.35, motes: { kind: 'snow', amount: 0.45 },
+    rain: 0, snowfall: 0.7,
+    wetness: 0.12, snow: 1, clouds: 0.35,
   },
   {
     id: 'amber', name: 'Amber Haze', collectibleStar: [0.1, 1, 0.9],
@@ -7516,7 +7517,7 @@ function check(t) {
   }
   if (t.booster) colour(t.booster, 'booster');
   if (t.wall) colour(t.wall, 'wall');
-  for (const key of ['growth', 'aurora', 'wetness', 'snow', 'dust', 'soot', 'toxic', 'signs', 'clouds'])
+  for (const key of ['growth', 'aurora', 'wetness', 'snow', 'snowfall', 'dust', 'soot', 'toxic', 'signs', 'clouds'])
     if (t[key] !== undefined) unit(t[key], key);
   if (t.motes) {
     if (!['pollen', 'snow', 'dust', 'ember'].includes(t.motes.kind)) throw new Error(`theme ${t.id}: unknown mote kind`);
@@ -9383,12 +9384,12 @@ uniform float uToxic, uSigns, uClouds, uAmbientTime;
 uniform float uGrowth, uAurora;                // surface vegetation and northern lights
 uniform vec3 uSkyZenith, uSkyHorizon, uSkyGlow;
 uniform vec3 uFogLow, uFogHigh;                // fog colour looking down / up
-uniform float uFogDensity, uStars, uRain;
+uniform float uFogDensity, uStars, uRain, uSnowfall;
 uniform vec3 uSunDir, uSunTop, uSunBottom;     // sun direction; disc colour at its top and bottom
 uniform vec3 uSunHalo;                         // its glow in the sky and in the fog around it
 uniform float uSunSize, uSunStripes, uSunSoft; // angular radius (0: no sun); 1: synthwave bands; edge blur (radii)
-uniform vec3 uRainX, uRainAxis, uRainZ;        // the rain's frame: its axis is the air's motion past the camera
-uniform float uRainTravel;                     // distance flown through the rain, wrapped at RAIN_PERIOD
+uniform vec3 uRainX, uRainAxis, uRainZ;        // precipitation frame: air's motion past the camera
+uniform float uRainTravel;                     // distance travelled through rain or snow, wrapped at RAIN_ROW * RAIN_ROWS
 
 const int PRIMARY_CELLS = 120;
 const int REFLECT_CELLS = 40;
@@ -9711,6 +9712,32 @@ vec3 rainLight(vec3 rd, float tHit, float pixAngle) {
     sum += tube(across, 0.012, t * pixAngle) * smoothstep(0.0, 0.2, along) * smoothstep(1.0, 0.5, along);
   }
   return vec3(0.55, 0.65, 0.8) * sum * 0.35 * uRain;
+}
+
+// Snow uses the rain's depth-aware flight motion, with separate, rounded flakes instead of
+// streaks. Three layers vary their sizes and drift so the snowfall has depth without hiding rings.
+vec3 snowLight(vec3 rd, float tHit, float pixAngle) {
+  const float layers[3] = float[3](6.0, 14.0, 30.0);
+  const float rowHeight = 6.0, rows = RAIN_ROW * RAIN_ROWS / rowHeight;
+  vec3 q = vec3(dot(rd, uRainX), dot(rd, uRainAxis), dot(rd, uRainZ));
+  float off = max(length(q.xz), 0.05), turn = atan(q.z, q.x) / TAU, slope = q.y / off;
+  float sum = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float d = layers[i], t = d / off;
+    if (t >= tHit || t > 140.0) break;
+    float columns = floor(TAU * d / 1.6);
+    vec2 cell = vec2(turn * columns, (slope * d + uRainTravel) / rowHeight);
+    float column = mod(floor(cell.x), columns);
+    float row = cell.y + hash11(column * 1.37 + float(i) * 11.0);
+    vec3 h = hash33(vec3(column + float(i) * 131.0, mod(floor(row), rows), 19.3));
+    if (h.z > uSnowfall) continue;
+    float across = (fract(cell.x) - 0.2 - h.x * 0.6) * TAU * d / columns;
+    across += sin(uAmbientTime * 0.8 + h.z * TAU) * 0.12;
+    float along = (fract(row) - 0.2 - h.y * 0.6) * rowHeight;
+    float flake = tube(length(vec2(across, along)), mix(0.045, 0.095, h.z), t * pixAngle);
+    sum += flake * (1.0 - smoothstep(90.0, 140.0, t));
+  }
+  return vec3(0.55, 0.65, 0.8) * sum * 0.6;
 }
 
 // A raindrop's ripple on the wet street: each 1.4-unit cell gets a drop at its own place and time,
@@ -10059,6 +10086,7 @@ void main() {
     col = applyFog(col, ro, rd, h.t);
   }
   if (uRain > 0.0) col += rainLight(rd, h.t, pixAngle);
+  if (uSnowfall > 0.0) col += snowLight(rd, h.t, pixAngle);
   col += ambientMotes(ro, rd, h.t, pixAngle);
   fragColor = vec4(overScene(col, courseLight(ro, rd, h.t, pixAngle) + glow), 1.0);
 }`;
@@ -10080,6 +10108,7 @@ function themeUniforms(t) {
     uRoof: t.roof, uWall: t.wall ?? [0, 0, 0], uGrowth: t.growth ?? 0, uAurora: t.aurora ?? 0,
     uSkyZenith: t.sky.zenith, uSkyHorizon: t.sky.horizon, uSkyGlow: t.sky.glow,
     uFogLow: t.fog.low, uFogHigh: t.fog.high, uFogDensity: t.fog.density, uStars: t.stars, uRain: t.rain,
+    uSnowfall: t.snowfall ?? 0,
     uSunDir: normalize(sun ? sun.dir : [0, 1, 0]), uSunSize: sun ? sun.size : 0, uSunStripes: sun ? sun.stripes : 0, uSunSoft: sun ? sun.soft : 0,
     uSunTop: sun ? sun.top : [0, 0, 0], uSunBottom: sun ? sun.bottom : [0, 0, 0], uSunHalo: sun ? sun.halo : [0, 0, 0],
     uBoost: GAME.overlay.boosterColour(t),
@@ -10087,17 +10116,18 @@ function themeUniforms(t) {
   };
 }
 
-// The rain's motion past the camera. Rain falls with a little wind; the glider flies through it,
-// so the air streams past along (rain velocity - camera velocity), and the streaks lie along that
-// and scroll by the distance flown through the rain. The renderer sees only camera positions, so
+// Precipitation's motion past the camera. Rain or snow falls with a little wind; the glider flies
+// through it, so the air streams past along (particle velocity - camera velocity), and scrolls by
+// the distance flown through it. The renderer sees only camera positions, so
 // the velocity comes from them over real time, smoothed; a jump faster than any glider flies (a
 // respawn, a new course, a still's pose) is a cut, not motion.
 const RAIN_VELOCITY = [3, -38, 2];
+const SNOW_VELOCITY = [0.6, -4, 0.2];
 const CUT_SPEED = 2 * GAME.flight.FLIGHT.MAX_SPEED;
 const VELOCITY_SMOOTHING = 0.1;                // s
-function rainMotion() {
+function weatherMotion() {
   let last = null, velocity = [0, 0, 0], travel = 0;
-  return function frame(pos, now) {
+  return function frame(pos, now, falling = RAIN_VELOCITY, freeze = false) {
     const dt = last ? now - last.now : 0;
     if (dt > 0) {
       const v = pos.map((p, i) => (p - last.pos[i]) / dt);
@@ -10105,9 +10135,9 @@ function rainMotion() {
       if (Math.hypot(...v) < CUT_SPEED) velocity = velocity.map((x, i) => x + (v[i] - x) * k);
     }
     last = { pos: [...pos], now };
-    const air = velocity.map((v, i) => v - RAIN_VELOCITY[i]);   // the camera's motion through the rain
+    const air = (freeze ? [0, 0, 0] : velocity).map((v, i) => v - falling[i]);
     const speed = Math.hypot(...air);
-    travel = (travel + speed * dt) % (RAIN_ROW * RAIN_ROWS);
+    if (!freeze) travel = (travel + speed * dt) % (RAIN_ROW * RAIN_ROWS);
     // The rain's frame: the rotation that takes straight up to the axis, applied to the world's
     // x and z, so it tilts smoothly with speed and matches the world when hovering.
     const [ax, ay, az] = air.map(x => x / speed), c = 1 / (1 + ay);
@@ -10124,7 +10154,7 @@ function rainMotion() {
 function create(gfx) {
   const { gl, createTexture, program, fullscreen } = gfx;
   const prog = program('city', FRAG);
-  const rain = rainMotion();
+  const weather = weatherMotion();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let world = null, theme = null, themed = null;
 
@@ -10183,6 +10213,7 @@ function create(gfx) {
   function draw(cam, rings, guide, stars = []) {
     if (!theme) throw new Error('draw before setTheme');
     const city = world.city;
+    const now = performance.now() / 1000, snowing = themed.uSnowfall > 0;
     fullscreen(prog, {
       ...world.textures,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
@@ -10190,8 +10221,8 @@ function create(gfx) {
       uStreetMaxH: world.streetMaxH,
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
-      uAmbientTime: reducedMotion.matches ? 0 : performance.now() / 1000,
-      ...rain(cam.pos, performance.now() / 1000),
+      uAmbientTime: reducedMotion.matches ? 0 : now,
+      ...weather(cam.pos, now, snowing ? SNOW_VELOCITY : RAIN_VELOCITY, snowing && reducedMotion.matches),
       ...GAME.overlay.uniforms(rings, guide, stars),
     });
   }
