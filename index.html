@@ -17,33 +17,37 @@
   /* A transformed stage keeps the game visually on its Fly-side landscape axis if a phone's
      browser rotates despite rejecting the native orientation lock. */
   #game-stage { --stick-size: 128px; --stick-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;
+    position: fixed; top: var(--viewport-top, 0px); left: var(--viewport-left, 0px);
+    width: var(--viewport-width, 100%); height: var(--viewport-height, 100%);
+    min-width: 100dvw; min-height: 100dvh; overflow: hidden;
     transform-origin: 0 0; touch-action: none; }
   /* CSS sees a portrait viewport before some browsers deliver their orientation event. Phones
      with a portrait-natural screen can keep the Fly-side stage in landscape during that gap. */
   @media (orientation: portrait) {
     #game-stage.fly-angle-90, #game-stage.fly-angle-270 {
-      width: 100vh !important; width: 100dvh !important;
-      height: 100vw !important; height: 100dvw !important;
+      width: 100vh !important; width: max(100dvh, var(--portrait-height, 0px)) !important;
+      height: 100vw !important; height: max(100dvw, var(--portrait-width, 0px)) !important;
+      min-width: 100dvh; min-height: 100dvw;
     }
     #game-stage.fly-angle-90:not(.portrait-secondary),
     #game-stage.fly-angle-270.portrait-secondary {
       transform: translate(100vw, 0) rotate(90deg) !important;
+      transform: translate(max(100dvw, var(--portrait-width, 0px)), 0) rotate(90deg) !important;
     }
     #game-stage.fly-angle-270:not(.portrait-secondary),
     #game-stage.fly-angle-90.portrait-secondary {
       transform: translate(0, 100vh) rotate(-90deg) !important;
-      transform: translate(0, 100dvh) rotate(-90deg) !important;
+      transform: translate(0, max(100dvh, var(--portrait-height, 0px))) rotate(-90deg) !important;
     }
   }
   /* Keep the scene against every viewport edge when browser chrome or orientation changes. */
-  canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+  canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
   body { font: 500 14px/1.3 system-ui, "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
   button { -webkit-tap-highlight-color: transparent; }
   .hud, .screen { zoom: var(--ui-zoom, 1); }
 
   /* ---- Screens: title, pause, results -------------------------------------------------------- */
-  .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  .screen { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
     padding: 24px; box-sizing: border-box; background: radial-gradient(ellipse at center, rgba(20, 0, 34, 0.45), rgba(0, 0, 0, 0.9)); }
   /* Over a run the city behind is busy: blur and dim it so the numbers read at a glance. */
   #pause, #results { background: radial-gradient(ellipse at center, rgba(12, 0, 24, 0.62), rgba(0, 0, 0, 0.92));
@@ -197,7 +201,7 @@
   .native-app .orientation-info { display: none; }
 
   /* ---- HUD ----------------------------------------------------------------------------------- */
-  .hud { position: fixed; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
+  .hud { position: absolute; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
   .hud.on { display: block; }
   /* Soft shade behind the top bar and the bottom gauges. */
   .hud::before, .hud::after { content: ''; position: absolute; left: 0; right: 0; pointer-events: none; }
@@ -9730,7 +9734,10 @@ function create(root, { touch, onPause, onLift }) {
   const tag = el('div', 'hud-tag', hud);
   const pauseBtn = el('button', 'hud-pause', hud, 'II');
   pauseBtn.setAttribute('aria-label', 'pause');
-  pauseBtn.addEventListener('pointerdown', e => { e.stopPropagation(); onPause(); });
+  // Finish the tap before replacing the HUD; otherwise its release can click a pause-screen
+  // control (such as Shop) that appears under the same finger.
+  pauseBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  pauseBtn.addEventListener('click', e => { e.stopPropagation(); onPause(); });
   const lift = el('button', 'hud-lift', hud);
   lift.id = 'use-lift'; lift.hidden = true;
   const liftLabel = el('strong', '', lift);
@@ -10751,7 +10758,7 @@ function loop(now) {
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
-  if (TOUCH && viewAngle() !== null) steadyLandscapeView();
+  if (TOUCH) steadyLandscapeView();
   if (mode !== 'paused' && !courseLoading) update(dt * timeScale);
   resolution.fitCanvas();
   const [w, h] = resolution.renderSize();
@@ -10966,12 +10973,28 @@ let sidewaysAngle = null;
 // The landscape angle the stage is drawn for: the Fly side during a run, else the sideways side.
 const viewAngle = () => runScreenAngle ?? sidewaysAngle;
 let seenScreenAngle = null, seenWindowAngle = null, lastReportedAngle = null;
-let stageAngle = null, stageWidth = -1, stageHeight = -1, stageViewportWidth = -1, stageViewportHeight = -1;
+let stageAngle = null, stageWidth = -1, stageHeight = -1, viewportKey = '';
+function viewportBounds() {
+  const root = document.documentElement, visual = window.visualViewport;
+  const portrait = matchMedia('(orientation: portrait)').matches;
+  // During rotation these APIs can settle in different frames. Ignore a measurement still on
+  // the old axis, then cover both the layout and visible viewport on the current CSS axis.
+  const matches = (w, h) => w > 0 && h > 0 && (w === h || (h > w) === portrait);
+  const sizes = [[innerWidth, innerHeight], [root.clientWidth, root.clientHeight]].filter(([w, h]) => matches(w, h));
+  let left = 0, top = 0;
+  if (visual && matches(visual.width, visual.height)) {
+    left = Math.min(0, visual.offsetLeft); top = Math.min(0, visual.offsetTop);
+    sizes.push([visual.offsetLeft + visual.width, visual.offsetTop + visual.height]);
+  }
+  if (!sizes.length) sizes.push([innerWidth, innerHeight]);
+  return { w: Math.ceil(Math.max(...sizes.map(s => s[0])) - left),
+    h: Math.ceil(Math.max(...sizes.map(s => s[1])) - top), left, top, portrait };
+}
 const normalAngle = raw => {
   const n = Number(raw);
   return raw == null || !Number.isFinite(n) ? null : ((Math.round(n / 90) * 90 % 360) + 360) % 360;
 };
-function currentScreenAngle() {
+function currentScreenAngle(bounds = viewportBounds()) {
   const screenAngle = normalAngle(screen.orientation?.angle);
   const windowAngle = normalAngle(window.orientation);
   const screenChanged = screenAngle !== null && screenAngle !== seenScreenAngle;
@@ -10991,8 +11014,8 @@ function currentScreenAngle() {
   const phoneAngle = viewAngle() === null
     ? [screenAngle, windowAngle].some(a => a === 90 || a === 270)
     : viewAngle() === 90 || viewAngle() === 270;
-  if (phoneAngle && innerWidth !== innerHeight) {
-    const portrait = innerHeight > innerWidth;
+  if (phoneAngle && bounds.w !== bounds.h) {
+    const portrait = bounds.portrait;
     if ((angle % 180 === 0) !== portrait) {
       const matching = [screenAngle, windowAngle].filter(a => a !== null && (a % 180 === 0) === portrait);
       angle = matching.includes(lastReportedAngle) ? lastReportedAngle : matching[0]
@@ -11013,29 +11036,44 @@ function currentLandscapeSide() {
   return 'landscape-primary';
 }
 function steadyLandscapeView() {
+  if (TOUCH) {
+    const bounds = viewportBounds(), { w, h, left, top, portrait } = bounds;
+    const key = `${w}/${h}/${left}/${top}/${portrait}`;
+    if (key !== viewportKey) {
+      viewportKey = key;
+      stage.style.setProperty('--viewport-width', `${w}px`);
+      stage.style.setProperty('--viewport-height', `${h}px`);
+      stage.style.setProperty('--viewport-left', `${left}px`);
+      stage.style.setProperty('--viewport-top', `${top}px`);
+      // Portrait CSS turns the stage before an angle event arrives. Only give that rule
+      // measurements from this axis, never the width/height left over from landscape.
+      for (const [name, value] of [['width', w], ['height', h]]) {
+        if (portrait) stage.style.setProperty(`--portrait-${name}`, `${value}px`);
+        else stage.style.removeProperty(`--portrait-${name}`);
+      }
+      hud?.relayout();
+    }
+  }
   if (!TOUCH || viewAngle() === null) {
     if (!stage.style.width && !stage.style.height && !stage.style.transform
       && !stage.classList.contains('counter-rotated')) return;
     stage.style.width = stage.style.height = stage.style.transform = '';
     stage.classList.remove('counter-rotated', 'portrait-secondary');
-    stageAngle = null; stageWidth = stageHeight = stageViewportWidth = stageViewportHeight = -1;
+    stageAngle = null; stageWidth = stageHeight = -1;
     hud?.relayout();
     return;
   }
-  const turn = (viewAngle() - currentScreenAngle() + 360) % 360;
-  const w = innerWidth, h = innerHeight;
-  const vw = window.visualViewport?.width ?? w, vh = window.visualViewport?.height ?? h;
+  const bounds = viewportBounds(), { w, h } = bounds;
+  const turn = (viewAngle() - currentScreenAngle(bounds) + 360) % 360;
   const portraitSecondary = lastReportedAngle === 180;
   if (stageAngle === turn && stageWidth === w && stageHeight === h
-    && stageViewportWidth === vw && stageViewportHeight === vh
     && stage.classList.contains('portrait-secondary') === portraitSecondary) return;
   stageAngle = turn; stageWidth = w; stageHeight = h;
-  stageViewportWidth = vw; stageViewportHeight = vh;
   stage.classList.toggle('portrait-secondary', portraitSecondary);
   stage.style.width = `${turn % 180 ? h : w}px`;
   stage.style.height = `${turn % 180 ? w : h}px`;
   stage.style.transform = turn === 90 ? `translate(${w}px, 0) rotate(90deg)`
-    : turn === 180 ? `translate(${w}px, ${h}px) rotate(180deg)`
+    : turn === 180 ? 'translate(100%, 100%) rotate(180deg)'
       : turn === 270 ? `translate(0, ${h}px) rotate(-90deg)` : 'none';
   stage.classList.toggle('counter-rotated', turn !== 0);
   hud?.relayout();
@@ -11209,6 +11247,8 @@ screen.orientation?.addEventListener?.('change', retryLandscape);
 window.addEventListener('orientationchange', retryLandscape);
 window.addEventListener('resize', steadyLandscapeView);
 window.visualViewport?.addEventListener('resize', steadyLandscapeView);
+window.visualViewport?.addEventListener('scroll', steadyLandscapeView);
+window.addEventListener('pageshow', steadyLandscapeView);
 matchMedia('(orientation: portrait)').addEventListener?.('change', steadyLandscapeView);
 document.addEventListener('fullscreenchange', () => {
   if (document.fullscreenElement) retryLandscape();
@@ -11282,6 +11322,7 @@ $('rotate-sideways').addEventListener('click', action(playSideways));
 
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
+  steadyLandscapeView();
   GAME.settings.load();
   GAME.starBank.load();
   GAME.shop.refresh();
