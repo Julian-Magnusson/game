@@ -559,7 +559,7 @@
       <p>Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p>Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
       <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
-      <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Each is saved once per course and difficulty, even if you crash or retry. Stars are optional; collecting one adds no time bonus or penalty.</p>
+      <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Finds are shared across difficulties for that course and stay saved through crashes and retries. Stars you already own become faint outlines. Stars are optional; collecting one adds no time bonus or penalty.</p>
     </section>
     <section class="info-section"><h3>Star shop</h3>
       <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
@@ -7222,49 +7222,71 @@ GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, onChange: fn =
 ;(function () {
 'use strict';
 // ---- src/game/star-bank.js ----
-// One permanent claim per course/difficulty/star. Individual keys keep different tabs from
-// overwriting each other's finds. Settings reset never touches this collection.
-const PREFIX = 'neonflight.star.v1.';
-const claims = new Set();
-const keyFor = (code, difficulty, id) => `${PREFIX}${code}.${difficulty}.${id}`;
-function valid(key) {
-  const match = /^neonflight\.star\.v1\.([0-9A-HJ-NP-Z]{1,6})\.(easy|medium|hard|extreme)\.([0-2])$/.exec(key);
-  return !!match && Number(match[3]) < GAME.stars.COUNTS[match[2]];
+// Permanent star slots belong to a course, shared by every difficulty. Keep the old individual
+// claims read-only: they mark the shared slots and preserve every previously earned wallet star.
+// New claims use one key per slot so different tabs cannot overwrite each other's finds.
+const PREFIX = 'neonflight.star.v2.';
+const LEGACY = 'neonflight.star.v1.';
+const keyFor = (code, id) => `${PREFIX}${code}.${id}`;
+let records = new Map(), claims = new Set(), legacyCredit = 0;
+const sessionClaims = new Set();
+function sharedKey(key) {
+  const current = /^neonflight\.star\.v2\.([0-9A-HJ-NP-Z]{1,6})\.([0-2])$/.exec(key);
+  if (current) return key;
+  const old = /^neonflight\.star\.v1\.([0-9A-HJ-NP-Z]{1,6})\.(easy|medium|hard|extreme)\.([0-2])$/.exec(key);
+  return old && Number(old[3]) < GAME.stars.COUNTS[old[2]] ? keyFor(old[1], Number(old[3])) : null;
+}
+function readSaved() {
+  const saved = new Map();
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i), shared = sharedKey(key);
+    if (shared && localStorage.getItem(key) === '1') saved.set(key, shared);
+  }
+  return saved;
+}
+function tally(saved) {
+  const shared = new Set(saved.values()), oldSlots = new Set();
+  let oldCount = 0;
+  for (const [key, slot] of saved) if (key.startsWith(LEGACY)) { oldCount++; oldSlots.add(slot); }
+  // Legacy duplicates remain earned credit, but can never make a shared slot collectible again.
+  return { shared, credit: oldCount - oldSlots.size };
+}
+function rebuild() {
+  const saved = tally(records);
+  claims = new Set([...saved.shared, ...sessionClaims]);
+  legacyCredit = saved.credit;
 }
 function load() {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (valid(key) && localStorage.getItem(key) === '1') claims.add(key);
-    }
-  } catch { /* the current session still keeps its stars */ }
+  try { records = readSaved(); rebuild(); }
+  catch { /* the current session still keeps its stars */ }
 }
 function claim(code, difficulty, id) {
-  const key = keyFor(code, difficulty, id);
-  if (!valid(key)) throw new Error('invalid star claim');
-  try { if (localStorage.getItem(key) === '1') claims.add(key); } catch { /* session only */ }
+  const key = keyFor(code, id);
+  if (!Object.hasOwn(GAME.stars.COUNTS, difficulty) || !Number.isInteger(id)
+      || id < 0 || id >= GAME.stars.COUNTS[difficulty] || !sharedKey(key)) throw new Error('invalid star claim');
+  load(); // Also sees another tab's claim before its storage event arrives.
   if (claims.has(key)) return false;
-  claims.add(key);
-  try { localStorage.setItem(key, '1'); } catch { /* session only */ }
+  sessionClaims.add(key);
+  try { localStorage.setItem(key, '1'); records.set(key, key); sessionClaims.delete(key); }
+  catch { /* session only; the shop cannot spend an unsaved find */ }
+  rebuild();
   return true;
 }
 const collected = (code, difficulty) => Array.from({ length: GAME.stars.COUNTS[difficulty] }, (_, id) => id)
-  .filter(id => claims.has(keyFor(code, difficulty, id)));
+  .filter(id => claims.has(keyFor(code, id)));
 window.addEventListener('storage', e => {
-  if (e.key === null) { claims.clear(); return; }
-  if (!valid(e.key)) return;
-  if (e.newValue === '1') claims.add(e.key); else claims.delete(e.key);
+  if (e.key === null) { records.clear(); sessionClaims.clear(); rebuild(); return; }
+  const shared = sharedKey(e.key);
+  if (!shared) return;
+  if (e.newValue === '1') records.set(e.key, shared); else records.delete(e.key);
+  rebuild();
 });
-// Purchases may only spend claims that actually reached storage, not session-only finds.
+// Purchases may only spend claims that actually reached storage, including legacy earnings.
 function savedTotal() {
-  let total = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (valid(key) && localStorage.getItem(key) === '1') total++;
-  }
-  return total;
+  const saved = tally(readSaved());
+  return saved.shared.size + saved.credit;
 }
-GAME.starBank = { load, claim, collected, savedTotal, total: () => claims.size };
+GAME.starBank = { load, claim, collected, savedTotal, total: () => claims.size + legacyCredit };
 
 })();
 
@@ -7326,7 +7348,7 @@ function useLift(canUse, activate) {
     return { ok: true, activate };
   });
 }
-window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.v1.')) refresh(); });
+window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
 GAME.shop = { LIFT, state, refresh, buyLift, useLift, onChange: fn => listeners.add(fn) };
 
 })();
@@ -8684,8 +8706,9 @@ uniform vec2 uPathM[PATH_POINTS];              // their distance along the cours
 uniform vec4 uPathB[PATH_CHUNKS];              // bounding sphere of each chunk's segments (w = 0: none)
 
 uniform vec3 uBoost;                           // booster colour
-uniform vec4 uCollectibles[3];                 // centre xyz, radius (0 = hidden/collected)
+uniform vec4 uCollectibles[3];                 // centre xyz, radius (0 = unused)
 uniform vec4 uCollectiblePhases;
+uniform vec4 uCollectibleSaved;                // 1 = already owned, a faint outline without halo/glints
 uniform vec3 uCollectibleColour;
 // Course lights share a look no tower has: a white-hot core in a coloured halo, and motion.
 const vec3 HOT = vec3(1.0, 0.86, 0.95);
@@ -8890,7 +8913,7 @@ float starDistance(vec2 p, float radius) {
 
 // A slowly turning coin-like star with a gentle bob, a breathing halo and orbiting glints.
 // All light respects the city's depth, so stars are discovered in pockets rather than through walls.
-vec3 collectibleLight(vec3 ro, vec3 rd, vec4 c, float phase, float tMax, float pixAngle) {
+vec3 collectibleLight(vec3 ro, vec3 rd, vec4 c, float phase, float saved, float tMax, float pixAngle) {
   if (c.w <= 0.0) return vec3(0.0);
   vec3 centre = c.xyz + vec3(0.0, sin(uTime * 2.0 + phase) * 0.55, 0.0);
   vec3 delta = centre - ro;
@@ -8899,7 +8922,7 @@ vec3 collectibleLight(vec3 ro, vec3 rd, vec4 c, float phase, float tMax, float p
   float d = length(delta - rd * tc), px = max(0.02, tc * pixAngle);
   if (d > c.w * 3.0 + px * 3.0) return vec3(0.0);
   float pulse = 0.75 + 0.25 * sin(uTime * 3.0 + phase);
-  vec3 col = uCollectibleColour * exp(-d * d / (c.w * c.w * 1.7)) * 0.28 * pulse;
+  vec3 col = saved > 0.5 ? vec3(0.0) : uCollectibleColour * exp(-d * d / (c.w * c.w * 1.7)) * 0.28 * pulse;
   float angle = uTime * 1.1 + phase;
   vec3 side = vec3(cos(angle), 0.0, -sin(angle));
   vec3 normal = vec3(sin(angle), 0.0, cos(angle));
@@ -8914,13 +8937,19 @@ vec3 collectibleLight(vec3 ro, vec3 rd, vec4 c, float phase, float tMax, float p
       float face = 1.0 - smoothstep(-aa, aa, distance);
       float facet = 0.8 + 0.3 * sin(atan(p.y, p.x + 0.0001) * 5.0 + angle);
       float shine = pow(max(0.0, sin(angle + 0.6)), 12.0);
-      col += uCollectibleColour * face * facet * (1.5 + shine)
-        + mix(uCollectibleColour, vec3(1.0), 0.8) * tube(distance, 0.14, aa) * 1.8;
+      if (saved > 0.5) {
+        // Almost transparent: just enough face and edge to recognize a star already found.
+        // overScene covers less than 14% of the background at this brightness.
+        col += mix(uCollectibleColour, vec3(1.0), 0.35) * (face * 0.015 + tube(distance, 0.14, aa) * 0.04);
+      } else {
+        col += uCollectibleColour * face * facet * (1.5 + shine)
+          + mix(uCollectibleColour, vec3(1.0), 0.8) * tube(distance, 0.14, aa) * 1.8;
+      }
     }
   }
   vec3 up = vec3(0.0, 1.0, 0.0);
   vec3 right = normalize(cross(normalize(delta), up) + vec3(0.0001, 0.0, 0.0));
-  for (int j = 0; j < 3; j++) {
+  if (saved < 0.5) for (int j = 0; j < 3; j++) {
     float a = -uTime * 0.85 + phase + float(j) * TAU / 3.0;
     vec3 spark = centre + (right * cos(a) + up * sin(a)) * c.w * 1.65;
     vec3 q = spark - ro;
@@ -8941,7 +8970,7 @@ vec3 courseLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
     col += ringLight(ro, rd, uRingC[i], uRingN[i], uRingF[i], tMax, pixAngle);
     if (uRingN[i].w == RING_FINISH) col += beaconLight(ro, rd, uRingC[i], tMax, pixAngle);
   }
-  for (int i = 0; i < 3; i++) col += collectibleLight(ro, rd, uCollectibles[i], uCollectiblePhases[i], tMax, pixAngle);
+  for (int i = 0; i < 3; i++) col += collectibleLight(ro, rd, uCollectibles[i], uCollectiblePhases[i], uCollectibleSaved[i], tMax, pixAngle);
   return col + guideLight(ro, rd, tMax, pixAngle);
 }
 `;
@@ -8969,9 +8998,11 @@ function uniforms(rings, guide, stars = []) {
   if (guide.length > PATH_POINTS) throw new Error(`${guide.length} guide points, the shader draws ${PATH_POINTS}`);
   const ringC = new Float32Array(MAX_RINGS * 4), ringN = new Float32Array(MAX_RINGS * 4), ringF = new Float32Array(MAX_RINGS * 2);
   const path = new Float32Array(PATH_POINTS * 4), pathM = new Float32Array(PATH_POINTS * 2);
-  const collectibles = new Float32Array(12), phases = new Float32Array(4);
+  const collectibles = new Float32Array(12), phases = new Float32Array(4), saved = new Float32Array(4);
   if (stars.length > 3) throw new Error('at most three stars per course');
-  stars.forEach((s, i) => { collectibles.set([s.x, s.y, s.z, s.radius], i * 4); phases[i] = s.phase; });
+  stars.forEach((s, i) => {
+    collectibles.set([s.x, s.y, s.z, s.radius], i * 4); phases[i] = s.phase; saved[i] = s.collected ? 1 : 0;
+  });
   rings.forEach((r, i) => {
     if (!RING_KIND[r.kind]) throw new Error(`unknown ring kind ${r.kind}`);
     if (typeof r.flare !== 'number' || typeof r.xray !== 'number') throw new Error(`ring ${i} (${r.kind}) needs flare and xray`);
@@ -8984,7 +9015,7 @@ function uniforms(rings, guide, stars = []) {
     path.set(p.slice(0, 4), i * 4);
     pathM.set(p.slice(4), i * 2);
   });
-  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases };
+  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases, uCollectibleSaved: saved };
 }
 
 // The boosters' colour in a city theme (GAME.themes): lime, unless the theme brings its own.
@@ -11486,6 +11517,8 @@ function shownGlider() {
 }
 
 function handle(events) {
+  // If another tab saved this slot during the flight step, suppress the duplicate pickup feedback.
+  events = events.filter(e => e.type !== 'star' || GAME.starBank.claim(seedCode, difficulty, e.star));
   soundtrack.events(events);
   for (const e of events) {
     if (e.type === 'gate') { GAME.guide.onGate(guide, e.gate, run.time); hud.gatePassed(); }
@@ -11493,7 +11526,7 @@ function handle(events) {
     else if (e.type === 'missed') hud.toast(`${course.gates[e.gate].finish ? 'outside the ring' : 'missed gate'} +${GAME.run.PENALTY.missed} s`, 'bad');
     else if (e.type === 'boost') { boostsTaken++; hud.toast(`lift +${Math.round(e.lift)}`, 'good'); boostGlow = 1; }
     else if (e.type === 'star') {
-      if (GAME.starBank.claim(seedCode, difficulty, e.star)) newStars++;
+      newStars++;
       GAME.shop.refresh();
       hud.toast(`★ star saved · ${GAME.starBank.total()} total`, 'star', 2);
       hud.starCollected();
@@ -11618,7 +11651,8 @@ function render(now, w, h) {
   const view = GAME.guide.frame(guide, run, run.time);
   GAME.gfx.setFrame({ t: now / 1000, width: w, height: h });
   bindTarget(target);
-  renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, course.stars.filter(s => !run.stars.has(s.id)));
+  renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
+    course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
   const over = Math.max(0, (g.speed - FLIGHT.CRUISE) / (FLIGHT.MAX_SPEED - FLIGHT.CRUISE));
   post.bloom = 0.1 + boostGlow * 0.05;
@@ -11667,7 +11701,7 @@ function hudFrame({ cam, next }) {
 function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
-  // Another tab can bank a find too; already saved stars disappear here on the next frame.
+  // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
   for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
