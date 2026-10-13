@@ -398,6 +398,36 @@
   .shop-footer { margin-top: 18px; font-size: 12px; line-height: 1.5; color: #9bafc4; }
   #shop-message { min-height: 1.5em; margin: 7px 0 0; color: var(--green); font-size: 12px; }
   #shop-storage { color: var(--amber); }
+  .shop-key-item { display: flex; align-items: center; gap: 20px; margin-top: 14px; padding: 16px 20px;
+    border: 1px solid #ff696a55; border-radius: 5px; background: linear-gradient(110deg, #ff46460b, #ffffff03); }
+  .shop-key-art { width: 64px; height: 64px; flex: 0 0 64px; color: #ff7775; filter: drop-shadow(0 0 8px #ff464644); }
+  .shop-key-copy { flex: 1; } .shop-key-copy h3 { margin: 4px 0; font-size: 21px; font-weight: 500; }
+  .shop-key-copy p { margin: 5px 0; color: #b5c6d6; font-size: 12px; line-height: 1.5; }
+  .shop-key-copy .shop-badge, #shop-key-owned { color: #ff9e97; font-size: 11px; }
+  #shop-key-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
+  #shop-key-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
+  #shop-key-buy:disabled { opacity: 0.55; }
+  .shop-head { position: sticky; top: -1px; z-index: 1; background: #07121fee; }
+  #environment-switch { margin-top: 16px; display: inline-flex; align-items: center; gap: 10px; min-height: 44px;
+    padding: 10px 18px; border-color: #66b5a699; color: #b7e8db; background: #102f2a99; letter-spacing: 0.13em; }
+  #environment-switch[hidden], #sewer-note[hidden] { display: none; }
+  #environment-switch svg { width: 26px; height: 26px; }
+  #sewer-note { max-width: 360px; margin: 18px 0; padding: 0 20px; color: #a6c7be; font-size: 12px; line-height: 1.7; letter-spacing: 0.06em; }
+  .sewer-menu .menu-course, .sewer-menu #shuffle, .sewer-menu #start, .sewer-menu #title-info { display: none; }
+  .sewer-menu #overlay .panel-buttons { display: flex; justify-content: center; }
+  .sewer-menu #overlay { background: radial-gradient(ellipse at center, #031d171a, #00000050); }
+  .sewer-menu #title { color: #dbf5e7; letter-spacing: 0.25em; margin-right: -0.25em; text-shadow: 0 0 22px #50baa955; }
+  #sewer-reveal { position: absolute; inset: 0; z-index: 60; background: #000; color: #fff;
+    display: grid; place-items: center; text-align: center; }
+  #sewer-reveal.hidden { display: none; }
+  #sewer-reveal span { font-size: clamp(32px, 6vw, 70px); font-weight: 300; letter-spacing: 0.16em;
+    opacity: 0; transition: opacity 0.7s; }
+  #sewer-reveal.revealed span { opacity: 1; }
+  @media (max-height: 500px) { #environment-switch { margin-top: 8px; min-height: 44px; padding: 6px 14px; }
+    .shop-key-item { padding: 12px; gap: 12px; } }
+  @media (max-width: 600px) { .shop-key-item { flex-wrap: wrap; } .shop-key-art { width: 44px; height: 44px; flex-basis: 44px; }
+    #shop-key-buy { flex: 1; } }
+  @media (prefers-reduced-motion: reduce) { #sewer-reveal span { transition: none; } }
   .hud-lift { position: absolute; right: calc(24px + var(--safe-r)); bottom: 118px; min-width: 92px; min-height: 52px;
     padding: 8px 12px; border: 1px solid var(--green); border-radius: 6px; background: #061b20da; color: #caffeb;
     pointer-events: auto; touch-action: none; font: 600 13px/1.3 system-ui, sans-serif; letter-spacing: 0.07em; cursor: pointer;
@@ -509,6 +539,8 @@
     <div id="title-stars" class="star-summary"></div>
   </div>
   <div class="panel-buttons"><button id="shuffle" class="btn alt" disabled>new course</button><button id="start" class="btn primary" disabled>loading</button><button id="title-settings" class="btn" disabled>settings</button></div>
+  <p id="sewer-note" hidden>The city fades above. An underground flight is coming next.</p>
+  <button id="environment-switch" class="btn" type="button" hidden><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><ellipse cx="16" cy="12" rx="12" ry="6" stroke="currentColor"/><path d="M4 12v5c0 8 24 8 24 0v-5M8 10l16 4M8 14l16-4M16 6v12" stroke="currentColor"/></svg><span>The Sewer</span></button>
   <div id="status"></div>
 </div>
 <div id="course-dialog" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="course-dialog-title">
@@ -622,6 +654,11 @@
     <div class="shop-footer" id="shop-rules">Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
     <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
     <div id="shop-message" role="status" aria-live="polite"></div>
+    <article class="shop-key-item">
+      <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
+      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p>Reveals hidden red rings on Hard and Extreme. Find a way beneath the city.</p><span id="shop-key-owned">Not owned</span></div>
+      <strong id="shop-key-price">★ 10</strong><button id="shop-key-buy" class="btn" type="button">unlock · 10 ★</button>
+    </article>
   </div>
 </div>
 <div id="settings" class="screen hidden">
@@ -646,6 +683,7 @@
   </div>
 </div>
 </div>
+<div id="sewer-reveal" class="hidden" role="status" aria-live="polite"><span>The Sewer</span></div>
 <!-- The music synth runs in workers started from this text (src/audio, engine/sound.js). -->
 <script id="audio-src" type="text/plain">var AUDIO = {};
 ;(function () {
@@ -657,6 +695,7 @@ const songs = [
   { id: 'skyline-rush', name: 'Skyline Rush' },
   { id: 'midnight-drift', name: 'Midnight Drift' },
   { id: 'afterburn', name: 'Afterburn' },
+  { id: 'undertow', name: 'Undertow', unlock: 'sewer' },
 ];
 if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
 else GAME.songs = songs;
@@ -2779,7 +2818,7 @@ AUDIO.defineTrack({
 ;(function () {
 'use strict';
 // ---- src/audio/songs.js ----
-// Three new compositions using the game's instrument rack. Each has its own chord order,
+// Alternate compositions using the game's instrument rack. Each has its own chord order,
 // eight-bar melody, arp, bass line and drum groove. All share the 140 BPM / 16-bar grid so a
 // background song change preserves countdowns, intensity changes and the scheduled finale.
 const loop = AUDIO.loop;
@@ -2849,6 +2888,32 @@ const scores = {
     wobble: [[0,0.75,'s'],[0.75,0.75,'yoi'],[2,1,'t'],[3.25,0.75,'glitch']],
     gains: { choir: 0.6, arp: 0.85, motif: 1.1, chops: 0.65, bass: 0.95, wobble: 0.9, metal: 0.8 },
   },
+  // A half-time groove underneath the city: the low hook calls across an echoing tunnel,
+  // sparse plucks answer it, and irregular tuned pipe knocks leave space around the sub.
+  // The shared tempo keeps every existing countdown and layer transition on its beat grid.
+  undertow: {
+    chords: [0, 3, 1, 0],
+    hook: [
+      [[0,6,66],[6,2,69],[8,4,73],[12,2,71],[14,2,69]],
+      [[0,6,64],[6,2,68],[8,6,71],[14,2,66]],
+      [[0,6,62],[6,2,66],[8,4,69],[12,2,68],[14,2,66]],
+      [[0,8,66],[8,4,64],[12,4,61]],
+      [[0,4,66],[6,2,69],[8,6,76],[14,2,73]],
+      [[0,6,71],[6,2,68],[8,4,64],[14,2,68]],
+      [[0,6,69],[6,2,73],[8,6,78],[14,2,76]],
+      [[0,6,73],[6,2,71],[8,4,69],[12,4,66]],
+    ],
+    arp: [0,2,1,3,1,0,2,0], arpStep: 0.5,
+    kick: ['x......o..x.....', 'x.....x.......o.'],
+    snare: ['........x.......', '.......ox.......'],
+    hat: ['..x...x.....x...', '..x.....x...x.o.'],
+    bass: [[0,5,0],[7,1,7],[10,3,0],[14,1,12]],
+    bassGrit: 0.24, bassBright: 0.65, padTopShift: 0,
+    wobble: [[0,1.5,'wow'],[2.5,1,'q']],
+    gains: { choir: 0.85, arp: 0.7, motif: 1.2, lead: 0.8, chops: 0.5, bass: 1,
+      wobble: 0.65, metal: 0.85, rim: 0.65, hat: 0.65, shaker: 0.4, glitch: 0.15, sweep: 0.35, crash: 0.6 },
+    sends: { pad: 0.5, choir: 0.65, motif: 0.48, arp: 0.36, metal: 0.5, rim: 0.35 },
+  },
 };
 
 function setEvents(id, events) {
@@ -2875,7 +2940,7 @@ function selectSong(id) {
   const hook = [], pad = [], arp = [], bass = [], sub = [], wobble = [];
   for (let bar = 0; bar < loop.bars; bar++) {
     const chord = loop.chordAtBeat(bar * 4), phrase = score.hook[bar % 8];
-    const top = chord.notes[bar % 3] + 12;
+    const top = chord.notes[bar % 3] + (score.padTopShift ?? 12);
     pad.push({ beat: bar * 4, len: 4, note: top, notes: [...chord.notes, top], vel: 1 });
     for (const [step, length, note] of phrase) hook.push({ beat: bar * 4 + step / 4, len: length / 4, note, vel: 1, slide: length >= 6 });
     for (let k = 0; k * score.arpStep < 4; k++) {
@@ -2885,7 +2950,8 @@ function selectSong(id) {
     }
     for (const [step, length, offset] of score.bass) bass.push({ beat: bar * 4 + step / 4, len: length / 4,
       note: chord.root + 12 + offset, vel: 0.85, accent: step % 4 === 0, ghost: false,
-      grit: id === 'midnight-drift' ? 0.35 : 0.8, bright: id === 'midnight-drift' ? 0.8 : 1.1 });
+      grit: score.bassGrit ?? (id === 'midnight-drift' ? 0.35 : 0.8),
+      bright: score.bassBright ?? (id === 'midnight-drift' ? 0.8 : 1.1) });
     sub.push({ beat: bar * 4, len: 1.75, note: chord.root, vel: 1 },
       { beat: bar * 4 + 2, len: 1.8, note: chord.root, vel: 0.9, restrike: true });
     for (const [at, len, gesture] of score.wobble) wobble.push({ beat: bar * 4 + at, len,
@@ -2903,7 +2969,21 @@ function selectSong(id) {
   setEvents('kick', drumGrid(score.kick, 0.5));
   setEvents('snare', drumGrid(score.snare, 0.5, 54));
   setEvents('hat', drumGrid(score.hat, 0.12));
+  if (id === 'undertow') {
+    const metal = [], rim = [];
+    for (let bar = 0; bar < loop.bars; bar++) {
+      const chord = loop.chordAtBeat(bar * 4);
+      for (const [step, vel] of (bar % 2 ? [[3,0.42],[13,0.6]] : [[5,0.6],[11,0.35]])) {
+        metal.push({ beat: bar * 4 + step / 4, len: 0.5, note: chord.notes[bar % 3] + 12,
+          voice: 'clank', vel, pan: step < 8 ? -0.45 : 0.45 });
+      }
+      rim.push({ beat: bar * 4 + (bar % 2 ? 2.75 : 1.75), len: 0.1,
+        note: chord.notes[0] + 24, vel: 0.48 });
+    }
+    setEvents('metal', metal); setEvents('rim', rim);
+  }
   for (const [id, gain] of Object.entries(score.gains)) AUDIO.track(id).gain *= gain;
+  for (const [id, send] of Object.entries(score.sends ?? {})) AUDIO.track(id).send = send;
 }
 
 AUDIO.selectSong = selectSong;
@@ -2993,6 +3073,7 @@ AUDIO.pumpShape = pumpShape;
 //   count, go     the countdown         finish  the finish      click   a UI press
 //   build         the bar before the drop (the player schedules it on the bar line)
 //   impact        the drop's downbeat
+//   collapseAlarm a softened two-tone emergency loop; the player owns its lifetime
 // One sound family: FM bells and glints reward, noise sweeps move, detuned saws carry the music's
 // supersaw colour. Each effect is mastered to its own peak, which sets its balance against the
 // music it usually plays over (loudness, 400 ms windows, at full volume settings): gates about
@@ -3464,6 +3545,22 @@ function uiClick() {
   return master(buf, -3);
 }
 
+// The envelope returns to silence at both ends of each tone, including the loop seam. Keep
+// this independent of harmony: the same warning can start while the music is still rendering.
+function renderCollapseAlarm() {
+  const out = makeBuffer(1.6), half = out.n / 2;
+  for (let i = 0; i < out.n; i++) {
+    const at = i % half, t = at / SR, p = at / half;
+    const hz = i < half ? mtof(78) : mtof(72);
+    const envelope = smoothstep(0, 0.025, t) * (1 - smoothstep(0.66, 0.8, t));
+    const phase = TAU * hz * t;
+    const tone = Math.sin(phase + 0.18 * Math.sin(phase * 2)) + 0.12 * Math.sin(phase * 2);
+    const v = tone * envelope * (0.9 + 0.1 * Math.sin(p * Math.PI));
+    out.l[i] = out.r[i] = v;
+  }
+  return master(out, -10);
+}
+
 function renderSfx() {
   const out = {};
   loop.progression.forEach((chord, i) => {
@@ -3478,6 +3575,7 @@ function renderSfx() {
   out.click = uiClick();
   out.build = buildUp();
   out.impact = dropImpact();
+  out.collapseAlarm = renderCollapseAlarm();
   // A short rising sparkle, distinct from gate chimes and the longer finish fanfare.
   const star = makeBuffer(1.1);
   [85, 90, 97].forEach((note, i) => bell(star, { at: i * 0.075, note, gain: 0.3, tau: 0.13, bright: 0.8, tine: 0.4 }));
@@ -3487,6 +3585,7 @@ function renderSfx() {
 }
 
 AUDIO.renderSfx = renderSfx;
+AUDIO.renderCollapseAlarm = renderCollapseAlarm;
 
 })();
 </script>
@@ -3499,7 +3598,10 @@ self.onmessage = e => {
   const msg = e.data;
   try {
     AUDIO.selectSong(msg.song || 'neon-flight');
-    if (msg.type === 'stem') {
+    if (msg.type === 'collapse-alarm') {
+      const s = AUDIO.renderCollapseAlarm();
+      self.postMessage({ type: 'collapse-alarm', l: s.l, r: s.r }, [s.l.buffer, s.r.buffer]);
+    } else if (msg.type === 'stem') {
       const s = AUDIO.renderStem(msg.stem);
       self.postMessage({ type: 'stem', stem: msg.stem, l: s.l, r: s.r, timings: s.timings }, [s.l.buffer, s.r.buffer]);
     } else if (msg.type === 'sfx') {
@@ -3524,10 +3626,12 @@ self.onmessage = e => {
 'use strict';
 // ---- src/game/course-worker.js ----
 // The exact same generator and flight proofs as the game, away from the UI thread.
-self.onmessage = ({ data: { seed, difficulty } }) => {
+self.onmessage = ({ data: { seed, difficulty, collapse = false, world } }) => {
   try {
-    const city = GAME.city.generate(seed, difficulty);
-    const course = GAME.course.generate(city, seed, difficulty);
+    const cached = world ? GAME.courseData.unpack(world) : null;
+    const city = cached ? cached.city : GAME.city.generate(seed, difficulty);
+    const course = cached ? cached.course : GAME.course.generate(city, seed, difficulty);
+    if (collapse) GAME.collapse.prepare(city, course, seed);
     self.postMessage({ world: GAME.courseData.pack(city, course) });
   } catch (error) {
     self.postMessage({ error: error.message || String(error) });
@@ -3733,7 +3837,7 @@ GAME.structures = { TYPE, boxes, decorate };
 // Street furniture and parks share their exact solids with collision and the ray tracer.
 // Pieces are [minX,minY,minZ,maxX,maxY,maxZ,material,shape,object]. Rounded tree limbs are
 // capsules, decoded from their bounds; crowns and bushes are ellipsoids.
-const MATERIAL = Object.freeze({ BARK: 1, LEAVES: 2, WOOD: 3, METAL: 4, GLASS: 5, STONE: 6, BRONZE: 7, SIGN: 8 });
+const MATERIAL = Object.freeze({ BARK: 1, LEAVES: 2, WOOD: 3, METAL: 4, GLASS: 5, STONE: 6, BRONZE: 7, SIGN: 8, WATER: 9 });
 const SHAPE = Object.freeze({ BOX: 0, ELLIPSOID: 1, BRANCH_X: 2, BRANCH_NEG_X: 3, BRANCH_Z: 4, BRANCH_NEG_Z: 5, TRUNK: 6 });
 const MAX_PIECES = 16;
 
@@ -3843,10 +3947,37 @@ function shelter(x, z, alongZ) {
     box(1, 0.5, 0.8, 0.13, 0.5, 0.4, MATERIAL.METAL)].map(turn);
 }
 
+// The stone basin is solid; the water surfaces and streams are deliberately passable.
+// Both designs stay compact enough for a fountain and its bench to share one atlas cell.
+function fountain(x, z, variant = 'tiered') {
+  const radius = variant === 'spray' ? 7 : 6.4;
+  const pieces = [box(x, 0.22, z, radius, 0.22, radius, MATERIAL.STONE)];
+  for (const side of [-1, 1]) {
+    pieces.push(box(x + side * (radius - 0.3), 0.88, z, 0.3, 0.44, radius, MATERIAL.STONE),
+      box(x, 0.88, z + side * (radius - 0.3), radius - 0.6, 0.44, 0.3, MATERIAL.STONE));
+  }
+  pieces.push(box(x, 0.96, z, radius - 0.65, 0.055, radius - 0.65, MATERIAL.WATER));
+  const stream = (sx, sz, bottom, top, width) =>
+    box(sx, (bottom + top) / 2, sz, width, (top - bottom) / 2, width, MATERIAL.WATER, SHAPE.TRUNK);
+  if (variant === 'spray') {
+    pieces.push(box(x, 1.1, z, 0.9, 0.55, 0.9, MATERIAL.STONE, SHAPE.ELLIPSOID),
+      stream(x, z, 1.5, 9.8, 0.3));
+    for (const [dx, dz] of [[-3.4, 0], [3.4, 0], [0, -3.4], [0, 3.4]])
+      pieces.push(stream(x + dx, z + dz, 0.96, 5.5, 0.22));
+  } else {
+    pieces.push(box(x, 1.65, z, 0.58, 1.15, 0.58, MATERIAL.STONE, SHAPE.TRUNK),
+      box(x, 2.7, z, 2.75, 0.38, 2.75, MATERIAL.STONE, SHAPE.ELLIPSOID),
+      box(x, 3.085, z, 2.42, 0.045, 2.42, MATERIAL.WATER, SHAPE.ELLIPSOID),
+      stream(x, z, 3.1, 8.9, 0.3),
+      stream(x - 2.35, z, 0.96, 3.15, 0.23), stream(x + 2.35, z, 0.96, 3.15, 0.23));
+  }
+  return pieces;
+}
+
 function decorate(city, course) {
   city.clearGeometryCache();
   const { line, sample } = course, finish = course.gates.at(-1);
-  course.parks = []; course.sculptures = []; course.parkBushes = [];
+  course.parks = []; course.sculptures = []; course.parkBushes = []; course.fountains = [];
   let nextObject = 1;
   const removedObjects = new Set();
   // Keep supporting buildings and the established difficulty hazards intact at park edges.
@@ -4001,11 +4132,47 @@ function decorate(city, course) {
     if (object) course.parkTrees.push({ object, type: 'column', cell, x, z, h, shortcut: true,
       s: k * sample, bypass: { x: oldX[k], y: line.y[k], z: oldZ[k] } });
   }
+
+  // Reserve a few open cells before the dense vegetation pass. Separate random streams keep
+  // every other cell's existing trees and bushes unchanged, including the shortcut obstacles.
+  const fountainCells = new Set();
+  function addFountain(cell, park = false, isFinish = false, s = null) {
+    if (protectedCells.has(cell) || city.streetBoxes[cell]?.length) return false;
+    const [x, z] = city.cellCenter(cell), r = GAME.rng.stream(city.seed, `fountain-${cell}`);
+    const variant = r() < 0.5 ? 'tiered' : 'spray', pieces = fountain(x, z, variant);
+    const object = place(pieces);
+    if (!object) return false;
+    fountainCells.add(cell);
+    course.fountains.push({ object, cell, x, z, variant, s, park, finish: isFinish,
+      radius: variant === 'spray' ? 7 : 6.4, h: Math.max(...pieces.map(b => b[4])) });
+    // A nearby seat makes each fountain read as a small plaza rather than an isolated prop.
+    place(bench(x + 9, z - 10));
+    return true;
+  }
+  for (const park of course.parks) {
+    const target = park.finish ? finish.s - 110 : (park.s0 + park.s1) / 2;
+    const candidates = park.cells.map(cell => {
+      const [x, z] = city.cellCenter(cell);
+      let distance = Infinity, s = 0;
+      for (let k = Math.max(0, Math.floor(park.s0 / sample)); k < Math.min(line.n, Math.ceil(park.s1 / sample)); k++) {
+        const d = Math.hypot(line.x[k] - x, line.z[k] - z);
+        if (d < distance) { distance = d; s = k * sample; }
+      }
+      return { cell, distance, s, score: Math.abs(distance - 28) + Math.abs(s - target) * 0.025 };
+    }).filter(p => p.distance >= 18 && p.distance <= 58).sort((a, b) => a.score - b.score || a.cell - b.cell);
+    for (const p of candidates) if (addFountain(p.cell, true, park.finish, p.s)) break;
+  }
+  let plazaFountains = 0;
+  for (let i = 0; i < city.kind.length && plazaFountains < 6; i++) {
+    if (city.park[i] || city.kind[i] !== city.KIND.PLAZA || GAME.rng.stream(city.seed, `plaza-fountain-${i}`)() > 0.04) continue;
+    if (addFountain(i)) plazaFountains++;
+  }
   for (let i = 0; i < city.kind.length; i++) {
     const r = GAME.rng.stream(city.seed, `street-${i}`), [cx, cz] = city.cellCenter(i);
     const isPark = city.park[i] > 0, plaza = city.kind[i] === city.KIND.PLAZA;
     if (isPark || plaza) {
       if (!isPark) city.park[i] = 1;
+      if (fountainCells.has(i)) continue;
       const spreading = isPark && r() < 0.28;
       for (let j = 0; j < (isPark && !spreading ? 2 : 1); j++) {
         const type = spreading ? 'spreading' : !isPark || r() < 0.3 ? 'small' : r() < 0.45 ? 'conifer' : 'column';
@@ -4076,12 +4243,13 @@ function decorate(city, course) {
   course.sculptures = course.sculptures.filter(s => !removedObjects.has(s.object));
   course.parkTrees = course.parkTrees.filter(t => !removedObjects.has(t.object));
   course.parkBushes = course.parkBushes.filter(b => !removedObjects.has(b.object));
+  course.fountains = course.fountains.filter(f => !removedObjects.has(f.object));
   course.proof = GAME.autopilot.fly(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed)
     throw new Error('street decoration must preserve a clean course proof');
 }
 
-GAME.street = { MATERIAL, SHAPE, MAX_PIECES, reset, decorate, vegetation, capsuleData };
+GAME.street = { MATERIAL, SHAPE, MAX_PIECES, reset, decorate, vegetation, fountain, capsuleData };
 
 })();
 
@@ -4696,7 +4864,9 @@ GAME.city = { generate, restore, CELL, N, KIND, PROP, AVENUE_X, AVENUE_Z };
 // First thing a sphere at (x, y, z) with radius r touches: the ground, the city edge or a tower.
 // Towers never reach past their own cell, so the 3x3 cells around the centre cover every contact.
 function sphere(city, x, y, z, r) {
-  if (y - r <= 0) return { kind: 'ground' };
+  const collapse = city.collapse, hole = collapse?.hole;
+  const inHole = hole && Math.hypot(x - hole.x, z - hole.z) + r < hole.radius;
+  if (y - r <= 0 && (!inHole || y - r <= hole.bottom)) return { kind: 'ground' };
   if (x < 0 || z < 0 || x > city.size || z > city.size) return { kind: 'bounds' };
   const n = city.n, ix = Math.floor(x / city.cell), iz = Math.floor(z / city.cell);
   for (let dz = -1; dz <= 1; dz++) {
@@ -4704,13 +4874,16 @@ function sphere(city, x, y, z, r) {
       const cx = ix + dx, cz = iz + dz;
       if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
       const cell = cz * n + cx;
+      const fall = collapse ? GAME.collapse.fallOffset(collapse, cell) : 0;
       for (const b of city.boxes(cell)) {
-        const py = Math.max(b[1] - y, 0, y - b[4]);
+        if (b[6] === 9) continue; // Fountain water and spray never obstruct flight.
+        const solidY = b[6] ? y : y + fall;
+        const py = Math.max(b[1] - solidY, 0, solidY - b[4]);
         if (py > r) continue; // Skip low furniture/crowns immediately when flying above them.
         const px = Math.max(b[0] - x, 0, x - b[3]);
         const pz = Math.max(b[2] - z, 0, z - b[5]);
         if (px * px + py * py + pz * pz <= r * r
-          && (!b[7] || solidDistance2(b, x, y, z) <= r * r)) return { kind: 'tower', cell };
+          && (!b[7] || solidDistance2(b, x, solidY, z) <= r * r)) return { kind: 'tower', cell };
       }
     }
   }
@@ -4721,9 +4894,12 @@ function sphere(city, x, y, z, r) {
 function groundHeight(city, x, z) {
   const i = city.cellIndex(x, z);
   if (i < 0) return 0;
-  let h = 0;
+  const collapse = city.collapse, hole = collapse?.hole;
+  let h = hole && Math.hypot(x - hole.x, z - hole.z) < hole.radius ? hole.bottom : 0;
+  const fall = collapse ? GAME.collapse.fallOffset(collapse, i) : 0;
   for (const b of city.boxes(i)) if (x >= b[0] && x <= b[3] && z >= b[2] && z <= b[5]) {
-    let top = b[4];
+    if (b[6] === 9) continue;
+    let top = b[4] - (b[6] ? 0 : fall);
     if (b[7] >= GAME.street.SHAPE.BRANCH_X) {
       const distance = capsuleHit(b, [x, b[4] + 1, z], [0, -1, 0]);
       if (!Number.isFinite(distance)) continue;
@@ -7227,6 +7403,261 @@ function unpack(data) {
 GAME.courseData = { pack, unpack };
 
 })();
+
+;(function () {
+'use strict';
+// ---- src/game/collapse.js ----
+// A hidden, optional flight. Its city is a separate copy: finding the red ring never changes
+// the seeded race, its stars, its proof time or the world's cached geometry.
+const SAMPLE = 4, LENGTH = 600, HOLE_RADIUS = 20, TRIGGER_RADIUS = 2.25;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const smooth = v => { v = clamp(v, 0, 1); return v * v * (3 - 2 * v); };
+
+// This is also the shader's collapseFall(): one timeline moves every part of a building.
+function fallOffset(state, cell) {
+  const i = cell * 4, data = state.falls;
+  if (!data[i + 3]) return 0;
+  return smooth((state.time - data[i]) / data[i + 1]) * data[i + 2];
+}
+
+function crossing(from, to, ring) {
+  const d0 = from.reduce((sum, v, i) => sum + (v - [ring.x, ring.y, ring.z][i]) * ring.n[i], 0);
+  const d1 = to.reduce((sum, v, i) => sum + (v - [ring.x, ring.y, ring.z][i]) * ring.n[i], 0);
+  if (!(d0 < 0 && d1 >= 0)) return null;
+  const f = d0 / (d0 - d1);
+  return { distance: Math.hypot(...from.map((v, i) => v + (to[i] - v) * f - [ring.x, ring.y, ring.z][i])),
+    point: from.map((v, i) => v + (to[i] - v) * f) };
+}
+
+const through = (from, to, ring) => { const hit = crossing(from, to, ring); return !!hit && hit.distance <= ring.radius; };
+
+function approach(city, course, trigger, line) {
+  const run = GAME.run.create(city, course), pilot = { k: 0 }, flight = { ...course, line };
+  const dt = 1 / 120;
+  let best = null, closest = Infinity;
+  while (!run.finished && !run.crashed && run.time < course.par * 2 + 10) {
+    const previous = [run.glider.x, run.glider.y, run.glider.z];
+    GAME.run.step(run, approachSteer(pilot, run.glider, flight), dt);
+    const g = run.glider, distance = Math.hypot(g.x - trigger.x, g.y - trigger.y, g.z - trigger.z);
+    if (distance < closest) { closest = distance; best = { ...g }; }
+    // The secret is exactly on the proved detour's flight, not at an altitude only the plan has.
+    if (pilot.k > trigger.detour.k + 5) break;
+    if (run.crashed) return null;
+    if (through(previous, [g.x, g.y, g.z], trigger)) return { glider: { ...g }, trigger };
+  }
+  if (!best || closest > 7 || run.crashed) return null;
+  const corrected = { ...trigger, x: best.x, y: best.y, z: best.z,
+    n: [Math.sin(best.yaw), 0, Math.cos(best.yaw)] };
+  // Adjusting the tiny ring to the actual flight point must still leave it away from the race.
+  if (GAME.run.routeDistance(run, corrected.x, corrected.z) < 35) return null;
+  return { glider: best, trigger: corrected };
+}
+
+function clearCell(city, i) {
+  city.kind[i] = GAME.city.KIND.PLAZA;
+  for (const key of ['boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB']) city[key].fill(0, i * 4, i * 4 + 4);
+  city.streetBoxes[i] = null;
+  city.park[i] = 1;
+}
+
+function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
+  const city = GAME.courseData.unpack(structuredClone(GAME.courseData.pack(sourceCity, sourceCourse))).city;
+  city.clearGeometryCache();
+  const direction = trigger.n, side = [-direction[2], 0, direction[0]];
+  const origin = [trigger.x, trigger.y, trigger.z];
+  const at = (s, lateral = 0) => [origin[0] + direction[0] * s + side[0] * lateral,
+    origin[2] + direction[2] * s + side[2] * lateral];
+  const centreEnd = at(LENGTH);
+  const hole = { x: centreEnd[0], z: centreEnd[1], radius: HOLE_RADIUS, bottom: -14 };
+  if ([hole.x, hole.z].some(v => v < 70 || v > city.size - 70)) return null;
+  // The race is untouched. Only this copied emergency corridor is opened up.
+  for (let i = 0; i < city.n * city.n; i++) {
+    const [x, z] = city.cellCenter(i), dx = x - origin[0], dz = z - origin[2];
+    const along = dx * direction[0] + dz * direction[2], across = dx * side[0] + dz * side[2];
+    if (along > -45 && along < LENGTH + 55 && Math.abs(across) < 72) clearCell(city, i);
+  }
+  const turns = [[0, 0], [100, 23], [220, -23], [340, 23], [460, -23], [560, 0], [LENGTH + 44, 0]];
+  const line = { n: Math.round((LENGTH + 44) / SAMPLE) + 1,
+    x: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1),
+    y: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1),
+    z: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1) };
+  // Pursuit anticipates a dive, so the flight is a few units below its planning line here.
+  // Keeping the final line at street level puts the actual glider through the buried ring.
+  const height = s => s <= 500 ? initial.y + (24 - initial.y) * s / 500 : 24 - (s - 500) * 0.24;
+  for (let k = 0; k < line.n; k++) {
+    const s = k * SAMPLE;
+    let j = 0;
+    while (j + 1 < turns.length - 1 && turns[j + 1][0] < s) j++;
+    const f = smooth((s - turns[j][0]) / (turns[j + 1][0] - turns[j][0]));
+    const lateral = turns[j][1] + (turns[j + 1][1] - turns[j][1]) * f;
+    [line.x[k], line.z[k]] = at(s, lateral); line.y[k] = height(s);
+  }
+  const gates = [100, 220, 340, 460].map((s, index) => {
+    const k = Math.round(s / SAMPLE), a = k - 1, b = k + 1;
+    const dx = line.x[b] - line.x[a], dz = line.z[b] - line.z[a], length = Math.hypot(dx, dz);
+    return { index, x: line.x[k], y: line.y[k], z: line.z[k], s, n: [dx / length, 0, dz / length], radius: 8.5, finish: false };
+  });
+  gates.push({ index: 4, x: hole.x, y: -4, z: hole.z, s: LENGTH, n: [0, -1, 0], radius: 9, finish: true, sewer: true });
+  const course = { difficulty: sourceCourse.difficulty, collapse: true, line, sample: SAMPLE, length: LENGTH,
+    start: { x: trigger.x, y: initial.y, z: trigger.z, yaw: Math.atan2(direction[0], direction[2]) },
+    gates, boosters: [], pads: [], stars: [], sections: [], par: LENGTH / GAME.flight.cruise(sourceCourse.difficulty),
+    ambientLift: initial.y < 65 ? 2.4 : 0, // Burning gardens supply a gentle thermal on low entries.
+    energyAt: s => height(s) + 8 };
+  const falls = new Float32Array(city.n * city.n * 4), hazards = [];
+  for (const [index, s] of [100, 220, 340, 460].entries()) {
+    const [wantX, wantZ] = at(s), cell = city.cellIndex(wantX, wantZ), [cx, cz] = city.cellCenter(cell);
+    const ox = clamp(wantX - cx, -9.5, 9.5), oz = clamp(wantZ - cz, -9.5, 9.5);
+    const top = Math.max(90, initial.y + 24 - index * 8), a = cell * 4;
+    city.kind[cell] = GAME.city.KIND.TOWER; city.park[cell] = 0;
+    city.boxA.set([ox, oz, 6, 6], a); city.boxB.set([top * 0.65, top, 4.8, 4.8], a);
+    falls.set([0.65 + index * 0.65, 14, top + 18, 1], a);
+    hazards.push({ cell, s, top, x: cx + ox, z: cz + oz });
+  }
+  // Other neighbourhood towers fall faster; the four route hazards remain substantial while
+  // the player weaves around them, with their first movement visible well before arrival.
+  for (let i = 0; i < city.n * city.n; i++) {
+    if (falls[i * 4 + 3] || !city.buildingBoxes(i).length) continue;
+    const [x, z] = city.cellCenter(i), dx = x - origin[0], dz = z - origin[2];
+    const along = dx * direction[0] + dz * direction[2], across = dx * side[0] + dz * side[2];
+    if (along > -150 && along < LENGTH + 180 && Math.abs(across) < 250) {
+      const key = ((i * 0.61803398875) % 1), top = Math.abs(city.boxB[i * 4 + 1]);
+      falls.set([key * 1.5, 4 + key * 9, top + 14, 1], i * 4);
+    }
+  }
+  // Fires have actual vegetation to cling to, rather than appearing on empty paving.
+  for (let s = 40, id = 0; s <= 530; s += 52, id++) for (const sign of [-1, 1]) {
+    const [x, z] = at(s, sign * 49), cell = city.cellIndex(x, z), [cx, cz] = city.cellCenter(cell);
+    if (city.buildingBoxes(cell).length || city.streetBoxes[cell]) continue;
+    const type = id % 3 === 0 ? 'bush' : id % 3 === 1 ? 'small' : 'spreading';
+    const pieces = GAME.street.vegetation(type, cx, cz, type === 'bush' ? 3.8 : 18, type === 'bush' ? 5 : 7);
+    city.streetBoxes[cell] = pieces.map(b => [...b, 800000 + cell]);
+  }
+  city.maxHeight = Math.max(city.maxHeight, ...hazards.map(h => h.top));
+  city.cacheGeometry();
+  const state = { time: 0, falls, hole, hazards, progress: 0 };
+  city.collapse = state;
+  return { city, course, state };
+}
+
+function step(state, run, stick, dt) {
+  if (run.finished || run.crashed) return [];
+  const events = [], g = run.glider, from = [g.x, g.y, g.z];
+  state.time += dt;
+  // Shop powers are deliberately not consumed in the easter egg; its descent needs no boosts.
+  GAME.flight.step(g, stick, dt, () => run.course.ambientLift || 0);
+  run.time += dt;
+  const to = [g.x, g.y, g.z], gate = run.course.gates[run.next];
+  const hit = GAME.collide.sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS);
+  if (hit) { run.crashed = hit; run.crashes++; events.push({ type: 'crash', hit }); return events; }
+  if (gate && through(from, to, gate)) {
+    const safeShaft = !gate.sewer || Math.hypot(g.x - state.hole.x, g.z - state.hole.z) + GAME.flight.FLIGHT.RADIUS < state.hole.radius;
+    if (safeShaft) {
+      run.checkpoint = run.next++;
+      events.push({ type: 'gate', gate: run.checkpoint });
+      if (gate.sewer) { run.finished = true; events.push({ type: 'sewer' }); }
+    }
+  }
+  const distance = GAME.run.routeDistance(run, g.x, g.z);
+  run.boundary.distance = distance;
+  run.boundary.intensity = clamp((distance - 34) / 70, 0, 1);
+  if (!run.finished && distance > 115) {
+    const failure = { kind: 'offCourse' }; run.crashed = failure; run.crashes++; events.push({ type: 'crash', hit: failure });
+  }
+  state.progress = run.next / run.course.gates.length;
+  return events;
+}
+
+function prove(world, initial) {
+  const run = GAME.run.create(world.city, world.course), pilot = { k: 0 }, events = [];
+  if (initial) run.glider = { ...initial };
+  while (!run.finished && !run.crashed && run.time < 25) {
+    events.push(...step(world.state, run, steer(pilot, run.glider, world.course), 1 / 120));
+  }
+  return { finished: run.finished, crashes: run.crashes, gates: run.next, time: run.time, glider: { ...run.glider }, events };
+}
+
+// The ordinary proof pilot treats a booster lift as a reason not to dive. Heat here is gentle
+// continuous air, so compensate it without inhibiting the deliberate descent into the shaft.
+function steer(pilot, glider, course) {
+  const stick = GAME.autopilot.steer(pilot, { ...glider, lift: 0 }, course);
+  const F = GAME.flight.FLIGHT, lift = course.ambientLift || 0;
+  if (!lift) return stick;
+  const gamma = stick.y >= 0 ? stick.y * F.CLIMB_ANGLE : stick.y * F.DIVE_ANGLE;
+  const target = Math.asin(clamp(Math.sin(gamma) - lift / glider.speed, -1, 1));
+  stick.y = clamp(target / (target >= 0 ? F.CLIMB_ANGLE : F.DIVE_ANGLE), -1, 1);
+  return stick;
+}
+
+// A hidden side climb may spend speed below cruise. The ordinary racing pilot conserves that
+// energy for later mandatory rings; this branch instead uses it to reach the tiny red ring.
+function approachSteer(pilot, glider, course) {
+  const stick = GAME.autopilot.steer(pilot, glider, course), F = GAME.flight.FLIGHT, L = course.line;
+  const ahead = distance => Math.min(L.n - 1, pilot.k + Math.round(distance / course.sample));
+  const a = ahead(glider.speed * 0.3), b = Math.min(L.n - 1, a + 2);
+  const slope = (L.y[b] - L.y[a]) / Math.max(1, (b - a) * course.sample);
+  const vy = slope * glider.speed + 2 * (L.y[ahead(glider.speed * 0.1)] - glider.y);
+  const gamma = Math.asin(clamp((vy + F.SINK + F.TURN_SINK * Math.abs(stick.x) - glider.lift) / glider.speed, -1, 1));
+  stick.y = clamp(gamma / (gamma >= 0 ? F.CLIMB_ANGLE : F.DIVE_ANGLE), -1, 1);
+  return stick;
+}
+
+function prepare(city, course, seed = city.seed) {
+  if (!['hard', 'extreme'].includes(course.difficulty)) return null;
+  if (course.collapse && typeof course.collapse === 'object') return course.collapse;
+  const L = course.line, markers = [0, ...course.gates.map(g => g.s),
+    ...course.boosters.flatMap(b => [b.pickup - 24, b.climbEnd + 24])].sort((a, b) => a - b);
+  const candidates = [], random = GAME.rng.stream(seed, 'collapse-secret');
+  for (let k = 35; k < L.n - 50; k += 8) {
+    const s = k * course.sample, before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
+    const span = Math.floor(Math.min(150, Math.max(100, s - before - 12, after - s - 12), s - 8, course.length - s - 8) / course.sample);
+    if (span * course.sample < 80 || L.y[k] < 20) continue;
+    const a = k - 3, b = k + 3, dx = L.x[b] - L.x[a], dz = L.z[b] - L.z[a], length = Math.hypot(dx, dz);
+    if (length < 20) continue;
+    const direction = [dx / length, 0, dz / length], side = [-direction[2], 0, direction[0]];
+    for (const lateral of [48, -48, 40, -40, 56, -56]) for (const dy of [0, 16, 28, 40]) {
+      const trigger = { x: L.x[k] + side[0] * lateral, y: L.y[k] + dy, z: L.z[k] + side[2] * lateral,
+        n: direction, radius: TRIGGER_RADIUS, s, detour: { k, span, dx: side[0] * lateral, dy, dz: side[2] * lateral } };
+      const end = [trigger.x + direction[0] * LENGTH, trigger.z + direction[2] * LENGTH];
+      if (end.some(v => v < 80 || v > city.size - 80) || GAME.collide.sphere(city, trigger.x, trigger.y, trigger.z, 3.5)) continue;
+      const line = GAME.stars.detourLine(course, [trigger]);
+      let clear = true;
+      for (let j = k - span; j <= k; j++) if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], 2.7)) { clear = false; break; }
+      if (clear) candidates.push({ trigger, line, score: s * 0.001 + random() * 2 + Math.abs(lateral) * 0.015 + dy * 0.1 });
+    }
+  }
+  candidates.sort((a, b) => a.score - b.score);
+  for (const { trigger, line } of candidates.slice(0, 32)) {
+    const flight = approach(city, course, trigger, line);
+    if (!flight) continue;
+    const world = escapeWorld(city, course, flight.trigger, flight.glider);
+    if (!world) continue;
+    const proof = prove(world, flight.glider);
+    if (!proof.finished || proof.crashes || proof.gates !== 5) continue;
+    delete world.city.collapse;
+    const secret = { trigger: flight.trigger, approachLine: line, entry: { ...flight.glider },
+      world: GAME.courseData.pack(world.city, world.course), falls: world.state.falls,
+      hole: world.state.hole, hazards: world.state.hazards, proof };
+    course.collapse = secret;
+    return secret;
+  }
+  // A Key remains useful on another seeded course; never stall loading or publish an unproved exit.
+  course.collapse = null;
+  return null;
+}
+
+function begin(city, course, secret = course.collapse, glider = null) {
+  if (!secret?.world) throw new Error('This course has no prepared Collapse route');
+  const world = GAME.courseData.unpack(structuredClone(secret.world));
+  const state = { time: 0, falls: Float32Array.from(secret.falls), hole: { ...secret.hole },
+    hazards: secret.hazards.map(h => ({ ...h })), progress: 0 };
+  world.city.collapse = state;
+  world.course.start = { ...world.course.start, y: glider?.y ?? world.course.start.y };
+  return { ...world, state };
+}
+
+GAME.collapse = { prepare, begin, step, steer, approachSteer, prove, through, crossing, fallOffset, TRIGGER_RADIUS, HOLE_RADIUS };
+
+})();
 </script>
 <script>;(function () {
 'use strict';
@@ -7237,9 +7668,47 @@ const songs = [
   { id: 'skyline-rush', name: 'Skyline Rush' },
   { id: 'midnight-drift', name: 'Midnight Drift' },
   { id: 'afterburn', name: 'Afterburn' },
+  { id: 'undertow', name: 'Undertow', unlock: 'sewer' },
 ];
 if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
 else GAME.songs = songs;
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/game/access.js ----
+// Discovered chapters are separate from course medals, star claims and shop spending.
+const SEWER = 'neonflight.sewer.v1', ENVIRONMENT = 'neonflight.environment.v1';
+const listeners = new Set();
+let unlocked = false, environment = 'surface';
+function notify() { for (const fn of listeners) fn({ unlocked, environment }); }
+function load() {
+  try {
+    unlocked = localStorage.getItem(SEWER) === '1';
+    environment = unlocked && localStorage.getItem(ENVIRONMENT) === 'sewer' ? 'sewer' : 'surface';
+  } catch { /* keep discoveries in this session when storage is unavailable */ }
+}
+function grantSewer() {
+  if (unlocked) return false;
+  unlocked = true;
+  try { localStorage.setItem(SEWER, '1'); } catch { /* session unlock */ }
+  notify();
+  return true;
+}
+function setEnvironment(value) {
+  if (!['surface', 'sewer'].includes(value) || (value === 'sewer' && !unlocked)) return false;
+  environment = value;
+  try { localStorage.setItem(ENVIRONMENT, value); } catch { /* session preference */ }
+  notify();
+  return true;
+}
+window.addEventListener('storage', e => {
+  if (e.key === null || e.key === SEWER || e.key === ENVIRONMENT) { load(); notify(); }
+});
+load();
+GAME.access = { load, sewerUnlocked: () => unlocked, grantSewer, environment: () => environment,
+  setEnvironment, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -7277,12 +7746,13 @@ const SCHEMA = {
   musicVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.8, format: percent, label: 'Music', group: 'Sound' },
   musicTrack: { type: 'choice', default: 'random', label: 'Song', group: 'Sound',
     note: 'Random picks a song for each new flight. Crashes and resumes keep the same song.',
-    options: [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])] },
+    options: [['random', 'Random'], ...GAME.songs.filter(s => !s.unlock || GAME.access?.sewerUnlocked()).map(s => [s.id, s.name])] },
   effectsVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, format: percent, label: 'Effects', group: 'Sound' },
 };
 
 let values = {};
 const listeners = new Set();
+const schemaListeners = new Set();
 
 function valid(key, v) {
   const s = SCHEMA[key];
@@ -7337,8 +7807,15 @@ function setThemeOptions(options) {
   SCHEMA.theme.options = options;
   if (!valid('theme', values.theme)) values.theme = SCHEMA.theme.default;
 }
+function updateSongOptions() {
+  SCHEMA.musicTrack.options = [['random', 'Random'], ...GAME.songs
+    .filter(s => !s.unlock || GAME.access?.sewerUnlocked()).map(s => [s.id, s.name])];
+  if (values.musicTrack !== undefined && !valid('musicTrack', values.musicTrack)) set('musicTrack', 'random');
+  for (const fn of schemaListeners) fn('musicTrack');
+}
 
-GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, onChange: fn => listeners.add(fn), all: () => ({ ...values }) };
+GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, updateSongOptions,
+  onSchemaChange: fn => schemaListeners.add(fn), onChange: fn => listeners.add(fn), all: () => ({ ...values }) };
 
 })();
 
@@ -7420,25 +7897,28 @@ GAME.starBank = { load, claim, collected, savedTotal, total: () => claims.size +
 // write cannot charge for an item without granting it. Web Locks serialize purchases/uses across tabs.
 const KEY = 'neonflight.shop.v1';
 const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
+const COLLAPSE_KEY = Object.freeze({ price: 10 });
 const listeners = new Set();
-let ledger = { bought: 0, used: 0 }, storageOK = true;
+let ledger = { bought: 0, used: 0, collapseKey: false }, storageOK = true;
 function read() {
   const raw = localStorage.getItem(KEY);
-  if (raw === null) return { bought: 0, used: 0 };
+  if (raw === null) return { bought: 0, used: 0, collapseKey: false };
   const value = JSON.parse(raw);
   if (!value || !Number.isSafeInteger(value.bought) || !Number.isSafeInteger(value.used)
-      || value.used < 0 || value.bought < value.used || value.bought > Number.MAX_SAFE_INTEGER / LIFT.price
-      || value.bought - value.used > LIFT.capacity) throw new Error('invalid shop save');
-  return { bought: value.bought, used: value.used };
+      || value.used < 0 || value.bought < value.used || value.bought > (Number.MAX_SAFE_INTEGER - COLLAPSE_KEY.price) / LIFT.price
+      || value.bought - value.used > LIFT.capacity
+      || (value.collapseKey !== undefined && typeof value.collapseKey !== 'boolean')) throw new Error('invalid shop save');
+  return { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true };
 }
+const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0);
 function refresh() {
   try { ledger = read(); GAME.starBank.savedTotal(); storageOK = true; }
   catch { storageOK = false; }
   for (const listener of listeners) listener();
 }
 function state() {
-  return { balance: Math.max(0, GAME.starBank.total() - ledger.bought * LIFT.price),
-    spent: ledger.bought * LIFT.price, lifts: ledger.bought - ledger.used,
+  return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
+    spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
     available: storageOK && !!navigator.locks?.request };
 }
 async function transaction(change) {
@@ -7459,8 +7939,16 @@ async function transaction(change) {
 function buyLift() {
   return transaction((next, earned) => {
     if (next.bought - next.used >= LIFT.capacity) return { ok: false, message: 'Your lift inventory is full.' };
-    if (earned - next.bought * LIFT.price < LIFT.price) return { ok: false, message: 'Find more stars to buy this boost.' };
+    if (earned - spending(next) < LIFT.price) return { ok: false, message: 'Find more stars to buy this boost.' };
     next.bought++;
+    return { ok: true };
+  });
+}
+function buyCollapseKey() {
+  return transaction((next, earned) => {
+    if (next.collapseKey) return { ok: false, message: 'You already own the Collapse Key.' };
+    if (earned - spending(next) < COLLAPSE_KEY.price) return { ok: false, message: 'Find more stars to unlock this key.' };
+    next.collapseKey = true;
     return { ok: true };
   });
 }
@@ -7472,7 +7960,7 @@ function useLift(canUse, activate) {
   });
 }
 window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
-GAME.shop = { LIFT, state, refresh, buyLift, useLift, onChange: fn => listeners.add(fn) };
+GAME.shop = { LIFT, COLLAPSE_KEY, state, refresh, buyLift, buyCollapseKey, useLift, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -8256,7 +8744,7 @@ GAME.post = { init, defaults, present };
 //
 // Graph:
 //   loop sources -> fades -> stem gains -> pumps* -> music clipper ─┬─> dry ──────────────────┬─> muffle low-pass -> music gain ─┐
-//                                                                   └─> build high-pass -> wet ┘                                 ├─> limiter -> master gain -> speakers
+//                                                                   └─> build high-pass -> wet ┘                                 ├─> limiter -> scene gain -> master gain -> speakers
 //   effects ----------------------------------------------------------------------------------------------------> sfx gain ─┘
 //   * pad and arp only: the kick's duck shape, a source of its own, drives their gain (loop.PUMP)
 // The build's high-pass is a parallel path the music crossfades into for the build and out of on
@@ -8303,6 +8791,9 @@ let drop = null;                   // the scheduled build and drop
 let volumes = { master: 1, music: 1, effects: 1 };
 let preference = 'random', requestedSong = null, renderController = null, songError = null;
 let hasFlown = false;
+let environment = 'surface', environmentDefault = false, surfaceSong = null, surfaceSelectionChanged = false;
+let alarm = false, alarmBuffer = null, alarmTask = null, alarmSource = null;
+let sceneMuted = false, musicPaused = false;
 const plays = {};                  // effect name -> times played (tests read this)
 
 function workerUrl() {
@@ -8330,6 +8821,26 @@ function toBuffer(...channels) {
   return b;
 }
 
+// This tiny warning renders separately from the large music stems. A Collapse can therefore
+// sound immediately after audio unlock, including on a phone still preparing its first song.
+function prepareAlarm() {
+  if (alarmBuffer) return Promise.resolve();
+  if (alarmTask) return alarmTask;
+  alarmTask = (async () => {
+    let worker, url;
+    try {
+      url = workerUrl(); worker = new Worker(url);
+      const r = await job(worker, { type: 'collapse-alarm' }, new AbortController().signal);
+      alarmBuffer = toBuffer(r.l, r.r);
+      syncAlarm();
+    } catch (err) {
+      // The full song render supplies the same effect if this optional early job fails.
+      console.warn(`[audio] warning preparation: ${err.message}`);
+    } finally { worker?.terminate(); if (url) URL.revokeObjectURL(url); }
+  })().finally(() => { alarmTask = null; });
+  return alarmTask;
+}
+
 // Only the current song and an in-flight render are held in memory. Changing the selection
 // cancels obsolete workers; the previous song keeps playing until its replacement is ready.
 async function renderSong(song, signal) {
@@ -8347,11 +8858,12 @@ async function renderSong(song, signal) {
       while (queue.length) {
         const r = await job(w, { ...queue.shift(), song }, signal);
         if (r.type === 'stem') stems[r.stem] = toBuffer(r.l, r.r);
-        else for (const [k, s] of Object.entries(r.sfx)) effects[k] = toBuffer(s.l, s.r);
+        else for (const [k, s] of Object.entries(r.sfx)) effects[k] = k === 'collapseAlarm' && alarmBuffer ? alarmBuffer : toBuffer(s.l, s.r);
       }
     }));
     if (signal.aborted) return;
     buffers = { stems, effects, pump: toBuffer(m.pump) };
+    if (!alarmBuffer && effects.collapseAlarm) alarmBuffer = effects.collapseAlarm;
     delete m.pump;
     meta = m;
     if (started && level !== null) {
@@ -8361,6 +8873,7 @@ async function renderSong(song, signal) {
       for (const set of sets) endSet(set, when + fade, fade);
       sets = [startSet(when, mod(when - loopStart, meta.loopSec) / barSec(), fade)];
     } else if (ctx && !started) attach();
+    syncAlarm();
     console.log(`[audio] ${song}: ${meta.STEMS.length} stems and ${Object.keys(effects).length} effects rendered in ${((performance.now() - t0) / 1000).toFixed(2)}s`);
   } finally {
     workers.forEach(w => w.terminate());
@@ -8369,8 +8882,11 @@ async function renderSong(song, signal) {
 }
 
 const songName = id => GAME.songs.find(s => s.id === id)?.name;
+const songAvailable = song => !song.unlock || (song.unlock === 'sewer' && GAME.access?.sewerUnlocked?.());
 function randomSong() {
-  const candidates = GAME.songs.filter(s => s.id !== requestedSong && s.id !== meta?.song);
+  const available = GAME.songs.filter(songAvailable);
+  const different = available.filter(s => s.id !== requestedSong && s.id !== meta?.song);
+  const candidates = different.length ? different : available;
   return candidates[Math.floor(Math.random() * candidates.length)].id;
 }
 
@@ -8397,17 +8913,47 @@ async function requestSong(song) {
 }
 
 function setSong(value) {
-  if (value !== 'random' && !songName(value)) throw new Error(`unknown song "${value}"`);
+  if (value !== 'random' && !GAME.songs.some(s => s.id === value && songAvailable(s))) throw new Error(`unavailable song "${value}"`);
   preference = value;
+  if (environment === 'sewer') { environmentDefault = false; surfaceSelectionChanged = true; }
   return requestSong(value === 'random' ? randomSong() : value);
 }
 
-const load = (value = 'random') => setSong(value);
+function load(value = 'random') {
+  prepareAlarm();
+  if (environment === 'sewer' && environmentDefault) {
+    if (value !== 'random' && !GAME.songs.some(s => s.id === value && songAvailable(s))) throw new Error(`unavailable song "${value}"`);
+    preference = value;
+    return requestSong('undertow');
+  }
+  return setSong(value);
+}
+
+// The underground menu has its own song, without overwriting the saved surface selection.
+// A deliberate settings choice replaces that temporary default and follows the player outside.
+function setEnvironment(next) {
+  if (!['surface', 'sewer'].includes(next)) throw new Error(`unknown audio environment "${next}"`);
+  if (next === 'sewer' && !GAME.access?.sewerUnlocked?.()) throw new Error('Sewer music is locked');
+  if (next === environment) return Promise.resolve(true);
+  setAlarm(false);
+  if (next === 'sewer') {
+    surfaceSong = requestedSong ?? meta?.song ?? null;
+    surfaceSelectionChanged = false;
+    environment = next; environmentDefault = true;
+    return requestSong('undertow');
+  }
+  environment = next; environmentDefault = false;
+  const selected = preference !== 'random' && GAME.songs.some(s => s.id === preference && songAvailable(s)) ? preference : randomSong();
+  const restore = !surfaceSelectionChanged && GAME.songs.some(s => s.id === surfaceSong && songAvailable(s))
+    ? surfaceSong : selected;
+  surfaceSong = null; surfaceSelectionChanged = false;
+  return requestSong(restore);
+}
 
 // The first flight uses the menu's freshly chosen song; retries and subsequent full flights
 // get a different random choice. Called by Fly only, never by crash recovery or resume.
 function prepareRun() {
-  if (preference === 'random' && hasFlown) requestSong(randomSong());
+  if (preference === 'random' && hasFlown && !environmentDefault) requestSong(randomSong());
   hasFlown = true;
 }
 
@@ -8423,9 +8969,66 @@ function unlock() {
     ctx = new AudioContext({ sampleRate: SAMPLE_RATE, latencyHint: 'interactive' });
     // iOS mutes Web Audio with the ring/silent switch unless the page asks for playback audio.
     if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    ensureOutput();
     if (buffers) attach();
   }
+  prepareAlarm(); syncAlarm();
   if (ctx.state !== 'running') ctx.resume();
+}
+
+// Effects, the limiter and user volume exist before any music is ready. Both the warning and
+// all later music share this graph, and a scene fade cannot overwrite the player's sliders.
+function ensureOutput() {
+  if (nodes || !ctx) return;
+  const limiter = ctx.createDynamicsCompressor();
+  for (const [k, v] of Object.entries(LIMITER)) limiter[k].value = v;
+  const master = ctx.createGain(), scene = ctx.createGain(), fx = ctx.createGain();
+  scene.gain.value = sceneMuted ? 0 : 1;
+  fx.connect(limiter); limiter.connect(scene); scene.connect(master); master.connect(ctx.destination);
+  nodes = { master, scene, fx, limiter };
+  setVolumes(volumes);
+}
+
+function stopAlarm() {
+  if (!alarmSource) return;
+  const { src, gain } = alarmSource;
+  gain.gain.setTargetAtTime(0, ctx.currentTime, 0.012);
+  src.stop(ctx.currentTime + 0.08);
+  alarmSource = null;
+}
+
+function syncAlarm() {
+  const audible = alarm && !sceneMuted && !musicPaused;
+  if (nodes?.warningMusic) nodes.warningMusic.gain.setTargetAtTime(audible ? 0.56 : 1, ctx.currentTime, 0.08);
+  if (!audible) { stopAlarm(); return; }
+  if (!ctx || !nodes || !alarmBuffer || alarmSource) return;
+  const src = ctx.createBufferSource(), gain = ctx.createGain(), now = ctx.currentTime;
+  src.buffer = alarmBuffer; src.loop = true;
+  gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(1, now + 0.08);
+  src.connect(gain); gain.connect(nodes.fx);
+  src.onended = () => { src.disconnect?.(); gain.disconnect?.(); };
+  src.start(now);
+  alarmSource = { src, gain };
+  plays.collapseAlarm = (plays.collapseAlarm || 0) + 1;
+}
+
+function setAlarm(value) {
+  if (typeof value !== 'boolean') throw new Error('alarm must be a boolean');
+  alarm = value;
+  if (alarm && !alarmBuffer) prepareAlarm();
+  syncAlarm();
+}
+
+function setSceneMuted(value) {
+  if (typeof value !== 'boolean') throw new Error('scene mute must be a boolean');
+  if (value === sceneMuted) return;
+  sceneMuted = value;
+  if (nodes) {
+    const p = nodes.scene.gain, now = ctx.currentTime;
+    p.cancelScheduledValues(now); p.setValueAtTime(p.value, now);
+    p.linearRampToValueAtTime(value ? 0 : 1, now + (value ? 0.06 : 0.3));
+  }
+  syncAlarm();
 }
 
 // The music's master clipper, from the curve the music defines (src/audio/loop.js says why): it
@@ -8441,9 +9044,8 @@ function musicClipper() {
 
 // Builds the graph and starts the loop at the level asked for so far.
 function attach() {
-  const limiter = ctx.createDynamicsCompressor();
-  for (const [k, v] of Object.entries(LIMITER)) limiter[k].value = v;
-  const master = ctx.createGain(), music = ctx.createGain(), fx = ctx.createGain();
+  ensureOutput();
+  const music = ctx.createGain(), warningMusic = ctx.createGain();
   const lowpass = ctx.createBiquadFilter(), highpass = ctx.createBiquadFilter(), clipper = musicClipper();
   const dry = ctx.createGain(), wet = ctx.createGain();
   lowpass.type = 'lowpass'; lowpass.frequency.value = 20000; lowpass.Q.value = 0.7;
@@ -8451,8 +9053,8 @@ function attach() {
   wet.gain.value = 0;
   clipper.output.connect(dry); dry.connect(lowpass);
   clipper.output.connect(highpass); highpass.connect(wet); wet.connect(lowpass);
-  lowpass.connect(music);
-  music.connect(limiter); fx.connect(limiter); limiter.connect(master); master.connect(ctx.destination);
+  lowpass.connect(warningMusic); warningMusic.connect(music);
+  music.connect(nodes.limiter);
   const stems = {}, pumpDepth = {};
   for (const id of meta.STEMS) {
     stems[id] = ctx.createGain();
@@ -8465,11 +9067,13 @@ function attach() {
     pumpDepth[id].connect(pump.gain);
     stems[id].connect(pump); pump.connect(clipper.input);
   }
-  nodes = { master, music, fx, lowpass, highpass, dry, wet, stems, pumpDepth };
+  Object.assign(nodes, { music, warningMusic, lowpass, highpass, dry, wet, stems, pumpDepth });
   started = true;
   setVolumes(volumes);
-  const lvl = level ?? 0;
-  playFrom(ctx.currentTime + 0.05, lvl === 0 ? TITLE_BAR : 0, meta.LEVELS[lvl], lvl === 0 ? TITLE_FADE_SEC : SEAM_SEC);
+  if (musicPaused) lowpass.frequency.value = 600;
+  if (level !== null) playFrom(ctx.currentTime + 0.05, level === 0 ? TITLE_BAR : 0, meta.LEVELS[level], level === 0 ? TITLE_FADE_SEC : SEAM_SEC);
+  else cutAt = ctx.currentTime;
+  syncAlarm();
   console.log('[audio] playing');
 }
 
@@ -8658,6 +9262,9 @@ function play(name, gain = 1, delay = 0) {
 // Muffles the music: 'crash' dips it for a moment, 'pause' holds it muffled, 'clear' restores it.
 function muffle(kind) {
   if (!['crash', 'pause', 'clear'].includes(kind)) throw new Error(`unknown muffle "${kind}"`);
+  if (kind === 'pause') musicPaused = true;
+  else if (kind === 'clear') musicPaused = false;
+  syncAlarm();
   if (!started) return;
   const f = nodes.lowpass.frequency, now = ctx.currentTime;
   f.cancelScheduledValues(now);
@@ -8670,15 +9277,17 @@ function muffle(kind) {
 // Volumes 0..1 from the settings; loudness follows roughly the square of a slider.
 function setVolumes(v) {
   volumes = { ...v };
-  if (!started) return;
+  if (!nodes) return;
   const now = ctx.currentTime, set = (p, x) => p.setTargetAtTime(x * x, now, 0.05);
-  set(nodes.master.gain, v.master); set(nodes.music.gain, v.music); set(nodes.fx.gain, v.effects);
+  set(nodes.master.gain, v.master); if (nodes.music) set(nodes.music.gain, v.music); set(nodes.fx.gain, v.effects);
 }
 
 GAME.sound = {
-  load, unlock, setSong, prepareRun, songStatus, setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, muffle, setVolumes,
+  load, unlock, setSong, prepareRun, songStatus, setEnvironment, setAlarm, setSceneMuted,
+  setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, muffle, setVolumes,
   state: () => ({ loaded: !!buffers, unlocked: !!ctx, playing: started, context: ctx ? ctx.state : null, level,
     song: meta?.song ?? null, requestedSong, preference, songError,
+    environment, alarm, alarmPlaying: !!alarmSource, sceneMuted,
     volumes: { ...volumes }, plays: { ...plays } }),
 };
 
@@ -8815,7 +9424,7 @@ GAME.resolution = {
 // uses; uniforms(rings, guide) packs one frame's view of the course for it.
 
 const MAX_RINGS = 10, PATH_POINTS = 32, PATH_CHUNK = 8;
-const RING_KIND = { next: 1, later: 2, finish: 3, boost: 4, flare: 5 };
+const RING_KIND = { next: 1, later: 2, finish: 3, boost: 4, flare: 5, secret: 6 };
 const LIME = [0.35, 1.0, 0.22];                // boosters: nothing else in a city is lime
 
 const GLSL = `
@@ -8841,7 +9450,7 @@ const vec3 LATER_CORE = vec3(0.72, 0.93, 1.0);
 const vec3 FINISH = vec3(1.0, 0.72, 0.22);
 const vec3 GUIDE = vec3(1.0, 0.22, 0.7);
 const float RING_NEXT = ${RING_KIND.next}.0, RING_LATER = ${RING_KIND.later}.0, RING_FINISH = ${RING_KIND.finish}.0,
-            RING_BOOST = ${RING_KIND.boost}.0, RING_FLARE = ${RING_KIND.flare}.0;
+            RING_BOOST = ${RING_KIND.boost}.0, RING_FLARE = ${RING_KIND.flare}.0, RING_SECRET = ${RING_KIND.secret}.0;
 
 // A ground booster: a clean column of light standing on its pad (lift, radius, height, phase),
 // densest along its axis, with thin rings racing up its surface: it reads as a lift, not as smoke.
@@ -8908,8 +9517,10 @@ vec3 ringLight(vec3 ro, vec3 rd, vec4 c, vec4 n, vec2 f, float tMax, float pixAn
   if (d > 0.5 * R + 12.0 + 9.0 * px) return vec3(0.0);        // beyond every style's outermost glow
   float kind = n.w;
   if (hidden) return (kind == RING_FINISH ? FINISH : GATE_NEXT) * tube(d, max(0.3, px * 0.7), px * 1.2) * 0.6 * f.y;
-  vec3 side = normalize(cross(n.xyz, vec3(0.0, 1.0, 0.0)));
-  vec2 lq = vec2(dot(q, side), q.y);                           // position in the ring's plane
+  if (kind == RING_SECRET) return vec3(0.55, 0.008, 0.014) * tube(d, 0.13, max(0.025, px)) * (1.0 - smoothstep(65.0, 125.0, t));
+  vec3 reference = abs(n.y) > 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+  vec3 side = normalize(cross(n.xyz, reference));
+  vec2 lq = vec2(dot(q, side), dot(q, cross(side, n.xyz)));   // also supports a horizontal shaft ring
   float turn = atan(lq.y, lq.x) / TAU;                          // -0.5..0.5 around the ring
   float inside = smoothstep(R, R - 2.0, r);
   vec3 col;
@@ -9420,6 +10031,34 @@ vec3 parkGround(vec3 p, vec2 local, float pix) {
   return mix(grass, stone, path) + vec3(0.09, 0.105, 0.1) * curb;
 }
 
+vec3 fountainWater(Hit h, vec3 p, vec3 rd, float fp, vec3 centre, float light) {
+  float detail = 1.0 - smoothstep(0.09, 0.5, fp);
+  vec3 tint = mix(vec3(0.035, 0.14, 0.18), vec3(0.045, 0.2, 0.07), uToxic * 0.7);
+  tint = mix(tint, vec3(0.08, 0.17, 0.27), uSurface.y * 0.6);
+  float fresnel = pow(1.0 - abs(dot(h.n, rd)), 3.0);
+  vec3 reflection = skyGlow(reflect(rd, h.n)) * (0.24 + fresnel * 0.45);
+  if (h.b.y - h.b.x < 0.2) {
+    float radius = length(p.xz - centre.xz);
+    // Expanding rings and crossing small ripples stay filtered as the park recedes.
+    float wave = sin(radius * 3.4 - uAmbientTime * 3.3);
+    float crossing = sin(p.x * 1.8 + p.z * 2.1 + uAmbientTime * 2.0);
+    vec3 col = tint * (0.9 + detail * (wave * 0.15 + crossing * 0.08)) * light + reflection;
+    float rings = pulseAA((radius - uAmbientTime * 1.3) / 0.8, 0.035, fp / 0.8);
+    float halfSize = min(h.a.z - h.a.x, h.a.w - h.a.y) * 0.5;
+    float foam = bandAA(radius - min(halfSize * 0.8, 2.5), 0.09, fp);
+    col += vec3(0.13, 0.22, 0.24) * (rings * 0.3 + foam * 0.4) * detail;
+    return col;
+  }
+  // Pale, broken highlights run along the rounded spray; the bounds never move or become walls.
+  float key = hash12(centre.xz), height = h.b.y - h.b.x;
+  float falling = height < 3.0 ? 1.0 : -1.0;
+  float beads = pulseAA(p.y * 1.7 + uAmbientTime * 4.4 * falling + key * 11.0, 0.3, fp * 1.7);
+  float spray = detail > 0.0 ? tnoise(p * vec3(7.0, 1.4, 7.0) + vec3(0.0, uAmbientTime * falling * 2.0, 0.0)) : 0.5;
+  vec3 white = mix(vec3(0.36, 0.55, 0.62), vec3(0.34, 0.52, 0.21), uToxic * 0.4);
+  return tint * (0.8 + fresnel * 0.7) + reflection * 0.6
+    + white * (0.32 + detail * (beads * 0.4 + spray * 0.24)) * light;
+}
+
 vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
   vec3 centre = vec3(0.5 * (h.a.x + h.a.z), 0.5 * (h.b.x + h.b.y), 0.5 * (h.a.y + h.a.w));
   vec3 local = p - centre;
@@ -9469,7 +10108,7 @@ vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
     float patina = tnoise(p * 0.5);
     col = mix(vec3(0.24, 0.13, 0.045), vec3(0.035, 0.105, 0.085), smoothstep(0.43, 0.8, patina));
     col += vec3(0.12, 0.085, 0.035) * pow(1.0 - abs(dot(h.n, rd)), 3.0);
-  } else {
+  } else if (material < 8.5) {
     // Bus route panel: bright header, three line colours and a compact timetable below.
     vec2 q = abs(h.n.x) > 0.5 ? local.zy : local.xy;
     col = vec3(0.018, 0.038, 0.055);
@@ -9477,6 +10116,8 @@ vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
     float rows = pulseAA((q.y + 0.55) / 0.25, 0.22, fp / 0.25) * bandAA(q.x, 0.29, fp);
     col += vec3(0.2, 0.8, 0.65) * header + vec3(0.25, 0.34, 0.39) * rows;
     return col;
+  } else {
+    return fountainWater(h, p, rd, fp, centre, light);
   }
   return themeEquipment(col * light, p, h.n, pix);
 }
@@ -9503,6 +10144,9 @@ uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
 uniform vec2 uTanHalf;
 uniform highp sampler2D uBoxA, uBoxB, uStructure, uPropA, uPropB, uBridgeA, uBridgeB, uPads; // shared solid boxes / pads
 uniform highp sampler2D uStreet, uStreetInfo;
+uniform highp sampler2D uCollapseFall;
+uniform float uCollapseActive, uCollapseTime;
+uniform vec4 uCollapseHole;                    // shaft centre x/z, radius, bottom
 uniform float uStreetMaxH;
 uniform float uCell, uN, uMaxH, uSize;
 uniform vec2 uAvenue;                          // avenue spacing in cells along x and z
@@ -9530,7 +10174,7 @@ const float FAR = 2800.0;
 
 const float FLOOR_BANDS = 4.0;                 // floors between neon bands on banded towers
 
-const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4, STREET = 5;
+const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4, STREET = 5, SEWER = 6;
 struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; };
 
 vec3 neon(float h) {
@@ -9643,13 +10287,61 @@ float capsuleHit(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape, out vec3 n) {
 ${GAME.overlay.GLSL}
 
 // ---- City --------------------------------------------------------------------------------------
+float collapseFall(ivec2 cell) {
+  if (uCollapseActive < 0.5) return 0.0;
+  vec4 fall = texelFetch(uCollapseFall, cell, 0);
+  if (fall.w < 0.5) return 0.0;
+  return smoothstep(0.0, 1.0, (uCollapseTime - fall.x) / fall.y) * fall.z;
+}
+
+// The real open shaft cuts the street plane and continues below it. Its cylinder and floor
+// match collide.sphere's circular opening, so the entrance is not an image over solid ground.
+float sewerHit(vec3 ro, vec3 rd, out vec3 normal) {
+  float hit = 1e9;
+  vec2 q = ro.xz - uCollapseHole.xy;
+  float A = dot(rd.xz, rd.xz), B = dot(q, rd.xz);
+  float C = dot(q, q) - uCollapseHole.z * uCollapseHole.z, D = B * B - A * C;
+  if (A > 1e-7 && D >= 0.0) for (int i = 0; i < 2; i++) {
+    float t = (-B + (i == 0 ? -sqrt(D) : sqrt(D))) / A;
+    float y = ro.y + rd.y * t;
+    if (t > 0.0 && t < hit && y < 0.001 && y > uCollapseHole.w) {
+      hit = t; normal = normalize(vec3(-(q + rd.xz * t).x, 0.0, -(q + rd.xz * t).y));
+    }
+  }
+  if (rd.y < -1e-5) {
+    float t = (uCollapseHole.w - ro.y) / rd.y;
+    if (t > 0.0 && t < hit && length(q + rd.xz * t) < uCollapseHole.z) { hit = t; normal = vec3(0.0, 1.0, 0.0); }
+  }
+  return hit;
+}
+
+vec3 collapseFire(vec3 ro, vec3 rd, vec3 centre, float top, float tMax, float pixAngle) {
+  if (uCollapseActive < 0.5 || top < 0.1) return vec3(0.0);
+  centre.y = top + 2.0;
+  float t = dot(centre - ro, rd);
+  if (t <= 0.0 || t >= tMax || t > 440.0) return vec3(0.0);
+  vec3 p = ro + rd * t - centre;
+  float w = 3.3 + max(t * pixAngle, 0.02), height = 6.0;
+  float flame = exp(-dot(p.xz, p.xz) / (w * w) - p.y * p.y / (height * height));
+  float flicker = 0.6 + 0.4 * sin(uAmbientTime * 8.0 + centre.x + centre.z);
+  float tongues = 0.6 + 0.4 * tnoise(vec3(p.xz * 0.5, p.y * 0.6 - uAmbientTime * 3.0));
+  return mix(vec3(1.7, 0.12, 0.018), vec3(2.4, 0.75, 0.08), tongues) * flame * flicker
+    * smoothstep(0.0, 1.8, uCollapseTime) * (1.0 - smoothstep(320.0, 440.0, t));
+}
+
 Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
   Hit h; h.kind = SKY; h.t = FAR;
   rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
   vec3 inv = 1.0 / rd;
   float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
+  bool shaft = false;
+  vec3 shaftNormal = vec3(0.0, 1.0, 0.0);
+  if (uCollapseActive > 0.5 && ((tGround > 0.0 && length((ro + rd * tGround).xz - uCollapseHole.xy) < uCollapseHole.z)
+    || (ro.y < 0.0 && length(ro.xz - uCollapseHole.xy) < uCollapseHole.z))) {
+    shaft = true; tGround = sewerHit(ro, rd, shaftNormal);
+  }
   vec3 nIgnore;
-  vec2 span = slab(ro, inv, vec3(0.0, -1.0, 0.0), vec3(uSize, uMaxH, uSize), nIgnore);
+  vec2 span = slab(ro, inv, vec3(0.0, uCollapseActive > 0.5 ? uCollapseHole.w : -1.0, 0.0), vec3(uSize, uMaxH, uSize), nIgnore);
   if (span.x <= span.y && span.y > 0.0) {
     float t = max(span.x, 0.0);
     vec3 p = ro + rd * (t + 1e-3);
@@ -9660,6 +10352,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     for (int i = 0; i < maxCells; i++) {
       float tExit = min(tMax.x, tMax.y);
       vec4 A = texelFetch(uBoxA, cell, 0);
+      float fall = collapseFall(cell);
       float tStreet = 1e9;
       vec3 nStreet;
       vec4 streetA, streetB;
@@ -9681,11 +10374,17 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; }
         }
       }
+      if (uCollapseActive > 0.5 && t < 440.0) {
+        vec4 info = texelFetch(uStreetInfo, cell, 0);
+        glow += collapseFire(ro, rd, vec3((vec2(cell) + 0.5).x * uCell, 0.0, (vec2(cell) + 0.5).y * uCell),
+          info.w, min(tExit, min(tGround, tStreet)), pixAngle);
+      }
       float tBridge = 1e9;
       vec3 nBridge;
       vec4 bridgeData;
       for (int j = 0; j < 2; j++) {
         vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
+        C.y -= fall;
         if (abs(C.w) < 0.5) continue;
         vec2 cc = (vec2(cell) + 0.5) * uCell;
         bool alongZ = abs(C.w) < 1.5;
@@ -9716,6 +10415,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
             P = texelFetch(uStructure, at, 0);
             Q = texelFetch(uStructure, at + ivec2(0, int(uN)), 0);
           }
+          Q.xy -= vec2(fall);
           vec3 nPiece;
           float tPiece = boxHit(ro, inv, vec3(P.x, Q.x, P.y), vec3(P.z, Q.y, P.w), nPiece);
           if (tPiece < tb) {
@@ -9726,6 +10426,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         }
         if (hasProp) {
           vec4 P = texelFetch(uPropA, cell, 0), Q = texelFetch(uPropB, cell, 0);
+          Q.xy -= vec2(fall);
           vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
           vec3 np;
           float tp = 1e9;
@@ -9791,7 +10492,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(int(uN))))) break;
     }
   }
-  if (tGround < FAR) { h.kind = GROUND; h.t = tGround; h.n = vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); }
+  if (tGround >= 0.0 && tGround < FAR) { h.kind = shaft ? SEWER : GROUND; h.t = tGround; h.n = shaft ? shaftNormal : vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); }
   return h;
 }
 
@@ -10216,6 +10917,11 @@ vec3 shadeGround(vec3 p, float pix) {
   if (texelFetch(uStreetInfo, cell, 0).z > 0.5) col = parkGround(p, local, pix);
   vec4 pad = texelFetch(uPads, cell, 0);
   if (pad.x > 0.0) col += padLight(local, pad, pix);
+  if (uCollapseActive > 0.5) {
+    float rim = bandAA(length(p.xz - uCollapseHole.xy) - uCollapseHole.z - 0.8, 0.8, pix);
+    col = mix(col, vec3(0.08, 0.085, 0.07), rim);
+    col += vec3(0.5, 0.025, 0.006) * rim * (0.4 + 0.3 * sin(uAmbientTime * 3.0));
+  }
   return col;
 }
 
@@ -10241,6 +10947,18 @@ void main() {
       col = shadeBridge(h, p, rd, pix);
     } else if (h.kind == STREET) {
       col = shadeStreet(h, p, rd, pix);
+      if (uCollapseActive > 0.5 && h.b.z < 2.5) {
+        float burning = smoothstep(0.0, 2.0, uCollapseTime);
+        float flicker = 0.5 + 0.5 * tnoise(p * 0.65 + vec3(0.0, -uAmbientTime * 3.0, 0.0));
+        col = mix(col, col * 0.18 + vec3(0.5, 0.045, 0.008) * flicker, burning);
+        col += vec3(0.55, 0.13, 0.018) * pow(flicker, 3.0) * burning;
+      }
+    } else if (h.kind == SEWER) {
+      vec2 uv = abs(h.n.y) > 0.5 ? p.xz : vec2(atan(p.z - uCollapseHole.y, p.x - uCollapseHole.x) * uCollapseHole.z, p.y);
+      float joints = max(pulseAA((uv.x + floor(uv.y / 1.5) * 1.5) / 3.0, 0.05, pix / 3.0),
+        pulseAA(uv.y / 1.5, 0.06, pix / 1.5));
+      col = vec3(0.035, 0.055, 0.041) * (0.8 + tnoise(p * 0.7) * 0.4) * (1.0 - joints * 0.6);
+      col += vec3(0.015, 0.12, 0.065) * exp(-abs(p.y + 7.0) * 0.6);
     } else {
       col = shadeGround(p, pix);
       bool inCity = all(greaterThanEqual(h.cell, ivec2(0))) && all(lessThan(h.cell, ivec2(int(uN))));
@@ -10337,11 +11055,12 @@ function create(gfx) {
   const prog = program('city', FRAG);
   const weather = weatherMotion();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let world = null, theme = null, themed = null;
+  let world = null, theme = null, themed = null, collapseState = null;
 
   function setWorld(city, pads) {
     if (world) Object.values(world.textures).forEach(t => gl.deleteTexture(t));
     const n = city.n;
+    collapseState = city.collapse || null;
     const tex = data => createTexture(n, n, { format: 'rgba32f', filter: 'nearest', data });
     const padData = new Float32Array(n * n * 4);
     for (const p of pads) {
@@ -10372,7 +11091,8 @@ function create(gfx) {
       const furniture = city.streetBoxes[i] || [];
       if (furniture.length > GAME.street.MAX_PIECES) throw new Error(`too much street furniture in cell ${i}`);
       const height = Math.max(0, ...furniture.map(b => b[4]));
-      streetInfo.set([furniture.length, height, city.park[i], 0], i * 4);
+      const foliageTop = Math.max(0, ...furniture.filter(b => b[6] === GAME.street.MATERIAL.LEAVES).map(b => b[4]));
+      streetInfo.set([furniture.length, height, city.park[i], foliageTop], i * 4);
       streetMaxH = Math.max(streetMaxH, height);
       furniture.forEach((b, part) => {
         const offset = part * n * n * 8 + i * 4;
@@ -10387,6 +11107,8 @@ function create(gfx) {
       uBridgeA: tex(city.bridgeA), uBridgeB: tex(city.bridgeB), uPads: tex(padData),
       uStreetInfo: tex(streetInfo),
       uStreet: createTexture(n, n * GAME.street.MAX_PIECES * 2, { format: 'rgba32f', filter: 'nearest', data: streetData }),
+      uCollapseFall: collapseState ? tex(collapseState.falls)
+        : createTexture(1, 1, { format: 'rgba32f', filter: 'nearest', data: new Float32Array(4) }),
     } };
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
@@ -10400,6 +11122,8 @@ function create(gfx) {
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uCell: city.cell, uN: city.n, uMaxH: city.maxHeight + 1, uSize: city.size,
       uStreetMaxH: world.streetMaxH,
+      uCollapseActive: collapseState ? 1 : 0, uCollapseTime: collapseState?.time ?? 0,
+      uCollapseHole: collapseState ? [collapseState.hole.x, collapseState.hole.z, collapseState.hole.radius, collapseState.hole.bottom] : [0, 0, 0, -14],
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
       uAmbientTime: reducedMotion.matches ? 0 : now,
@@ -10416,10 +11140,225 @@ function create(gfx) {
     console.log(`[gfx] theme ${t.id}`);
   }
 
-  return { program: prog, setWorld, draw, setTheme, get theme() { return theme; } };
+  function setCollapse(state) {
+    if (collapseState === state) return;
+    collapseState = state;
+    if (!world) return;
+    gl.deleteTexture(world.textures.uCollapseFall);
+    world.textures.uCollapseFall = state
+      ? createTexture(world.city.n, world.city.n, { format: 'rgba32f', filter: 'nearest', data: state.falls })
+      : createTexture(1, 1, { format: 'rgba32f', filter: 'nearest', data: new Float32Array(4) });
+  }
+
+  return { program: prog, setWorld, draw, setTheme, setCollapse, get theme() { return theme; } };
 }
 
 GAME.cityRenderer = { create };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/render/sewer.js ----
+// Underground menu scenery. Analytic tunnel surfaces keep this separate from the flight city:
+// no course generation, collision, textures or framebuffers are owned by this renderer.
+const FRAG = `
+uniform float uSewerTime, uSewerAspect;
+
+struct SewerHit { float t; vec3 n; float material; };
+
+void sewerTake(inout SewerHit h, float t, vec3 normal, float material) {
+  if (t > 0.001 && t < h.t) { h.t = t; h.n = normal; h.material = material; }
+}
+
+float sewerBox(vec3 ro, vec3 rd, vec3 centre, vec3 halfSize, out vec3 normal) {
+  vec3 inv = 1.0 / mix(rd, vec3(0.00001), lessThan(abs(rd), vec3(0.00001)));
+  vec3 a = (centre - halfSize - ro) * inv, b = (centre + halfSize - ro) * inv;
+  vec3 lo = min(a, b), hi = max(a, b);
+  float near = max(lo.x, max(lo.y, lo.z)), far = min(hi.x, min(hi.y, hi.z));
+  if (near > far || far < 0.0) return 1e5;
+  float t = near > 0.0 ? near : far;
+  vec3 q = (ro + rd * t - centre) / halfSize, aq = abs(q);
+  normal = aq.x > max(aq.y, aq.z) ? vec3(sign(q.x), 0.0, 0.0)
+    : aq.y > aq.z ? vec3(0.0, sign(q.y), 0.0) : vec3(0.0, 0.0, sign(q.z));
+  return t;
+}
+
+vec3 sewerLamp(float index) { return vec3(mod(index, 2.0) < 0.5 ? -5.45 : 5.45, 2.65, 4.0 + index * 8.0); }
+
+SewerHit sewerTrace(vec3 ro, vec3 rd) {
+  SewerHit h; h.t = 90.0; h.n = vec3(0.0, 0.0, -1.0); h.material = 0.0;
+  // A semicircular brick vault sits above straight retaining walls.
+  vec2 q = ro.xy - vec2(0.0, 3.2);
+  float A = dot(rd.xy, rd.xy), B = dot(q, rd.xy), C = dot(q, q) - 5.8 * 5.8;
+  float disc = B * B - A * C;
+  if (A > 0.000001 && disc >= 0.0) {
+    float t = (-B + sqrt(disc)) / A;
+    vec3 p = ro + rd * t;
+    if (p.y >= 3.2) sewerTake(h, t, -normalize(vec3(p.x, p.y - 3.2, 0.0)), 1.0);
+  }
+  if (abs(rd.x) > 0.00001) for (int side = 0; side < 2; side++) {
+    float signX = side == 0 ? -1.0 : 1.0, t = (signX * 5.8 - ro.x) / rd.x;
+    float y = ro.y + rd.y * t;
+    if (y >= -0.5 && y <= 3.2) sewerTake(h, t, vec3(-signX, 0.0, 0.0), 1.0);
+  }
+  if (rd.y < -0.00001) {
+    float t = (0.36 - ro.y) / rd.y, x = abs(ro.x + rd.x * t);
+    if (x >= 2.2 && x <= 5.8) sewerTake(h, t, vec3(0.0, 1.0, 0.0), 2.0);
+    t = (-0.12 - ro.y) / rd.y;
+    if (abs(ro.x + rd.x * t) <= 1.96) sewerTake(h, t, vec3(0.0, 1.0, 0.0), 3.0);
+  }
+  vec3 normal;
+  for (int side = 0; side < 2; side++) {
+    float signX = side == 0 ? -1.0 : 1.0;
+    float t = sewerBox(ro, rd, vec3(signX * 2.08, 0.2, 45.0), vec3(0.12, 0.4, 55.0), normal);
+    sewerTake(h, t, normal, 2.0);
+  }
+  // Repeated concrete arch ribs have real projecting front faces, rather than painted outlines.
+  for (int i = 0; i < 11; i++) {
+    float z = 2.0 + float(i) * 8.0, t = (z - ro.z) / rd.z;
+    vec3 p = ro + rd * t;
+    float archRadius = length(p.xy - vec2(0.0, 3.2));
+    bool rib = p.y >= 3.2 ? archRadius >= 5.46 && archRadius <= 5.85 : abs(p.x) >= 5.46 && p.y >= 0.35;
+    if (rib) sewerTake(h, t, vec3(0.0, 0.0, -1.0), 6.0);
+  }
+  // Long iron services beneath the vault, and an older drain running along the right wall.
+  for (int pipe = 0; pipe < 3; pipe++) {
+    vec2 centre = pipe == 0 ? vec2(-3.3, 7.35) : pipe == 1 ? vec2(-2.65, 7.7) : vec2(5.28, 1.4);
+    float radius = pipe == 0 ? 0.19 : pipe == 1 ? 0.11 : 0.17;
+    vec2 oc = ro.xy - centre;
+    float b = dot(oc, rd.xy), d = b * b - A * (dot(oc, oc) - radius * radius);
+    if (A > 0.000001 && d >= 0.0) {
+      float t = (-b - sqrt(d)) / A;
+      sewerTake(h, t, normalize(vec3(ro.xy + rd.xy * t - centre, 0.0)), 4.0);
+    }
+  }
+  for (int i = 0; i < 10; i++) {
+    vec3 centre = sewerLamp(float(i));
+    float t = sewerBox(ro, rd, centre, vec3(0.16, 0.28, 0.21), normal);
+    sewerTake(h, t, normal, 5.0);
+  }
+  return h;
+}
+
+float sewerBand(float distance, float width, float pixel) {
+  return 1.0 - smoothstep(width, width + max(pixel, 0.003), abs(distance));
+}
+
+vec3 sewerLighting(vec3 p, vec3 normal) {
+  vec3 light = vec3(0.17, 0.27, 0.27) * (0.65 + normal.y * 0.2);
+  float segment = floor((p.z - 4.0) / 8.0);
+  for (int i = -1; i <= 1; i++) {
+    float index = segment + float(i);
+    if (index < 0.0 || index >= 10.0) continue;
+    vec3 delta = sewerLamp(index) - p;
+    float distance2 = dot(delta, delta), diffuse = max(dot(normalize(delta), normal), 0.0);
+    light += vec3(2.0, 0.87, 0.25) * diffuse / (1.0 + distance2 * 0.23);
+  }
+  return light;
+}
+
+vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
+  float grain = tnoise(p * 5.0), damp = tnoise(p * vec3(0.42, 0.1, 0.55));
+  vec3 light = sewerLighting(p, h.n), col;
+  if (h.material < 1.5) {
+    vec2 uv = vec2(p.z, p.y < 3.21 ? p.y : 3.2 + atan(p.y - 3.2, p.x) * 5.8);
+    float row = floor(uv.y / 0.37);
+    vec2 brick = vec2(uv.x / 0.87 + mod(row, 2.0) * 0.5, uv.y / 0.37);
+    vec2 edge = min(fract(brick), 1.0 - fract(brick)) * vec2(0.87, 0.37);
+    float mortar = 1.0 - smoothstep(0.025, 0.042 + pixel, min(edge.x, edge.y));
+    float key = hash12(floor(brick));
+    col = mix(vec3(0.13, 0.072, 0.038), vec3(0.075, 0.085, 0.073), key * 0.58);
+    col *= 0.75 + grain * 0.35;
+    col = mix(col, vec3(0.043, 0.05, 0.044), mortar);
+    float rib = sewerBand(mod(p.z - 2.0 + 4.0, 8.0) - 4.0, 0.23, pixel);
+    col = mix(col, vec3(0.095, 0.105, 0.09) * (0.8 + grain * 0.3), rib);
+    float algae = smoothstep(0.44, 0.72, damp) * (0.35 + 0.65 * (1.0 - smoothstep(0.5, 2.3, p.y)));
+    col = mix(col, vec3(0.025, 0.065, 0.036), algae * 0.9);
+    col *= 1.0 - smoothstep(0.55, 0.78, damp) * 0.33;
+  } else if (h.material < 2.5) {
+    vec2 seam = min(fract(p.xz / vec2(1.1, 1.6)), 1.0 - fract(p.xz / vec2(1.1, 1.6))) * vec2(1.1, 1.6);
+    float joints = 1.0 - smoothstep(0.025, 0.04 + pixel, min(seam.x, seam.y));
+    col = vec3(0.075, 0.086, 0.078) * (0.8 + grain * 0.3) * (1.0 - joints * 0.55);
+    col = mix(col, vec3(0.025, 0.061, 0.035), smoothstep(0.5, 0.75, damp) * 0.5);
+    // Drain slots and a darker wet line border the shallow central channel.
+    float gutter = sewerBand(abs(p.x) - 2.5, 0.16, pixel);
+    float slot = sewerBand(mod(p.z + 0.12, 0.24) - 0.12, 0.045, pixel);
+    col *= 1.0 - gutter * (0.25 + slot * 0.65);
+  } else if (h.material < 3.5) {
+    float wave = sin(p.z * 2.7 - uSewerTime * 0.7) + sin(p.x * 7.0 + p.z * 1.5 + uSewerTime * 0.5);
+    vec3 normal = normalize(vec3(wave * 0.025, 1.0, cos(p.z * 2.2 + uSewerTime * 0.65) * 0.035));
+    col = vec3(0.004, 0.016, 0.017) * (0.85 + wave * 0.08);
+    float segment = floor((p.z - 4.0) / 8.0);
+    for (int i = -1; i <= 1; i++) {
+      float index = segment + float(i);
+      if (index < 0.0 || index >= 10.0) continue;
+      vec3 delta = sewerLamp(index) - p;
+      float spec = pow(max(dot(reflect(-normalize(delta), normal), -rd), 0.0), 48.0);
+      col += vec3(1.15, 0.5, 0.14) * spec / (1.0 + length(delta) * 0.055);
+    }
+    float ripple = length(vec2(p.x - 0.6, mod(p.z - 8.0 + 6.0, 12.0) - 6.0));
+    float age = mod(uSewerTime * 0.65, 1.0);
+    col += vec3(0.012, 0.04, 0.037) * sewerBand(ripple - age * 1.2, 0.03, pixel) * (1.0 - age);
+    col += vec3(0.006, 0.02, 0.016) * smoothstep(1.3, 1.9, abs(p.x));
+    return col;
+  } else if (h.material < 4.5) {
+    float rust = smoothstep(0.38, 0.68, damp + grain * 0.15);
+    col = mix(vec3(0.065, 0.087, 0.083), vec3(0.125, 0.055, 0.035), rust);
+    float collar = sewerBand(mod(p.z + 3.0, 6.0) - 3.0, 0.14, pixel);
+    col += vec3(0.025, 0.035, 0.032) * collar;
+    col += vec3(0.018, 0.026, 0.025) * pow(1.0 - abs(dot(h.n, rd)), 3.0);
+  } else if (h.material < 5.5) {
+    float bars = sewerBand(mod(p.y + 0.065, 0.13) - 0.065, 0.012, pixel);
+    return vec3(2.6, 1.1, 0.23) * (1.0 - bars * 0.88);
+  } else {
+    col = vec3(0.085, 0.097, 0.085) * (0.8 + grain * 0.35);
+    col *= 1.0 - smoothstep(0.5, 0.8, damp) * 0.4;
+  }
+  return col * light;
+}
+
+void main() {
+  vec2 uv = (vUv - 0.5) * 2.0;
+  vec3 ro = vec3(0.0, 2.45 + sin(uSewerTime * 0.13) * 0.025, -1.5);
+  vec3 rd = normalize(vec3(uv.x * uSewerAspect, uv.y + 0.04, 1.65));
+  SewerHit h = sewerTrace(ro, rd);
+  vec3 p = ro + rd * h.t;
+  float pixel = max(h.t / uRes.y * 1.2, 0.001);
+  vec3 mist = vec3(0.009, 0.028, 0.031);
+  vec3 col = h.material > 0.5 ? sewerSurface(h, p, rd, pixel) : mist * 0.42;
+  float fog = 1.0 - exp(-h.t * 0.032);
+  col = mix(col, mist, fog);
+  // Occasional drops fall from the vault; their tiny glints stop at the visible scene surface.
+  for (int i = 0; i < 6; i++) {
+    float key = float(i), age = fract(uSewerTime * 0.65 + hash11(key + 9.0));
+    vec3 drop = vec3(0.6, mix(6.5, 0.0, age * age), 8.0 + key * 12.0);
+    float along = dot(drop - ro, rd);
+    if (along <= 0.0 || along >= h.t) continue;
+    float width = max(0.022, along / uRes.y * 0.65);
+    vec3 delta = ro + rd * along - drop;
+    delta.y *= 0.32;
+    float glint = 1.0 - smoothstep(width, width * 2.4, length(delta));
+    col += vec3(0.09, 0.18, 0.17) * glint * (1.0 - fog * 0.7);
+  }
+  // The long central void stays quiet behind menu labels; lamps and masonry frame its edges.
+  float centre = exp(-dot(uv * vec2(1.35, 1.7), uv * vec2(1.35, 1.7)));
+  col *= 1.0 - centre * 0.16;
+  fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}
+`;
+
+function create(gfx) {
+  const program = gfx.program('sewer-menu', FRAG);
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  return {
+    draw(timeSeconds, aspect) {
+      gfx.fullscreen(program, { uSewerTime: reducedMotion.matches ? 0 : timeSeconds, uSewerAspect: aspect });
+    },
+  };
+}
+
+GAME.sewerRenderer = { create };
 
 })();
 
@@ -10980,6 +11919,7 @@ function create(root, { touch, onPause, onLift }) {
       t.style.animationDuration = `${seconds}s`;
       setTimeout(() => t.remove(), seconds * 1000);
     },
+    clearToasts() { toasts.replaceChildren(); },
     gatePassed() { replay(gates, 'pulse'); },
     starCollected() { replay(stars, 'pulse'); },
     relayout,
@@ -11159,16 +12099,24 @@ function choiceRow(parent, key, s) {
   const list = el('div', 'set-options', row);
   list.setAttribute('role', 'radiogroup');
   list.setAttribute('aria-label', s.label);
-  list.style.gridTemplateColumns = `repeat(${s.options.length <= 4 ? s.options.length : 3}, 1fr)`;
-  const buttons = s.options.map(([id, label]) => {
-    const b = el('button', 'set-option', list, label);
-    b.setAttribute('role', 'radio');
-    b.dataset.value = id;
-    b.addEventListener('click', () => GAME.settings.set(key, id));
-    return b;
-  });
+  let buttons = [], options = '';
   if (s.note) el('span', 'set-help', row, s.note);
-  return v => buttons.forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === v)));
+  return v => {
+    if (options !== JSON.stringify(s.options)) {
+      const focused = list.contains(document.activeElement);
+      options = JSON.stringify(s.options);
+      list.replaceChildren();
+      list.style.gridTemplateColumns = `repeat(${s.options.length <= 4 ? s.options.length : 3}, 1fr)`;
+      buttons = s.options.map(([id, label]) => {
+        const b = el('button', 'set-option', list, label);
+        b.setAttribute('role', 'radio'); b.dataset.value = id;
+        b.addEventListener('click', () => GAME.settings.set(key, id));
+        return b;
+      });
+      if (focused) buttons.find(b => b.dataset.value === v)?.focus();
+    }
+    buttons.forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === v)));
+  };
 }
 
 const ROWS = { number: sliderRow, bool: switchRow, choice: choiceRow };
@@ -11206,6 +12154,7 @@ function createSettingsPanel(panel, device) {
     if (rows.has(key)) rows.get(key)(v);
     updateVisibility();
   });
+  settings.onSchemaChange(key => rows.get(key)?.(settings.get(key)));
 
   // Focus must not stay on a hidden button: Enter would go to it instead of the shown screen's main
   // button (main.js), so opening and closing leave nothing focused.
@@ -11248,8 +12197,8 @@ GAME.settingsPanel = { create: createSettingsPanel };
 // ---- src/ui/shop-panel.js ----
 // A focused shop overlay. Opening it from pause never resumes or recalibrates the flight.
 function create(panel, { touch }) {
-  const q = selector => panel.querySelector(selector), buy = q('#shop-buy');
-  let origin = null, opener = null, busy = false;
+  const q = selector => panel.querySelector(selector), buy = q('#shop-buy'), keyBuy = q('#shop-key-buy');
+  let origin = null, opener = null, busy = null;
   q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
   function render() {
     const s = GAME.shop.state(), item = GAME.shop.LIFT;
@@ -11265,16 +12214,28 @@ function create(panel, { touch }) {
     const hadFocus = document.activeElement === buy;
     buy.disabled = busy || !s.available || s.lifts >= item.capacity || s.balance < item.price;
     if (hadFocus && buy.disabled) q('#shop-done').focus();
-    buy.textContent = busy ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
+    buy.textContent = busy === 'lift' ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
       : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
+    const key = GAME.shop.COLLAPSE_KEY;
+    q('#shop-key-price').textContent = `★ ${key.price}`;
+    q('#shop-key-owned').textContent = s.collapseKey ? 'permanently owned' : 'permanent · one purchase';
+    const keyHadFocus = document.activeElement === keyBuy;
+    keyBuy.disabled = !!busy || !s.available || s.collapseKey || s.balance < key.price;
+    if (keyHadFocus && keyBuy.disabled) q('#shop-done').focus();
+    keyBuy.textContent = busy === 'key' ? 'saving…' : s.collapseKey ? 'owned · permanent' : !s.available ? 'unavailable'
+      : s.balance < key.price ? `need ${key.price - s.balance} more ★` : `buy key · ${key.price} ★`;
     q('#shop-storage').hidden = s.available;
   }
-  async function purchase() {
+  async function purchase(kind) {
     if (busy) return;
-    busy = true; render();
-    const result = await GAME.shop.buyLift();
-    busy = false; render();
-    q('#shop-message').textContent = result.ok ? 'Lift Boost added to your inventory.' : result.message;
+    busy = kind; render();
+    try {
+      const result = await (kind === 'key' ? GAME.shop.buyCollapseKey() : GAME.shop.buyLift());
+      q('#shop-message').textContent = result.ok
+        ? kind === 'key' ? 'Collapse Key saved. Hidden rings can now be found on Hard and Extreme.' : 'Lift Boost added to your inventory.'
+        : result.message;
+    } catch { q('#shop-message').textContent = 'Could not save your purchase. Please try again.'; }
+    finally { busy = null; render(); }
   }
   function close() {
     if (!origin) return;
@@ -11284,7 +12245,8 @@ function create(panel, { touch }) {
     opener.focus();
     origin = opener = null;
   }
-  buy.addEventListener('click', purchase);
+  buy.addEventListener('click', () => purchase('lift'));
+  keyBuy.addEventListener('click', () => purchase('key'));
   q('#shop-done').addEventListener('click', close);
   panel.addEventListener('click', e => { if (e.target === panel) close(); });
   panel.addEventListener('keydown', e => {
@@ -11484,15 +12446,17 @@ GAME.soundtrack = { create };
 // Each load gets a fresh copy: later runs must not mutate a cached world or its collision data.
 const cache = new Map(), CACHE_SIZE = 8;
 let active = null, workerURL = null;
-const keyOf = (seed, difficulty) => `${seed}:${difficulty}`;
+const wantsCollapse = (difficulty, options) => !!options.collapse && ['hard', 'extreme'].includes(difficulty);
+const keyOf = (seed, difficulty, options = {}) => `${seed}:${difficulty}${wantsCollapse(difficulty, options) ? ':collapse' : ''}`;
 
 function cancel() {
   active?.cancel();
 }
 
-async function load(seed, difficulty) {
+async function load(seed, difficulty, options = {}) {
   cancel();
-  const key = keyOf(seed, difficulty);
+  const key = keyOf(seed, difficulty, options);
+  const collapse = wantsCollapse(difficulty, options);
   if (cache.has(key)) {
     const data = cache.get(key);
     cache.delete(key);
@@ -11522,7 +12486,7 @@ async function load(seed, difficulty) {
       finish(null, new Error(event.message || 'Course worker could not start'));
     };
     worker.onmessageerror = () => finish(null, new Error('Course data could not be read'));
-    try { worker.postMessage({ seed, difficulty }); }
+    try { worker.postMessage({ seed, difficulty, collapse, world: collapse ? cache.get(keyOf(seed, difficulty)) : undefined }); }
     catch (error) { finish(null, error); }
   });
   cache.set(key, data);
@@ -11530,7 +12494,7 @@ async function load(seed, difficulty) {
   return GAME.courseData.unpack(structuredClone(data));
 }
 
-GAME.courseLoader = { load, cancel, has: (seed, difficulty) => cache.has(keyOf(seed, difficulty)) };
+GAME.courseLoader = { load, cancel, has: (seed, difficulty, options = {}) => cache.has(keyOf(seed, difficulty, options)) };
 
 })();
 
@@ -11575,7 +12539,7 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
+let renderer, sewerRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
 const syncTouchStick = () => {
   const selected = usesTouchStick();
@@ -11587,6 +12551,10 @@ const syncTouchStick = () => {
   touchStick?.setEnabled(selected && mode === 'playing');
 };
 let seedCode, city, course, run, guide, pilot;
+let collapse = null, surfaceSession = null, collapsePreparation = null;
+let menuEnvironment = GAME.access.environment();
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const collapseOptions = () => ({ collapse: GAME.shop.state().collapseKey });
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
 const sessionExtremeUnlocks = new Set();
@@ -11602,13 +12570,14 @@ function grantExtreme(code) {
 
 // Generation runs off-thread. Keep the old world and its URL intact until its replacement is
 // fully ready, so cancelling or failing a load leaves a playable course.
-let courseLoading = false;
+let courseLoading = false, flowVersion = 0, flightStarting = false;
 async function loadCourse(seed, selectedDifficulty = difficulty) {
   if (courseLoading) return false;
+  flowVersion++;
   const t0 = performance.now(), code = GAME.rng.seedToCode(seed);
   const lockedExtreme = selectedDifficulty === 'extreme' && !extremeUnlocked(code);
   const nextDifficulty = lockedExtreme ? 'hard' : selectedDifficulty;
-  const cached = GAME.courseLoader.has(seed, nextDifficulty);
+  const options = collapseOptions(), cached = GAME.courseLoader.has(seed, nextDifficulty, options);
   const loading = $('course-loading'), cancel = $('loading-cancel');
   const focus = document.activeElement;
   const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen];
@@ -11628,7 +12597,8 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
     }, 4000);
   }
   try {
-    const world = await GAME.courseLoader.load(seed, nextDifficulty);
+    const world = await GAME.courseLoader.load(seed, nextDifficulty, options);
+    leaveCollapse();
     city = world.city;
     course = world.course;
     seedCode = code;
@@ -11662,12 +12632,26 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
 let boostsTaken = 0;
 let newStars = 0;
 let usingLift = false;
+// Buying a key while paused must add the secret to this course without replacing its run.
+async function ensureCollapsePrepared() {
+  if (!course || collapse || courseLoading || !GAME.shop.state().collapseKey || !['hard', 'extreme'].includes(difficulty)
+      || course.collapse !== undefined) return;
+  if (collapsePreparation?.course === course) return collapsePreparation.promise;
+  const original = course, code = seedCode, selected = difficulty;
+  const request = { course: original, promise: null };
+  request.promise = GAME.courseLoader.load(GAME.rng.codeToSeed(code), selected, { collapse: true })
+    .then(world => { if (course === original) original.collapse = world.course.collapse; })
+    .catch(error => { if (error.name !== 'AbortError') console.warn(`[game] secret preparation: ${error.message}`); })
+    .finally(() => { if (collapsePreparation === request) collapsePreparation = null; });
+  collapsePreparation = request;
+  return request.promise;
+}
 function refreshShopButtons() {
   const { balance } = GAME.shop.state();
   for (const id of ['title-shop', 'pause-shop']) $(id).querySelector('span').textContent = `★ ${balance}`;
 }
 async function useLift() {
-  if (usingLift || mode !== 'playing' || !GAME.run.canPowerBoost(run)) return;
+  if (usingLift || collapse || mode !== 'playing' || !GAME.run.canPowerBoost(run)) return;
   const flight = run;
   usingLift = true;
   try {
@@ -11692,6 +12676,39 @@ function newRun() {
   pilot = { k: 0 };
 }
 
+function leaveCollapse() {
+  GAME.sound.setAlarm(false);
+  if (!surfaceSession) return;
+  hud.clearToasts();
+  ({ city, course, run, guide, pilot, boostsTaken, newStars } = surfaceSession);
+  surfaceSession = collapse = null;
+  renderer.setWorld(city, course.pads);
+  renderer.setCollapse(null);
+  stepBefore = null;
+}
+
+function enterCollapse() {
+  const glider = { ...run.glider }, world = GAME.collapse.begin(city, course, course.collapse, glider);
+  surfaceSession = { city, course, run, guide, pilot, boostsTaken, newStars };
+  city = world.city; course = world.course; collapse = world.state;
+  run = GAME.run.create(city, course); run.glider = glider;
+  guide = GAME.guide.create(course); pilot = { k: 0 };
+  renderer.setWorld(city, course.pads); renderer.setCollapse(collapse);
+  input.reset(); setMode('playing');
+  hud.clearToasts();
+  hud.message('COLLAPSE', 'bad', 2);
+  hud.toast('Find the way beneath the city', 'bad', 3);
+}
+
+function revealSewer() {
+  GAME.access.grantSewer();
+  GAME.settings.updateSongOptions();
+  GAME.sound.setAlarm(false); GAME.sound.setSceneMuted(true);
+  hud.show(false); setMode('sewer-reveal');
+  if (document.pointerLockElement) document.exitPointerLock();
+  $('sewer-reveal').classList.remove('hidden', 'revealed');
+}
+
 // ---- Run flow ---------------------------------------------------------------------------------
 const PHYSICS_DT = 1 / 120;
 // Countdowns tick on the music's beat (the soundtrack times them): three ticks into a run, two
@@ -11709,10 +12726,12 @@ let timeScale = 1;             // autopilot tests fast-forward the simulation
 let stepBefore = null;         // the glider one step back, while steps run back to back
 
 function setMode(m) {
+  flowVersion++;
   mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m);
   // The portrait reminder is useful before Fly, but must not cover a run if the phone rotates.
   document.body.classList.toggle('run-started', m !== 'title');
   syncTouchStick();
+  GAME.sound.setAlarm(!!collapse && m === 'playing');
 }
 
 function startCountdown(ticks) {
@@ -11729,6 +12748,18 @@ function shownGlider() {
 }
 
 function handle(events) {
+  if (collapse && events.some(e => e.type === 'crash')) {
+    const elapsed = run.time;
+    leaveCollapse();
+    run.time += elapsed; run.penalty += GAME.run.PENALTY.crash;
+    run.crashes++; run.retries++; run.crashed = { kind: 'tower' };
+    handle([{ type: 'crash', hit: run.crashed }]);
+    hud.message('Collapse failed', 'bad');
+    hud.toast('Returning to the normal course · +3 s', 'bad', 2);
+    return;
+  }
+  const sewer = events.some(e => e.type === 'sewer');
+  events = events.filter(e => e.type !== 'sewer');
   // If another tab saved this slot during the flight step, suppress the duplicate pickup feedback.
   events = events.filter(e => e.type !== 'star' || GAME.starBank.claim(seedCode, difficulty, e.star));
   soundtrack.events(events);
@@ -11759,10 +12790,12 @@ function handle(events) {
       setMode('finished');
     }
   }
+  if (sewer) revealSewer();
 }
 
 // The stick for each physics step: the player's, or the autopilot's when it flies.
-let pilotStick = AUTOPILOT ? () => GAME.autopilot.steer(pilot, run.glider, course) : () => input.stick(run.glider, PHYSICS_DT);
+const autoSteer = routed => collapse ? GAME.collapse.steer(pilot, run.glider, routed) : GAME.autopilot.steer(pilot, run.glider, routed);
+let pilotStick = AUTOPILOT ? () => autoSteer(course) : () => input.stick(run.glider, PHYSICS_DT);
 
 // Back at the last gate passed; the guide line and the autopilot's progress restart there too.
 function respawn() {
@@ -11804,13 +12837,24 @@ function update(dt) {
     while (acc >= PHYSICS_DT && mode === 'playing') {
       acc -= PHYSICS_DT;
       stepBefore = { ...run.glider };
-      handle(GAME.run.step(run, pilotStick(), PHYSICS_DT));
+      const events = collapse ? GAME.collapse.step(collapse, run, pilotStick(), PHYSICS_DT)
+        : GAME.run.step(run, pilotStick(), PHYSICS_DT);
+      handle(events);
+      if (!collapse && mode === 'playing' && GAME.shop.state().collapseKey && course.collapse?.trigger
+          && GAME.collapse.through([stepBefore.x, stepBefore.y, stepBefore.z], [run.glider.x, run.glider.y, run.glider.z], course.collapse.trigger)) enterCollapse();
     }
   } else if (mode === 'crashed' && modeTime > crashPause) {
     respawn();
   } else if (mode === 'finished') {
     coast(dt);
     if (modeTime > FINISH_PAUSE) showResults();
+  } else if (mode === 'sewer-reveal') {
+    if (modeTime >= 2.5) $('sewer-reveal').classList.add('revealed');
+    if (modeTime >= 4.8) {
+      $('sewer-reveal').classList.add('hidden');
+      leaveCollapse(); showMenu(); GAME.sound.setSceneMuted(false);
+      $('environment-switch').focus();
+    }
   }
   crashFlash = Math.max(0, crashFlash - dt * 2.5);
   boostGlow = Math.max(0, boostGlow - dt * 1.5);
@@ -11863,7 +12907,13 @@ function render(now, w, h) {
   const view = GAME.guide.frame(guide, run, run.time);
   GAME.gfx.setFrame({ t: now / 1000, width: w, height: h });
   bindTarget(target);
-  renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
+  const sewerMenu = mode === 'title' && menuEnvironment === 'sewer';
+  const secret = !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger : null;
+  if (secret && Math.hypot(g.x - secret.x, g.y - secret.y, g.z - secret.z) < 125) {
+    view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, kind: 'secret', flare: 0, xray: 0 }];
+  }
+  if (sewerMenu) sewerRenderer.draw(now / 1000, w / h);
+  else renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
   const over = Math.max(0, (g.speed - FLIGHT.CRUISE) / (FLIGHT.MAX_SPEED - FLIGHT.CRUISE));
@@ -11875,6 +12925,12 @@ function render(now, w, h) {
   post.flash = crashFlash * 0.5;
   post.tint = [1 - boostGlow * 0.08, 1 - crashFlash * 0.6, 1 - crashFlash * 0.5 - boostGlow * 0.1];
   post.glitch = crashFlash * 0.6;
+  if (collapse) {
+    const red = Math.min(1, collapse.time / 1.6) * (reducedMotion.matches ? 0.62 : 0.58 + 0.07 * Math.sin(collapse.time * 3));
+    post.tint[1] *= 1 - red; post.tint[2] *= 1 - red * 1.15;
+    post.vignette = 0.45;
+  }
+  if (sewerMenu) { post.ca = 0.0006; post.vignette = 0.34; post.speed = post.flash = post.glitch = 0; }
   GAME.post.present(target, post, now / 1000);
   drawn = { at: now, width: w, height: h, fov: 2 * Math.atan(cam.tanHalf[1]) * 180 / Math.PI, pos: cam.pos };
   return { cam, next: view.next };
@@ -11901,12 +12957,12 @@ function hudFrame({ cam, next }) {
   hud.update(run.glider, {
     time: run.time, penalty: run.penalty, gate: run.next, gates: course.gates.length,
     stars: run.stars.size, starTotal: course.stars.length,
-    lifts: GAME.shop.state().lifts, powerUsed: run.powerUsed, canLift: mode === 'playing' && !usingLift && GAME.run.canPowerBoost(run),
+    lifts: GAME.shop.state().lifts, powerUsed: run.powerUsed, canLift: !collapse && mode === 'playing' && !usingLift && GAME.run.canPowerBoost(run),
     aimScreen, nextScreen: offCourseCrash ? null : next ? gateOnScreen(cam, next) : null,
     groundH: GAME.collide.groundHeight(city, run.glider.x, run.glider.z),
     boundary: offCourseCrash ? 1 : mode === 'playing' ? run.boundary.intensity : 0,
-    boundaryText: offCourseCrash ? 'RETURNING TO THE LAST GATE' : 'RETURN TO THE COURSE · FOLLOW THE NEXT GATE',
-    label: `COURSE ${seedCode}${AUTOPILOT ? ' · AUTOPILOT' : ''}`,
+    boundaryText: collapse ? 'FOLLOW THE ESCAPE RINGS' : offCourseCrash ? 'RETURNING TO THE LAST GATE' : 'RETURN TO THE COURSE · FOLLOW THE NEXT GATE',
+    label: collapse ? 'COLLAPSE · REACH THE SEWER' : `COURSE ${seedCode}${AUTOPILOT ? ' · AUTOPILOT' : ''}`,
   });
 }
 
@@ -11914,19 +12970,19 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
   // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
-  for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
+  if (!collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
   if (TOUCH) steadyLandscapeView();
-  if (mode !== 'paused' && !courseLoading) update(dt * timeScale);
+  if (mode !== 'paused' && !courseLoading && !document.hidden) update(dt * (mode === 'sewer-reveal' ? 1 : timeScale));
   resolution.fitCanvas();
   const [w, h] = resolution.renderSize();
   timerBegin(resolution.level);
   const view = render(now, w, h);
   timerEnd();
   resolution.adapt(dt);
-  soundtrack.frame(run.next / course.gates.length);
+  if (mode !== 'sewer-reveal') soundtrack.frame(run.next / course.gates.length);
   if (settingsPanel.isOpen) {
     settingsPanel.note('quality', `drawing ${w} × ${h}`);
     settingsPanel.note('musicTrack', GAME.sound.songStatus());
@@ -11943,6 +12999,7 @@ const CONTROLS_STICK = '<b>Hold and drag the steering button</b> in the lower-le
 
 let courseReturnFocus = null;
 function openCourseOptions(button) {
+  flowVersion++;
   courseReturnFocus = button;
   overlay.inert = true;
   button.setAttribute('aria-expanded', 'true');
@@ -11967,6 +13024,7 @@ function refreshInfo() {
   $('info-pitch').textContent = `Pitch inversion: ${input?.invertY ? 'on' : 'off'} · change it ${TOUCH ? 'in Settings' : 'with I or in Settings'}.`;
 }
 function openInfo(button) {
+  flowVersion++;
   refreshInfo();
   infoReturnFocus = button;
   infoOrigin = button.closest('.screen');
@@ -11994,6 +13052,7 @@ function hideScreens() {
 // The settings panel takes the place of the screen it was opened from, so the city behind it
 // shows every change live; closing it brings that screen back.
 function openSettings(screen, showAgain) {
+  flowVersion++;
   screen.classList.add('hidden');
   settingsPanel.open(showAgain);
 }
@@ -12039,6 +13098,26 @@ function showTitle() {
   $('course-lock').textContent = $('extreme-status').textContent;
   $('course-input').value = '';
   $('course-error').textContent = '';
+  syncEnvironmentMenu();
+}
+
+function syncEnvironmentMenu() {
+  menuEnvironment = GAME.access.environment();
+  const sewer = menuEnvironment === 'sewer';
+  stage.classList.toggle('sewer-menu', sewer && mode === 'title');
+  $('title').textContent = sewer ? 'THE SEWER' : 'NEON FLIGHT';
+  $('sewer-note').hidden = !sewer;
+  $('environment-switch').hidden = !GAME.access.sewerUnlocked();
+  $('environment-switch').querySelector('span').textContent = sewer ? 'Return to the surface ↑' : 'The Sewer ↓';
+  $('environment-switch').setAttribute('aria-label', sewer ? 'Return to the surface menu' : 'Enter The Sewer menu');
+  if (mode === 'title') GAME.sound.setEnvironment(menuEnvironment);
+}
+
+async function switchEnvironment() {
+  if (mode !== 'title' || courseLoading) return;
+  GAME.access.setEnvironment(menuEnvironment === 'sewer' ? 'surface' : 'sewer');
+  soundtrack.reset(); GAME.sound.setLevel(0);
+  await GAME.sound.setEnvironment(menuEnvironment);
 }
 
 const copyTimers = new WeakMap();
@@ -12072,10 +13151,12 @@ async function copyCourse(button) {
 }
 
 function showMenu() {
+  leaveCollapse();
   hideScreens();
   hud.show(false);
   newRun();
   setMode('title');
+  GAME.sound.setLevel(0);
   releaseLandscape();
   if (document.pointerLockElement) document.exitPointerLock();
   showTitle();
@@ -12308,37 +13389,53 @@ const playHint = () => AUTOPILOT ? 'autopilot' : usesTouchStick() ? 'hold & drag
 
 // A fresh run of the current course, after a countdown.
 async function fly({ calibrate = false, seed = null } = {}) {
-  if (courseLoading) return;
-  let locked;
+  if (flightStarting || courseLoading || (mode === 'title' && menuEnvironment === 'sewer')) return;
+  flightStarting = true;
+  leaveCollapse();
+  const originMode = mode;
+  let request = flowVersion, locked;
+  startBtn.disabled = true; startBtn.textContent = 'preparing…';
   try {
-    runLandscapeSide = currentLandscapeSide();
-    runScreenAngle = currentScreenAngle();
-    // Sideways play with the browser still portrait: fly on the side the phone is held.
-    if (sidewaysAngle !== null && runScreenAngle % 180 === 0) {
-      runScreenAngle = sidewaysAngle;
-      runLandscapeSide = sidewaysAngle === 270 ? 'landscape-secondary' : 'landscape-primary';
+    try {
+      runLandscapeSide = currentLandscapeSide();
+      runScreenAngle = currentScreenAngle();
+      // Sideways play with the browser still portrait: fly on the side the phone is held.
+      if (sidewaysAngle !== null && runScreenAngle % 180 === 0) {
+        runScreenAngle = sidewaysAngle;
+        runLandscapeSide = sidewaysAngle === 270 ? 'landscape-secondary' : 'landscape-primary';
+      }
+      markViewAngle();
+      input.setDisplayAngle(runScreenAngle);
+      const forward = TOUCH && !usesTouchStick() && calibrate ? input.forwardAngle() : null;
+      steadyLandscapeView();
+      const controls = takeControls();
+      enterFullscreen();
+      locked = await controls;
+      if (TOUCH && !usesTouchStick() && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
+    } catch (err) { releaseLandscape(); showControlFailure(err); return; }
+    if (request !== flowVersion || mode !== originMode) return;
+    if (seed !== null && !await loadCourse(seed)) {
+      if (document.pointerLockElement) document.exitPointerLock();
+      return;
     }
-    markViewAngle();
-    input.setDisplayAngle(runScreenAngle);
-    const forward = TOUCH && !usesTouchStick() && calibrate ? input.forwardAngle() : null;
-    steadyLandscapeView();
-    const controls = takeControls();
-    enterFullscreen();
-    locked = await controls;
-    if (TOUCH && !usesTouchStick() && calibrate && !AUTOPILOT) input.calibrateForward(forward ?? input.forwardAngle());
+    request = flowVersion;
+    const intendedCourse = course;
+    await ensureCollapsePrepared();
+    // Course/menu actions can cancel the worker while its old Fly callback is pending.
+    if (request !== flowVersion || course !== intendedCourse || mode !== originMode || courseLoading
+        || (mode === 'title' && GAME.access.environment() === 'sewer')) return;
+    clearControlFailure();
+    stage.classList.remove('sewer-menu');
+    hideScreens();
+    hud.show(true);
+    newRun();
+    GAME.sound.prepareRun();
+    startCountdown(COUNT_TICKS);
+    if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
+  } finally {
+    flightStarting = false;
+    startBtn.disabled = false; startBtn.textContent = 'fly';
   }
-  catch (err) { releaseLandscape(); showControlFailure(err); return; }
-  if (seed !== null && !await loadCourse(seed)) {
-    if (document.pointerLockElement) document.exitPointerLock();
-    return;
-  }
-  clearControlFailure();
-  hideScreens();
-  hud.show(true);
-  newRun();
-  GAME.sound.prepareRun();
-  startCountdown(COUNT_TICKS);
-  if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
 }
 
 async function newCourse() {
@@ -12417,6 +13514,7 @@ document.addEventListener('fullscreenchange', () => {
   else if (TOUCH && ['countdown', 'playing', 'crashed'].includes(mode)) pause();
 });
 window.addEventListener('keydown', e => {
+  if (mode === 'sewer-reveal') { e.preventDefault(); return; }
   if (shopPanel?.isOpen) return;
   if (courseLoading) {
     if (e.code === 'Escape' && course) { e.preventDefault(); GAME.courseLoader.cancel(); }
@@ -12451,6 +13549,7 @@ window.addEventListener('keydown', e => {
 const IN_RUN = new Set(['countdown', 'playing', 'crashed']);
 canvas.addEventListener('click', () => { if (!TOUCH && !AUTOPILOT && IN_RUN.has(mode) && !document.pointerLockElement) input.lockPointer(); });
 startBtn.addEventListener('click', action(() => fly({ calibrate: true })));
+$('environment-switch').addEventListener('click', action(switchEnvironment));
 for (const id of ['course-options', 'difficulty-options']) $(id).addEventListener('click', () => openCourseOptions($(id)));
 $('course-done').addEventListener('click', () => closeCourseOptions());
 courseDialog.addEventListener('click', e => { if (e.target === courseDialog) closeCourseOptions(); });
@@ -12477,7 +13576,7 @@ $('info-done').addEventListener('click', () => closeInfo());
 infoScreen.addEventListener('click', e => { if (e.target === infoScreen) closeInfo(); });
 $('title-settings').addEventListener('click', action(() => openSettings(overlay, showTitle)));
 $('pause-settings').addEventListener('click', action(() => openSettings(pausePanel, showPause)));
-for (const id of ['title-shop', 'pause-shop']) $(id).addEventListener('click', () => shopPanel.open($(id)));
+for (const id of ['title-shop', 'pause-shop']) $(id).addEventListener('click', () => { flowVersion++; shopPanel.open($(id)); });
 $('rotate-sideways').addEventListener('click', action(playSideways));
 
 // ---- Boot -------------------------------------------------------------------------------------
@@ -12488,6 +13587,7 @@ async function boot() {
   GAME.shop.refresh();
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
+  sewerRenderer = GAME.sewerRenderer.create(GAME.gfx);
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause, onLift: () => useLift().catch(fail) });
   input = GAME.input.create(canvas);
   if (TOUCH) touchStick = GAME.touchStick.create(stage, (x, y) => input.setTouchStick(x, y));
@@ -12495,9 +13595,16 @@ async function boot() {
   applyVolumes();
   // Music renders while the shaders compile; it starts playing at the first press once ready.
   GAME.sound.load(GAME.settings.get('musicTrack'));
+  if (menuEnvironment === 'sewer') GAME.sound.setEnvironment('sewer');
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
   shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH });
-  GAME.shop.onChange(refreshShopButtons);
+  GAME.shop.onChange(() => { refreshShopButtons(); ensureCollapsePrepared(); });
+  GAME.access.onChange(() => {
+    GAME.settings.updateSongOptions();
+    if (mode === 'title') {
+      syncEnvironmentMenu();
+    }
+  });
   refreshShopButtons();
   resolution.setBudget(GAME.settings.get('quality'));
   applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
@@ -12516,6 +13623,10 @@ async function boot() {
   api.ready = true;
   api.state = () => ({
     mode, loading: courseLoading, input: input.mode, code: seedCode, difficulty, extremeUnlocked: extremeUnlocked(seedCode), courseLength: course.length,
+    environment: menuEnvironment, sewerUnlocked: GAME.access.sewerUnlocked(), collapseActive: !!collapse,
+    collapse: collapse ? { time: collapse.time, progress: collapse.progress, hole: { ...collapse.hole }, hazards: collapse.hazards } : null,
+    collapseTrigger: !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger ?? null : null,
+    fountains: course.fountains ?? [],
     obstacles: city.obstacles.length, routeObstacles: course.obstacles,
     props: city.courseProps?.length ?? 0, pipes: city.courseProps?.filter(p => p.type === 'pipe').length ?? 0,
     bridges: city.bridgePipes?.length ?? 0, activeBridges: course.activeBridges ?? 0,
@@ -12526,7 +13637,7 @@ async function boot() {
     })) ?? [],
     glider: { ...run.glider }, next: run.next, checkpoint: run.checkpoint, checkpointPose: GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
-    proof: course.proof, medals: medalLadder(course),
+    proof: course.proof, medals: collapse ? [] : medalLadder(course),
     stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), newStars, starBank: GAME.starBank.total(),
     shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
@@ -12554,11 +13665,21 @@ const MISTAKES = {
 
 function autopilotTools() {
   return {
+    findCollapse() {
+      let source = null, routed;
+      pilotStick = () => {
+        if (source !== course) {
+          source = course;
+          routed = !collapse && course.collapse?.approachLine ? { ...course, line: course.collapse.approachLine } : course;
+        }
+        return !collapse && routed !== course ? GAME.collapse.approachSteer(pilot, run.glider, routed) : autoSteer(routed);
+      };
+    },
     collectStars() {
       let source = null, routed;
       pilotStick = () => {
         if (source !== course) { source = course; routed = { ...course, line: GAME.stars.detourLine(course) }; }
-        return GAME.autopilot.steer(pilot, run.glider, routed);
+        return autoSteer(routed);
       };
     },
     speed(k) { if (!(k > 0 && k <= 16)) throw new Error(`time scale ${k} out of range`); timeScale = k; },
