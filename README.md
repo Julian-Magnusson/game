@@ -2,6 +2,10 @@
 
 Play at **https://julian-magnusson.github.io/game/**.
 
+Graphics startup can fall back to simpler effects if a desktop driver rejects bloom or film
+shaders. A graphics reset gets one automatic startup retry; a repeated interruption offers
+**Retry graphics**. Saved progress and settings are preserved.
+
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional
 touch stick on mobile. Find stars on harder detours, finish the course to save them, then spend
 them in Shop. Saved stars are shared across difficulties; unfinished finds are lost on leaving
