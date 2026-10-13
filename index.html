@@ -413,8 +413,11 @@
   #environment-switch[hidden], #sewer-note[hidden] { display: none; }
   #environment-switch svg { width: 26px; height: 26px; }
   #sewer-note { max-width: 360px; margin: 18px 0; padding: 0 20px; color: #a6c7be; font-size: 12px; line-height: 1.7; letter-spacing: 0.06em; }
-  .sewer-menu .menu-course, .sewer-menu #shuffle, .sewer-menu #start, .sewer-menu #title-info { display: none; }
-  .sewer-menu #overlay .panel-buttons { display: flex; justify-content: center; }
+  .sewer-menu #title-stars { display: none; }
+  .sewer-world .hud-stars, .sewer-world #pause-stars, .sewer-world .res-stars { display: none; }
+  .sewer-rules { display: none; }
+  .sewer-world .surface-rules { display: none; }
+  .sewer-world .sewer-rules { display: block; }
   .sewer-menu #overlay { background: radial-gradient(ellipse at center, #031d171a, #00000050); }
   .sewer-menu #title { color: #dbf5e7; letter-spacing: 0.25em; margin-right: -0.25em; text-shadow: 0 0 22px #50baa955; }
   #sewer-reveal { position: absolute; inset: 0; z-index: 60; background: #000; color: #fff;
@@ -539,7 +542,7 @@
     <div id="title-stars" class="star-summary"></div>
   </div>
   <div class="panel-buttons"><button id="shuffle" class="btn alt" disabled>new course</button><button id="start" class="btn primary" disabled>loading</button><button id="title-settings" class="btn" disabled>settings</button></div>
-  <p id="sewer-note" hidden>The city fades above. An underground flight is coming next.</p>
+  <p id="sewer-note" hidden></p>
   <button id="environment-switch" class="btn" type="button" hidden><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><ellipse cx="16" cy="12" rx="12" ry="6" stroke="currentColor"/><path d="M4 12v5c0 8 24 8 24 0v-5M8 10l16 4M8 14l16-4M16 6v12" stroke="currentColor"/></svg><span>The Sewer</span></button>
   <div id="status"></div>
 </div>
@@ -588,22 +591,25 @@
     <div class="info-head"><h2 id="info-title">HOW TO FLY</h2><button id="info-done" class="btn primary" type="button">done</button></div>
     <section class="info-section"><h3>Controls</h3><p id="controls"></p><p id="info-pitch"></p></section>
     <section class="info-section"><h3>Course rules</h3>
-      <p>Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
-      <p>Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
-      <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate. Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
-      <p>Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Finds are shared across difficulties for that course and stay saved through crashes and retries. Stars you already own become faint outlines. Stars are optional; collecting one adds no time bonus or penalty.</p>
+      <p class="surface-rules">Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
+      <p class="surface-rules">Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
+      <p class="sewer-rules">Follow the rings through the main collectors, smaller connecting tunnels and winding shafts. Moving air supports a level glide; rising shafts have an updraft. Steer around round pipes and dirt banks, and stay above the green water. The water, walls and obstacles all cause a crash.</p>
+      <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
+      <p class="surface-rules">Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
+      <p class="surface-rules">Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Finds are shared across difficulties for that course and stay saved through crashes and retries. Stars you already own become faint outlines. Stars are optional; collecting one adds no time bonus or penalty.</p>
     </section>
     <section class="info-section"><h3>Star shop</h3>
       <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
       <p>Using one makes the flight <strong>assisted</strong>: collected stars still save, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
     </section>
     <section class="info-section"><h3>Difficulty</h3>
-      <ul class="info-difficulties">
+      <ul class="info-difficulties surface-rules">
         <li><strong>Easy:</strong> open avenues and regular rings; no side streets or course obstacles.</li>
         <li><strong>Medium:</strong> a few wider side streets and obstacles; regular rings.</li>
         <li><strong>Hard:</strong> more narrow turns and obstacles; smaller rings.</li>
         <li><strong>Extreme:</strong> tight streets and wooded parks, smaller rings and faster flight.</li>
       </ul>
+      <p class="sewer-rules">Higher difficulties narrow the tunnels and rings and add more pipe obstacles and dirt banks. Extreme also raises flight speed. Sewer times and Extreme unlocks are saved separately from the surface.</p>
       <p id="extreme-status" role="status"></p>
     </section>
     <section class="info-section orientation-info"><h3>Screen orientation</h3>
@@ -656,7 +662,7 @@
     <div id="shop-message" role="status" aria-live="polite"></div>
     <article class="shop-key-item">
       <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
-      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p>Reveals hidden red rings on Hard and Extreme. Find a way beneath the city.</p><span id="shop-key-owned">Not owned</span></div>
+      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p>???</p><span id="shop-key-owned">Not owned</span></div>
       <strong id="shop-key-price">★ 10</strong><button id="shop-key-buy" class="btn" type="button">unlock · 10 ★</button>
     </article>
   </div>
@@ -3626,8 +3632,13 @@ self.onmessage = e => {
 'use strict';
 // ---- src/game/course-worker.js ----
 // The exact same generator and flight proofs as the game, away from the UI thread.
-self.onmessage = ({ data: { seed, difficulty, collapse = false, world } }) => {
+self.onmessage = ({ data: { seed, difficulty, environment = 'surface', collapse = false, world } }) => {
   try {
+    if (environment === 'sewer') {
+      const generated = GAME.sewerCourse.generate(seed, difficulty);
+      self.postMessage({ world: GAME.courseData.pack(generated.city, generated.course) });
+      return;
+    }
     const cached = world ? GAME.courseData.unpack(world) : null;
     const city = cached ? cached.city : GAME.city.generate(seed, difficulty);
     const course = cached ? cached.course : GAME.course.generate(city, seed, difficulty);
@@ -7390,11 +7401,13 @@ GAME.course = { generate, DIFFICULTIES, VERSION, EASY_VERSION, UNLOCK_VERSION, E
 const dataOf = object => Object.fromEntries(Object.entries(object).filter(([, value]) => typeof value !== 'function'));
 
 function pack(city, course) {
+  if (city.environment === 'sewer') return GAME.sewerCourse.pack(city, course);
   const energy = Float64Array.from({ length: course.line.n }, (_, k) => course.energyAt(k * course.sample));
   return { city: dataOf(city), course: { ...dataOf(course), energy } };
 }
 
 function unpack(data) {
+  if (data.city.environment === 'sewer') return GAME.sewerCourse.unpack(data);
   const city = GAME.city.restore(data.city), course = data.course;
   course.energyAt = s => course.energy[Math.max(0, Math.min(course.energy.length - 1, Math.round(s / course.sample)))];
   return { city, course };
@@ -7656,6 +7669,383 @@ function begin(city, course, secret = course.collapse, glider = null) {
 }
 
 GAME.collapse = { prepare, begin, step, steer, approachSteer, prove, through, crossing, fallOffset, TRIGGER_RADIUS, HOLE_RADIUS };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/game/sewer-course.js ----
+// A connected underground network. Both collision and rendering use the same union of round
+// tunnels clipped by their water surfaces; the glider can never leave that enclosed air volume.
+const SAMPLE = 4, DT = 1 / 120;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+const PROFILES = {
+  easy: { main: 29, side: 23, gate: 9, pipes: 8, dirt: 6 },
+  medium: { main: 26, side: 21, gate: 7.8, pipes: 13, dirt: 8 },
+  hard: { main: 24, side: 19, gate: 6.6, pipes: 19, dirt: 11 },
+  extreme: { main: 22, side: 17, gate: 5.2, pipes: 24, dirt: 14 },
+};
+
+function segmentPoint(point, a, b) {
+  const ba = b.map((v, i) => v - a[i]), pa = point.map((v, i) => v - a[i]);
+  const t = clamp(dot(pa, ba) / (dot(ba, ba) || 1), 0, 1);
+  return a.map((v, i) => v + ba[i] * t);
+}
+function distanceToSegment(point, a, b) {
+  const bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2];
+  const px = point[0] - a[0], py = point[1] - a[1], pz = point[2] - a[2];
+  const t = clamp((px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz || 1), 0, 1);
+  return Math.hypot(px - bx * t, py - by * t, pz - bz * t);
+}
+
+function sphere(city, x, y, z, radius) {
+  const p = [x, y, z], world = city.sewer;
+  let inShell = false, safe = false;
+  for (const tube of world.tunnels) {
+    const distance = distanceToSegment(p, tube.a, tube.b);
+    if (distance + radius <= tube.radius) {
+      inShell = true;
+      if (tube.water === null || y - radius > tube.water) { safe = true; break; }
+    }
+  }
+  if (!safe) return { kind: inShell ? 'ground' : 'tower', sewer: inShell ? 'water' : 'wall' };
+  for (const [i, pipe] of world.pipes.entries()) {
+    if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: 'pipe', pipe: i };
+  }
+  for (const [i, pile] of world.dirt.entries()) {
+    if (Math.abs(x - pile.centre[0]) > pile.radii[0] + radius
+      || Math.abs(y - pile.centre[1]) > pile.radii[1] + radius
+      || Math.abs(z - pile.centre[2]) > pile.radii[2] + radius) continue;
+    const bounds = pile.centre.map((v, j) => v - pile.radii[j])
+      .concat(pile.centre.map((v, j) => v + pile.radii[j]));
+    if (GAME.collide.ellipsoidDistance2(bounds, x, y, z) <= radius * radius) return { kind: 'tower', sewer: 'dirt', dirt: i };
+  }
+  return null;
+}
+
+// A height query takes the player's level because one network can run above another. The lower
+// edge of the containing dry volume is its water, with a dirt bank or pipe on top when present.
+function groundHeight(city, x, z, y = city.sewer.startY) {
+  const p = [x, y, z];
+  let floor = -Infinity, best = Infinity;
+  for (const tube of city.sewer.tunnels) {
+    const distance = distanceToSegment(p, tube.a, tube.b);
+    if (distance <= tube.radius && distance < best && (tube.water === null || y > tube.water)) {
+      best = distance; floor = tube.water ?? Math.min(tube.a[1], tube.b[1]) - tube.radius;
+    }
+  }
+  if (!Number.isFinite(floor)) floor = city.sewer.minY;
+  for (const pile of city.sewer.dirt) {
+    const q = ((x - pile.centre[0]) / pile.radii[0]) ** 2 + ((z - pile.centre[2]) / pile.radii[2]) ** 2;
+    if (q <= 1) {
+      const top = pile.centre[1] + pile.radii[1] * Math.sqrt(1 - q);
+      if (top <= y + GAME.flight.FLIGHT.RADIUS) floor = Math.max(floor, top);
+    }
+  }
+  return floor;
+}
+
+function current(city, x, y, z) {
+  let lift = GAME.flight.FLIGHT.SINK;
+  for (const shaft of city.sewer.shafts) {
+    const radial = Math.hypot(x - shaft.a[0], z - shaft.a[2]);
+    if (radial < shaft.radius - 8 && y > shaft.a[1] - 12 && y < shaft.b[1] + 12) {
+      const blend = clamp((y - shaft.a[1] + 12) / 16, 0, 1) * clamp((shaft.b[1] + 12 - y) / 16, 0, 1);
+      lift += shaft.lift * blend;
+    }
+  }
+  return lift;
+}
+
+function step(run, stick, dt) {
+  if (run.crashed || run.finished) return [];
+  const events = [], g = run.glider, from = [g.x, g.y, g.z];
+  if (!run.lastSafePosition) {
+    const valid = !sphere(run.city, ...from, GAME.flight.FLIGHT.RADIUS);
+    run.lastSafePosition = valid ? [...from] : [run.course.start.x, run.course.start.y, run.course.start.z];
+  }
+  const power = Math.min(22.5, run.powerLift / dt);
+  run.powerLift -= power * dt;
+  // The tunnel's moving air supports a level glide; the riser's ventilation lifts the player.
+  GAME.flight.step(g, stick, dt, () => current(run.city, g.x, g.y, g.z)
+    + GAME.flight.FLIGHT.TURN_SINK * Math.abs(stick.x) + power);
+  run.time += dt;
+  const to = [g.x, g.y, g.z], hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS);
+  if (hit) {
+    run.crashed = hit; run.crashes++; run.retries++; run.penalty += GAME.run.PENALTY.crash;
+    // Keep the crash camera in the enclosed air. At maximum speed the attempted position can
+    // cross the wall itself in one step; freezing there would show the void outside the bore.
+    [g.x, g.y, g.z] = run.lastSafePosition;
+    events.push({ type: 'crash', hit }); return events;
+  }
+  run.lastSafePosition = [g.x, g.y, g.z];
+  const gate = run.course.gates[run.next];
+  if (gate) {
+    const crossed = GAME.collapse.crossing(from, to, gate);
+    if (crossed) {
+      const through = crossed.distance <= gate.radius;
+      if (!through && crossed.distance <= run.course.maxRadius * 2) {
+        run.missed++; run.penalty += GAME.run.PENALTY.missed;
+        events.push({ type: 'missed', gate: run.next });
+      }
+      if (through || (!gate.finish && crossed.distance <= run.course.maxRadius * 2)) {
+        if (through) events.push({ type: 'gate', gate: run.next });
+        run.checkpoint = run.next++; run.retries = 0;
+        if (gate.finish) { run.finished = true; events.push({ type: 'finish' }); }
+      }
+    }
+  }
+  // Being inside the actual tunnel replaces the surface's distance-to-course return boundary.
+  run.boundary.distance = 0; run.boundary.intensity = 0; run.boundary.travel = 0;
+  return events;
+}
+
+function linePose(course, s) {
+  const k = clamp(Math.round(s / course.sample), 0, course.line.n - 2), L = course.line;
+  return { x: L.x[k], y: L.y[k], z: L.z[k], yaw: Math.atan2(L.x[k + 1] - L.x[k], L.z[k + 1] - L.z[k]) };
+}
+
+function respawnPose(run) {
+  // Never add the surface's retry height: a tunnel roof is just as solid as its water floor.
+  const s = run.checkpoint < 0 ? 0 : run.course.gates[run.checkpoint].s + 8;
+  return linePose(run.course, s);
+}
+
+function respawn(run) {
+  run.glider = GAME.flight.create(respawnPose(run), run.course.difficulty);
+  run.lastSafePosition = [run.glider.x, run.glider.y, run.glider.z];
+  run.crashed = null; run.lift = 0; run.powerLift = 0;
+  run.boundary = { distance: 0, travel: 0, intensity: 0, tick: 0 };
+  // powerUsed belongs to the attempt and deliberately survives a crash.
+}
+
+function steer(pilot, glider, course) {
+  const L = course.line;
+  let best = pilot.k, bestD = Infinity;
+  for (let k = Math.max(0, pilot.k - 3); k < Math.min(L.n, pilot.k + 55); k++) {
+    const d = (L.x[k] - glider.x) ** 2 + (L.y[k] - glider.y) ** 2 + (L.z[k] - glider.z) ** 2;
+    if (d < bestD) { best = k; bestD = d; }
+  }
+  pilot.k = best;
+  const ahead = distance => Math.min(L.n - 1, best + Math.round(distance / course.sample));
+  const target = ahead(12 + glider.speed * 0.18);
+  const x = clamp(-wrap(Math.atan2(L.x[target] - glider.x, L.z[target] - glider.z) - glider.yaw) * 3, -1, 1);
+  const a = ahead(glider.speed * 0.20), b = Math.min(L.n - 1, a + 3);
+  const slope = (L.y[b] - L.y[a]) / Math.max(1, (b - a) * course.sample);
+  const vy = slope * glider.speed + 1.7 * (L.y[ahead(glider.speed * 0.07)] - glider.y);
+  const wind = course.currentAt(glider.x, glider.y, glider.z);
+  const gamma = Math.asin(clamp((vy + GAME.flight.FLIGHT.SINK - wind) / glider.speed, -1, 1));
+  const F = GAME.flight.FLIGHT;
+  const authority = clamp((glider.speed - F.MIN_SPEED) / (GAME.flight.cruise(course.difficulty) * 0.9 - F.MIN_SPEED), 0, 1);
+  const eased = authority * authority * (3 - 2 * authority);
+  return { x, y: clamp(gamma / (gamma >= 0 ? F.CLIMB_ANGLE * Math.max(0.1, eased) : F.DIVE_ANGLE), -1, 1) };
+}
+
+function prove(city, course, mistakes = null) {
+  const run = GAME.run.create(city, course), pilot = { k: 0 }, events = [], path = [];
+  const crashes = [...(mistakes?.crashAt || [])], random = GAME.rng.stream(city.seed, 'sewer-shaky');
+  let wobble = { x: 0, y: 0 }, tick = 0;
+  while (!run.finished && run.time < course.par * 3 + 30) {
+    const stick = steer(pilot, run.glider, course);
+    if (mistakes?.noise) {
+      if (tick % 30 === 0) wobble = { x: (random() * 2 - 1) * mistakes.noise, y: (random() * 2 - 1) * mistakes.noise };
+      stick.x = clamp(stick.x + wobble.x, -1, 1); stick.y = clamp(stick.y + wobble.y, -1, 1);
+    }
+    if (crashes.length && run.time >= crashes[0]) {
+      crashes.shift(); const p = run.glider;
+      p.y = groundHeight(city, p.x, p.z, p.y) - 2;
+    }
+    events.push(...step(run, stick, DT).map(event => ({ ...event, time: run.time })));
+    if (tick++ % 8 === 0 && !run.crashed) path.push({ x: run.glider.x, y: run.glider.y, z: run.glider.z });
+    if (run.crashed) {
+      if (!mistakes || run.crashes > 8) break;
+      respawn(run);
+      pilot.k = Math.round((run.checkpoint < 0 ? 0 : course.gates[run.checkpoint].s + 8) / course.sample);
+    }
+  }
+  return { finished: run.finished, time: run.time, total: GAME.run.total(run), crashes: run.crashes,
+    missed: run.missed, gate: run.next, boosts: 0, events, path };
+}
+
+function restore(city, course) {
+  course.energyAt = s => course.line.y[clamp(Math.round(s / SAMPLE), 0, course.line.n - 1)];
+  course.currentAt = (x, y, z) => current(city, x, y, z);
+  return { city, course };
+}
+function pack(city, course) {
+  return { city, course: Object.fromEntries(Object.entries(course).filter(([, v]) => typeof v !== 'function')) };
+}
+const unpack = data => restore(data.city, data.course);
+
+function generate(seed, difficulty = 'medium') {
+  const profile = PROFILES[difficulty];
+  if (!profile) throw new Error(`unknown sewer difficulty ${difficulty}`);
+  const r = GAME.rng.stream(seed, 'sewer-network-v1'), mirrored = r.chance(0.5) ? -1 : 1;
+  const rotation = r.range(-Math.PI, Math.PI), ox = 1050, oz = 1050;
+  const transform = p => [ox + Math.cos(rotation) * p[0] * mirrored + Math.sin(rotation) * p[2],
+    p[1], oz - Math.sin(rotation) * p[0] * mirrored + Math.cos(rotation) * p[2]];
+  const raw = [], tunnels = [], shafts = [], ranges = [];
+  let pose = [0, 80, 0], yaw = 0, distance = 0;
+  const point = p => {
+    if (raw.length) distance += Math.hypot(...p.map((v, i) => v - raw.at(-1).p[i]));
+    raw.push({ p: [...p], s: distance }); pose = [...p];
+  };
+  point(pose);
+  function tubePath(points, kind, radius) {
+    const first = distance, water = points[0][1] - radius * 0.65;
+    for (let k = 1; k < points.length; k++) point(points[k]);
+    // A handful of long capsules makes straight tunnels cheap; bends use short cylinders.
+    const chunk = kind === 'main' && points.length > 30 ? 30 : 8;
+    for (let k = 0; k < points.length - 1; k += chunk) {
+      const end = Math.min(points.length - 1, k + chunk), a = points[k], b = points[end];
+      tunnels.push({ a: transform(a), b: transform(b), radius, kind,
+        water: Math.min(a[1], b[1]) - radius * 0.65 });
+    }
+    ranges.push({ s0: first, s1: distance, kind, radius, water, straight: true });
+  }
+  function straight(length, kind = 'main', dy = 0) {
+    const a = [...pose], points = [a], steps = Math.ceil(length / SAMPLE);
+    for (let k = 1; k <= steps; k++) {
+      const f = k / steps;
+      points.push([a[0] + Math.sin(yaw) * length * f, a[1] + dy * f, a[2] + Math.cos(yaw) * length * f]);
+    }
+    tubePath(points, kind, kind === 'side' ? profile.side : profile.main);
+  }
+  function turn(angle, radius, kind = 'main') {
+    const a = [...pose], from = yaw, points = [a], steps = Math.ceil(Math.abs(angle) * radius / SAMPLE);
+    const sign = Math.sign(angle);
+    for (let k = 1; k <= steps; k++) {
+      const theta = from + angle * k / steps;
+      points.push([a[0] + radius / sign * (Math.cos(from) - Math.cos(theta)), a[1],
+        a[2] + radius / sign * (Math.sin(theta) - Math.sin(from))]);
+    }
+    const first = distance;
+    // Arc chords must stay short even when a curve belongs to the large main tunnel.
+    for (let k = 1; k < points.length; k++) point(points[k]);
+    const width = kind === 'side' ? profile.side : profile.main;
+    for (let k = 0; k < points.length - 1; k += 7) {
+      const end = Math.min(points.length - 1, k + 7);
+      tunnels.push({ a: transform(points[k]), b: transform(points[end]), radius: width, kind, water: a[1] - width * 0.65 });
+    }
+    ranges.push({ s0: first, s1: distance, kind, radius: width, water: a[1] - width * 0.65, straight: false });
+    yaw += angle;
+  }
+  function shaft(dy, radius, hand) {
+    const start = [...pose], side = [Math.cos(yaw) * hand, 0, -Math.sin(yaw) * hand];
+    const centre = [start[0] + side[0] * radius, start[1], start[2] + side[2] * radius];
+    const startAngle = Math.atan2(start[2] - centre[2], start[0] - centre[0]);
+    // Increasing polar angle points towards -x at the southern entry; choose the hand from yaw.
+    const tangent = [-Math.sin(startAngle), 0, Math.cos(startAngle)];
+    const forward = [Math.sin(yaw), 0, Math.cos(yaw)], winding = dot(tangent, forward) >= 0 ? 1 : -1;
+    const first = distance, width = radius + 31, lo = Math.min(start[1], start[1] + dy), hi = Math.max(start[1], start[1] + dy);
+    const geometry = { a: transform([centre[0], lo, centre[2]]), b: transform([centre[0], hi, centre[2]]),
+      radius: width, kind: dy > 0 ? 'riser' : 'drop', water: lo - 17 };
+    tunnels.push(geometry);
+    shafts.push({ ...geometry, lift: dy > 0 ? 9.5 : 0 });
+    const steps = Math.ceil(Math.hypot(2 * Math.PI * radius, dy) / SAMPLE);
+    for (let k = 1; k <= steps; k++) {
+      const angle = startAngle + winding * Math.PI * 2 * k / steps;
+      point([centre[0] + Math.cos(angle) * radius, start[1] + dy * k / steps, centre[2] + Math.sin(angle) * radius]);
+    }
+    ranges.push({ s0: first, s1: distance, kind: geometry.kind, radius: width, water: geometry.water, straight: false });
+  }
+  // A main collector, a smaller connecting branch, and two stacked collector systems linked
+  // by a rising and a descending cylinder. The course remains enclosed even inside the shafts.
+  straight(420 + r.range(0, 60)); turn(Math.PI / 2, 115, 'main');
+  straight(310 + r.range(0, 50), 'side'); turn(-Math.PI / 2, 110, 'side');
+  straight(200, 'main'); shaft(70, 76, 1);
+  straight(280, 'main'); turn(-Math.PI / 2, 120, 'main');
+  straight(240, 'side'); shaft(-55, 96, -1);
+  straight(220, 'side'); turn(Math.PI / 2, 120, 'main');
+  straight(390, 'main');
+
+  const n = Math.ceil(distance / SAMPLE) + 1, line = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n) };
+  let source = 0;
+  for (let k = 0; k < n; k++) {
+    const s = Math.min(distance, k * SAMPLE);
+    while (source + 1 < raw.length - 1 && raw[source + 1].s < s) source++;
+    const a = raw[source], b = raw[source + 1], f = clamp((s - a.s) / (b.s - a.s), 0, 1);
+    const p = transform(a.p.map((v, i) => v + (b.p[i] - v) * f));
+    [line.x[k], line.y[k], line.z[k]] = p;
+  }
+  const at = s => {
+    const k = clamp(Math.round(s / SAMPLE), 1, n - 2), p = [line.x[k], line.y[k], line.z[k]];
+    const tangent = [line.x[k + 1] - line.x[k - 1], 0, line.z[k + 1] - line.z[k - 1]];
+    const length = Math.hypot(...tangent), direction = tangent.map(v => v / length);
+    return { k, p, direction, side: [-direction[2], 0, direction[0]] };
+  };
+  const inflows = [];
+  for (const range of ranges.filter(range => ['main', 'side'].includes(range.kind))) {
+    const s = (range.s0 + range.s1) / 2, { p, direction, side } = at(s), sign = r.chance(0.5) ? -1 : 1;
+    const mouth = p.map((v, i) => v + side[i] * sign * (range.radius - 2));
+    mouth[1] = range.water + 8;
+    const back = mouth.map((v, i) => v + side[i] * sign * 75 + direction[i] * 18);
+    back[1] += 2;
+    const width = 6 + r.range(0, 1.4);
+    tunnels.push({ a: mouth, b: back, radius: width, kind: 'inlet', water: mouth[1] - width * 0.45 });
+    inflows.push({ a: [...mouth], b: [mouth[0] - side[0] * sign * 7, range.water + 0.6, mouth[2] - side[2] * sign * 7],
+      radius: 1.1, side: sign });
+  }
+  const pipes = [], dirt = [];
+  const candidates = ranges.filter(range => range.straight && range.s1 - range.s0 > 150);
+  const placements = candidates.flatMap(range => {
+    const count = Math.max(1, Math.floor((range.s1 - range.s0 - 70) / 72));
+    return Array.from({ length: count }, (_, index) => ({ range, s: range.s0 + 65 + index * (range.s1 - range.s0 - 110) / Math.max(1, count - 1) }));
+  });
+  for (const [index, { range, s }] of placements.entries()) {
+    if (pipes.length >= profile.pipes) break;
+    const { p, side, direction } = at(s), sign = index % 2 ? 1 : -1;
+    const height = p[1] + (sign > 0 ? 7 : -7), pipeRadius = difficulty === 'extreme' ? 2.4 : difficulty === 'hard' ? 2.1 : 1.7;
+    const a = p.map((v, i) => v - side[i] * (range.radius - 1)), b = p.map((v, i) => v + side[i] * (range.radius - 1));
+    a[1] = height; b[1] = height + (index % 3 === 0 ? 2.2 : 0);
+    pipes.push({ a, b, radius: pipeRadius, kind: index % 3 === 0 ? 'diagonal' : 'crossing', s });
+    // A circular return pipe follows one wall and turns into the ceiling. Its ends overlap so
+    // it reads as a continuous service pipe rather than a floating rectangular obstacle.
+    if (index % 3 === 1) {
+      const c = p.map((v, i) => v + side[i] * sign * (range.radius - 4) - direction[i] * 10);
+      c[1] = p[1] - 5;
+      const d = [...c]; d[1] = p[1] + 12;
+      pipes.push({ a: c, b: d, radius: 1.3, kind: 'riser', s });
+    }
+    if (dirt.length < profile.dirt) {
+      const centre = p.map((v, i) => v + side[i] * (index % 2 ? 1 : -1) * range.radius * 0.45 + direction[i] * 28);
+      centre[1] = range.water + 1.5;
+      dirt.push({ centre, radii: [7 + r.range(0, 3), 6.5 + r.range(0, 1.5), 8 + r.range(0, 4)] });
+    }
+  }
+  const gates = [];
+  // Gates at bends and shaft quarters make every connecting tunnel part of the ordered route.
+  for (const range of ranges) {
+    const count = range.kind === 'riser' || range.kind === 'drop' ? 4 : Math.max(1, Math.floor((range.s1 - range.s0) / 210));
+    for (let k = 1; k <= count; k++) {
+      const s = range.s0 + (range.s1 - range.s0) * k / (count + 0.25), { p, direction } = at(s);
+      gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction, s: Math.round(s / SAMPLE) * SAMPLE,
+        radius: profile.gate, finish: false });
+    }
+  }
+  const finishS = distance - 48, { p, direction } = at(finishS);
+  gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction,
+    s: Math.round(finishS / SAMPLE) * SAMPLE, radius: profile.gate, finish: true });
+  gates.sort((a, b) => a.s - b.s); gates.forEach((gate, index) => { gate.index = index; });
+  const city = { environment: 'sewer', seed, difficulty, size: 4096, maxHeight: 260, obstacles: pipes,
+    sewer: { tunnels, pipes, dirt, inflows, shafts, startY: 80, minY: 80 - profile.main * 0.65 } };
+  const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
+    start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
+    par: distance / GAME.flight.cruise(difficulty), attempt: 0, obstacles: pipes.length + dirt.length,
+    props: pipes.length, bridges: 0, version: 1 };
+  restore(city, course);
+  course.proof = prove(city, course);
+  if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
+    throw new Error(`unflyable sewer ${seed}/${difficulty}: ${JSON.stringify({ finished: course.proof.finished,
+      gate: course.proof.gate, crashes: course.proof.crashes, missed: course.proof.missed, last: course.proof.events.at(-1) })}`);
+  }
+  return { city, course };
+}
+
+GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
+  sphere, groundHeight, current, pack, unpack, distanceToSegment, PROFILES, SAMPLE };
 
 })();
 </script>
@@ -11288,7 +11678,7 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
   } else if (h.material < 3.5) {
     float wave = sin(p.z * 2.7 - uSewerTime * 0.7) + sin(p.x * 7.0 + p.z * 1.5 + uSewerTime * 0.5);
     vec3 normal = normalize(vec3(wave * 0.025, 1.0, cos(p.z * 2.2 + uSewerTime * 0.65) * 0.035));
-    col = vec3(0.004, 0.016, 0.017) * (0.85 + wave * 0.08);
+    col = vec3(0.007, 0.028, 0.006) * (0.85 + wave * 0.08);
     float segment = floor((p.z - 4.0) / 8.0);
     for (int i = -1; i <= 1; i++) {
       float index = segment + float(i);
@@ -11299,8 +11689,8 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     }
     float ripple = length(vec2(p.x - 0.6, mod(p.z - 8.0 + 6.0, 12.0) - 6.0));
     float age = mod(uSewerTime * 0.65, 1.0);
-    col += vec3(0.012, 0.04, 0.037) * sewerBand(ripple - age * 1.2, 0.03, pixel) * (1.0 - age);
-    col += vec3(0.006, 0.02, 0.016) * smoothstep(1.3, 1.9, abs(p.x));
+    col += vec3(0.014, 0.042, 0.009) * sewerBand(ripple - age * 1.2, 0.03, pixel) * (1.0 - age);
+    col += vec3(0.008, 0.026, 0.004) * smoothstep(1.3, 1.9, abs(p.x));
     return col;
   } else if (h.material < 4.5) {
     float rust = smoothstep(0.38, 0.68, damp + grain * 0.15);
@@ -11359,6 +11749,379 @@ function create(gfx) {
 }
 
 GAME.sewerRenderer = { create };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/render/sewer-flight.js ----
+// Underground flight. The air is the union of the simulation's water-clipped capsules;
+// intersecting their ray intervals keeps bends and junctions open without marching through
+// solid walls. Nearby geometry lives in a small texture, independent of total map length.
+const TUNNELS = 32, PIPES = 32, DIRT = 16, INFLOWS = 20;
+const PIPE_BASE = TUNNELS, DIRT_BASE = PIPE_BASE + PIPES, FLOW_BASE = DIRT_BASE + DIRT;
+const ATLAS_WIDTH = FLOW_BASE + INFLOWS, FAR = 280;
+
+const FRAG = `
+uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
+uniform vec2 uTanHalf;
+uniform highp sampler2D uSewerGeometry;
+uniform vec4 uSewerCount;
+uniform float uSewerMotion;
+const int TUNNELS = ${TUNNELS}, PIPES = ${PIPES}, DIRT = ${DIRT}, INFLOWS = ${INFLOWS};
+const int PIPE_BASE = ${PIPE_BASE}, DIRT_BASE = ${DIRT_BASE}, FLOW_BASE = ${FLOW_BASE};
+const float SEWER_FAR = ${FAR}.0, EMPTY = 1e6;
+
+float pulseAA(float x, float duty, float w) {
+  w = max(w, 1e-4);
+  float a = x - 0.5 * w, b = x + 0.5 * w;
+  return ((floor(b) - floor(a)) * duty + min(fract(b), duty) - min(fract(a), duty)) / w;
+}
+float bandAA(float x, float hw, float w) {
+  w = max(w, 1e-4);
+  return saturate((min(x + 0.5 * w, hw) - max(x - 0.5 * w, -hw)) / w);
+}
+float tube(float d, float hw, float pix) {
+  float w = max(hw, pix);
+  return exp(-d * d / (w * w)) * hw / w;
+}
+
+${GAME.overlay.GLSL}
+
+vec4 sewerData(int index, int row) { return texelFetch(uSewerGeometry, ivec2(index, row), 0); }
+
+// Ray/capsule intervals are exact: a finite cylinder and its two end spheres form a convex
+// union. The end spheres also handle parallel rays and joins without a precision-sensitive cap.
+vec2 sewerSphereInterval(vec3 ro, vec3 rd, vec3 centre, float radius) {
+  vec3 q = ro - centre;
+  float b = dot(q, rd), disc = b * b - dot(q, q) + radius * radius;
+  if (disc < 0.0) return vec2(EMPTY, -EMPTY);
+  float root = sqrt(disc);
+  return vec2(-b - root, -b + root);
+}
+
+vec2 sewerCapsuleInterval(vec3 ro, vec3 rd, vec3 a, vec3 b, float radius) {
+  vec3 ba = b - a, pa = ro - a;
+  float lengthAB = length(ba);
+  if (lengthAB < 0.0001) return sewerSphereInterval(ro, rd, a, radius);
+  vec3 axis = ba / lengthAB;
+  float along = dot(pa, axis), direction = dot(rd, axis);
+  vec3 q = pa - axis * along, d = rd - axis * direction;
+  float A = dot(d, d), B = dot(q, d), C = dot(q, q) - radius * radius;
+  vec2 interval = vec2(EMPTY, -EMPTY);
+  if (A > 0.000001) {
+    float disc = B * B - A * C;
+    if (disc >= 0.0) {
+      float root = sqrt(disc);
+      vec2 radial = vec2(-B - root, -B + root) / A;
+      if (abs(direction) > 0.000001) {
+        vec2 ends = vec2(-along, lengthAB - along) / direction;
+        radial = vec2(max(radial.x, min(ends.x, ends.y)), min(radial.y, max(ends.x, ends.y)));
+      } else if (along < 0.0 || along > lengthAB) radial = vec2(EMPTY, -EMPTY);
+      if (radial.x <= radial.y) interval = radial;
+    }
+  } else if (C <= 0.0 && abs(direction) > 0.000001) {
+    vec2 ends = vec2(-along, lengthAB - along) / direction;
+    interval = vec2(min(ends.x, ends.y), max(ends.x, ends.y));
+  }
+  vec2 sa = sewerSphereInterval(ro, rd, a, radius), sb = sewerSphereInterval(ro, rd, b, radius);
+  if (sa.x <= sa.y) interval = vec2(min(interval.x, sa.x), max(interval.y, sa.y));
+  if (sb.x <= sb.y) interval = vec2(min(interval.x, sb.x), max(interval.y, sb.y));
+  return interval;
+}
+
+vec3 sewerAxisPoint(vec3 p, vec3 a, vec3 b) {
+  vec3 ba = b - a;
+  return a + ba * clamp(dot(p - a, ba) / max(dot(ba, ba), 0.00001), 0.0, 1.0);
+}
+
+bool sewerBroadPhase(vec3 ro, vec3 rd, vec3 a, vec3 b, float radius) {
+  vec3 delta = (a + b) * 0.5 - ro;
+  float bound = length(b - a) * 0.5 + radius;
+  float along = dot(delta, rd);
+  return along + bound > 0.0 && length(delta - rd * max(along, 0.0)) <= bound;
+}
+
+struct SewerHit { float t; vec3 n; int kind; int index; };
+
+SewerHit sewerTrace(vec3 ro, vec3 rd) {
+  float edge = 0.0; int edgeIndex = -1; bool edgeWater = false;
+  // Selected capsules are ordered by camera distance. Most joins merge in the first pass;
+  // extra passes cover forks and vertical chambers. Recompute the small local set rather than
+  // spill a per-pixel interval array into GPU memory, which is costly on mobile hardware.
+  for (int pass = 0; pass < 8; pass++) {
+    bool changed = false;
+    for (int i = 0; i < TUNNELS; i++) {
+      if (float(i) >= uSewerCount.x) break;
+      vec4 a = sewerData(i, 0), b = sewerData(i, 1);
+      if (!sewerBroadPhase(ro, rd, a.xyz, b.xyz, a.w)) continue;
+      vec2 span = sewerCapsuleInterval(ro, rd, a.xyz, b.xyz, a.w);
+      bool isWater = false;
+      if (b.w > -99999.0) {
+        if (abs(rd.y) < 0.000001) { if (ro.y <= b.w) span = vec2(EMPTY, -EMPTY); }
+        else {
+          float water = (b.w - ro.y) / rd.y;
+          if (rd.y < 0.0 && water < span.y) { span.y = water; isWater = true; }
+          else if (rd.y > 0.0) span.x = max(span.x, water);
+        }
+      }
+      if (span.x <= span.y && span.x <= edge + 0.003 && span.y > edge + 0.001) {
+        edge = span.y; edgeIndex = i; edgeWater = isWater; changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  SewerHit h; h.t = min(max(edge, 0.0), SEWER_FAR); h.kind = 0; h.n = -rd; h.index = max(edgeIndex, 0);
+  if (edgeIndex >= 0 && edge < SEWER_FAR) {
+    vec4 a = sewerData(edgeIndex, 0), b = sewerData(edgeIndex, 1);
+    vec3 p = ro + rd * edge;
+    h.kind = edgeWater ? 2 : 1;
+    h.n = edgeWater ? vec3(0.0, 1.0, 0.0) : normalize(sewerAxisPoint(p, a.xyz, b.xyz) - p);
+  }
+  for (int i = 0; i < PIPES; i++) {
+    if (float(i) >= uSewerCount.y) break;
+    int index = PIPE_BASE + i;
+    vec4 a = sewerData(index, 0), b = sewerData(index, 1);
+    if (!sewerBroadPhase(ro, rd, a.xyz, b.xyz, a.w)) continue;
+    vec2 span = sewerCapsuleInterval(ro, rd, a.xyz, b.xyz, a.w);
+    float t = span.x > 0.001 ? span.x : span.y;
+    if (span.x <= span.y && t > 0.001 && t < h.t) {
+      h.t = t; h.kind = 3; h.index = index;
+      vec3 p = ro + rd * t;
+      h.n = normalize(p - sewerAxisPoint(p, a.xyz, b.xyz));
+    }
+  }
+  for (int i = 0; i < DIRT; i++) {
+    if (float(i) >= uSewerCount.z) break;
+    int index = DIRT_BASE + i;
+    vec3 centre = sewerData(index, 0).xyz, radii = sewerData(index, 1).xyz;
+    vec3 q = (ro - centre) / radii, d = rd / radii;
+    float A = dot(d, d), B = dot(q, d), disc = B * B - A * (dot(q, q) - 1.0);
+    if (disc < 0.0) continue;
+    float t = (-B - sqrt(disc)) / A;
+    if (t <= 0.001) t = (-B + sqrt(disc)) / A;
+    if (t > 0.001 && t < h.t) {
+      h.t = t; h.kind = 4; h.index = index;
+      h.n = normalize((ro + rd * t - centre) / (radii * radii));
+    }
+  }
+  return h;
+}
+
+// A stable tangent frame also works inside the upright cylindrical chambers.
+mat3 sewerFrame(vec3 a, vec3 b) {
+  vec3 axis = normalize(b - a);
+  vec3 up = abs(axis.y) > 0.92 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+  up = normalize(up - axis * dot(up, axis));
+  return mat3(normalize(cross(axis, up)), up, axis);
+}
+
+int sewerNearestTunnel(vec3 p) {
+  float nearest = EMPTY; int index = 0;
+  for (int i = 0; i < TUNNELS; i++) {
+    if (float(i) >= uSewerCount.x) break;
+    vec4 a = sewerData(i, 0), b = sewerData(i, 1);
+    float d = length(p - sewerAxisPoint(p, a.xyz, b.xyz)) - a.w;
+    if (d < nearest) { nearest = d; index = i; }
+  }
+  return index;
+}
+
+vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour) {
+  vec4 a = sewerData(index, 0), b = sewerData(index, 1);
+  mat3 frame = sewerFrame(a.xyz, b.xyz);
+  float phase = sewerData(index, 2).x;
+  float along = dot(p - a.xyz, frame[2]);
+  float rung = floor((along + phase) / 32.0 + 0.5) * 32.0 - phase;
+  vec3 centre = a.xyz + frame[2] * clamp(rung, 0.0, length(b.xyz - a.xyz));
+  float side = mod(floor((rung + phase) / 32.0), 2.0) < 0.5 ? -1.0 : 1.0;
+  lamp = centre + normalize(frame[0] * side * 0.78 + frame[1] * 0.60) * a.w * 0.995;
+  lampColour = vec3(1.8, 1.12, 0.44);
+  vec3 delta = lamp - p;
+  float diffuse = max(dot(normalize(delta), n), 0.0);
+  vec3 light = vec3(0.50, 0.68, 0.47) * (0.72 + n.y * 0.16);
+  light += lampColour * diffuse * 4.5 / (1.0 + dot(delta, delta) * 0.025);
+  // A quieter teal service light makes water and corners readable beyond the amber pool.
+  vec3 cool = centre - (frame[0] * side * 0.78 - frame[1] * 0.60) * a.w * 0.95;
+  delta = cool - p;
+  light += vec3(0.14, 0.55, 0.48) * max(dot(normalize(delta), n), 0.0) * 1.6 / (1.0 + dot(delta, delta) * 0.015);
+  return light;
+}
+
+vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
+  int index = h.kind <= 2 ? h.index : sewerNearestTunnel(p);
+  vec4 a = sewerData(index, 0), b = sewerData(index, 1);
+  mat3 frame = sewerFrame(a.xyz, b.xyz);
+  vec3 axisPoint = sewerAxisPoint(p, a.xyz, b.xyz);
+  vec3 radial = p - axisPoint;
+  float along = dot(p - a.xyz, frame[2]), angle = atan(dot(radial, frame[0]), dot(radial, frame[1]));
+  vec2 uv = vec2(along, angle * a.w);
+  float grain = tnoise(p * 1.7), grime = tnoise(p * vec3(0.12, 0.24, 0.14));
+  vec3 lamp, lampColour;
+  vec3 light = sewerLighting(p, h.n, index, lamp, lampColour), col;
+  if (h.kind == 1) {
+    float row = floor(uv.y / 0.72);
+    vec2 bricks = vec2(uv.x / 1.7 + mod(row, 2.0) * 0.5, uv.y / 0.72);
+    vec2 edges = min(fract(bricks), 1.0 - fract(bricks)) * vec2(1.7, 0.72);
+    float mortar = 1.0 - smoothstep(0.055, 0.085 + pixel, min(edges.x, edges.y));
+    float key = hash12(floor(bricks));
+    float kind = sewerData(index, 2).y;
+    col = mix(vec3(0.16, 0.11, 0.058), vec3(0.11, 0.14, 0.105), key * 0.72);
+    col *= 0.77 + grain * 0.48;
+    col = mix(col, vec3(0.035, 0.050, 0.035), mortar * 0.87);
+    if (kind > 1.5) {
+      col = vec3(0.125, 0.15, 0.12) * (0.7 + grain * 0.35);
+      float seams = max(bandAA(mod(uv.x + 6.0, 12.0) - 6.0, 0.055, pixel), bandAA(mod(uv.y + 4.0, 8.0) - 4.0, 0.045, pixel));
+      col *= 1.0 - seams * 0.68;
+    }
+    float rib = bandAA(mod(along + sewerData(index, 2).x + 16.0, 32.0) - 16.0, 0.70, pixel);
+    col = mix(col, vec3(0.15, 0.18, 0.145) * (0.82 + grain * 0.25), rib * 0.85);
+    float waterY = b.w > -99999.0 ? b.w : a.y - a.w * 0.65;
+    float damp = (1.0 - smoothstep(waterY + 2.0, waterY + 15.0, p.y)) * smoothstep(0.30, 0.75, grime);
+    col = mix(col, vec3(0.024, 0.098, 0.024) * (0.7 + grain * 0.6), damp * 0.85);
+    float streak = tnoise(vec3(uv.x * 0.42, p.y * 0.04, angle * 3.0));
+    col *= 1.0 - smoothstep(0.61, 0.85, streak) * 0.3;
+    col *= light;
+    // Flush utility fixtures are painted on the wall; all protruding collision remains data.
+    vec3 fixture = p - lamp;
+    float face = length(fixture);
+    float panel = 1.0 - smoothstep(1.2, 1.2 + pixel, face);
+    float bars = pulseAA(dot(fixture, frame[2]) / 0.32, 0.22, pixel / 0.32);
+    col = mix(col, lampColour * (1.5 - bars * 1.2), panel);
+    col += vec3(0.08, 0.10, 0.045) * pow(1.0 - abs(dot(h.n, rd)), 5.0) * damp;
+  } else if (h.kind == 2) {
+    float wave = sin(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) + sin(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8);
+    vec3 n = normalize(vec3(cos(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) * 0.055, 1.0, cos(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8) * 0.07));
+    col = vec3(0.017, 0.072, 0.012) * (0.78 + grain * 0.32 + wave * 0.08);
+    vec3 delta = lamp - p;
+    float spec = pow(max(dot(reflect(-normalize(delta), n), -rd), 0.0), 40.0);
+    col += lampColour * spec * 2.0 / (1.0 + length(delta) * 0.03);
+    // Oily scum travels with the channel. There is no transparent view of a clean floor below.
+    float scum = smoothstep(0.66, 0.82, tnoise(vec3(p.x * 0.33, 2.3, p.z * 0.2 - uSewerMotion * 0.08)));
+    col = mix(col, vec3(0.054, 0.14, 0.029), scum * 0.65);
+    col += vec3(0.018, 0.036, 0.009) * tube(wave - 1.2, 0.10, pixel * 0.5);
+  } else if (h.kind == 3) {
+    vec4 pa = sewerData(h.index, 0), pb = sewerData(h.index, 1);
+    vec3 axis = normalize(pb.xyz - pa.xyz);
+    float u = dot(p - pa.xyz, axis), rust = smoothstep(0.39, 0.75, grime + grain * 0.18);
+    col = mix(vec3(0.17, 0.20, 0.17), vec3(0.21, 0.078, 0.035), rust);
+    float collar = bandAA(mod(u + 5.0, 10.0) - 5.0, 0.55, pixel);
+    col = mix(col, vec3(0.28, 0.30, 0.22), collar * 0.85);
+    float stripe = pulseAA((u + p.y) / 1.8, 0.45, pixel / 1.8);
+    float warning = 1.0 - smoothstep(0.0, 3.0, abs(mod(u + 12.0, 24.0) - 12.0));
+    col = mix(col, mix(vec3(0.035), vec3(0.42, 0.31, 0.05), stripe), warning * 0.6);
+    col *= light;
+    col += vec3(0.035, 0.06, 0.038) * pow(1.0 - abs(dot(h.n, rd)), 4.0);
+  } else {
+    float grit = tnoise(p * 3.5), moss = smoothstep(0.58, 0.82, grime);
+    col = mix(vec3(0.19, 0.12, 0.045), vec3(0.045, 0.13, 0.025), moss);
+    col *= (0.48 + grain * 0.70 + grit * 0.28) * light;
+    float pebbles = step(0.80, hash13(floor(p * 1.6))) * smoothstep(0.6, 0.9, h.n.y);
+    col += vec3(0.04, 0.043, 0.027) * pebbles;
+  }
+  return col;
+}
+
+vec3 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle) {
+  vec3 colour = vec3(0.0);
+  for (int i = 0; i < INFLOWS; i++) {
+    if (float(i) >= uSewerCount.w) break;
+    vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1);
+    if (!sewerBroadPhase(ro, rd, a.xyz, b.xyz, a.w)) continue;
+    vec2 span = sewerCapsuleInterval(ro, rd, a.xyz, b.xyz, a.w);
+    float t = max(span.x, 0.001);
+    if (span.x > span.y || span.y <= 0.0 || t >= wall) continue;
+    vec3 p = ro + rd * t;
+    float along = dot(p - a.xyz, normalize(b.xyz - a.xyz));
+    float flow = pulseAA(along / 1.3 - uSewerMotion * 2.1, 0.28, t * pixAngle / 1.3);
+    colour += vec3(0.015, 0.14, 0.041) * (0.55 + flow * 0.55);
+    colour += vec3(0.04, 0.065, 0.031) * tube(along - length(b.xyz - a.xyz), 1.5, t * pixAngle);
+  }
+  return colour;
+}
+
+void main() {
+  vec2 ndc = (vUv - 0.5) * 2.0;
+  vec3 ro = uCamPos;
+  vec3 rd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
+  float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  SewerHit hit = sewerTrace(ro, rd);
+  vec3 fog = vec3(0.013, 0.031, 0.015);
+  vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
+  float haze = 1.0 - exp(-hit.t * 0.0105);
+  col = mix(col, fog, haze);
+  col += sewerInflow(ro, rd, hit.t, pixAngle) * (1.0 - haze * 0.7);
+  // Existing ring/guide/stars have the same depth and controls as surface flight.
+  vec3 markers = courseLight(ro, rd, hit.t, pixAngle);
+  float opacity = saturate(max(markers.r, max(markers.g, markers.b)));
+  col = col * (1.0 - opacity * 0.74) + markers;
+  fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}
+`;
+
+function distanceToSegment(p, a, b) {
+  const axis = b.map((v, i) => v - a[i]);
+  const q = p.map((v, i) => v - a[i]);
+  const length2 = axis.reduce((sum, v) => sum + v * v, 0);
+  const along = Math.max(0, Math.min(1, q.reduce((sum, v, i) => sum + v * axis[i], 0) / Math.max(length2, 1e-12)));
+  return Math.hypot(...q.map((v, i) => v - along * axis[i]));
+}
+
+function create(gfx) {
+  const { gl } = gfx;
+  const program = gfx.program('sewer-flight', FRAG);
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const data = new Float32Array(ATLAS_WIDTH * 3 * 4);
+  const atlas = gfx.createTexture(ATLAS_WIDTH, 3, { format: 'rgba32f', filter: 'nearest', data });
+  let world = null, last = null, counts = [0, 0, 0, 0], clipped = 0;
+  function setWorld(city, course) {
+    if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
+    world = city.sewer; last = null; clipped = 0;
+  }
+  function select(items, position, maximum, radius) {
+    return items.map((value, index) => ({ value, index, distance: value.centre
+      ? Math.max(0, Math.hypot(...value.centre.map((v, i) => v - position[i])) - Math.max(...value.radii))
+      : Math.max(0, distanceToSegment(position, value.a, value.b) - radius(value)) }))
+      .filter(v => v.distance <= FAR + 20).sort((a, b) => a.distance - b.distance || a.index - b.index).slice(0, maximum);
+  }
+  function pack(position) {
+    data.fill(0);
+    const selected = [select(world.tunnels, position, TUNNELS, t => t.radius), select(world.pipes || [], position, PIPES, p => p.radius),
+      select(world.dirt || [], position, DIRT), select(world.inflows || [], position, INFLOWS, f => f.radius)];
+    counts = selected.map(v => v.length);
+    const put = (index, row, values) => data.set(values, (row * ATLAS_WIDTH + index) * 4);
+    selected.forEach((items, group) => items.forEach(({ value, index }, slot) => {
+      const base = [0, PIPE_BASE, DIRT_BASE, FLOW_BASE][group] + slot;
+      if (group === 2) { put(base, 0, [...value.centre, Math.max(...value.radii)]); put(base, 1, [...value.radii, 0]); }
+      else {
+        put(base, 0, [...value.a, value.radius]);
+        put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : 0]);
+        const kind = /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
+        put(base, 2, [(index * 13.71) % 32, kind, index, 0]);
+      }
+    }));
+    gl.bindTexture(gl.TEXTURE_2D, atlas);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ATLAS_WIDTH, 3, gl.RGBA, gl.FLOAT, data);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    last = [...position];
+    // This never alters world/collision: the full network remains intact outside the fog.
+    clipped = world.tunnels.length - counts[0];
+  }
+  function draw(cam, rings, guide, stars = []) {
+    if (!world) throw new Error('sewer-flight draw before setWorld');
+    if (!last || Math.hypot(...cam.pos.map((v, i) => v - last[i])) > 5) pack(cam.pos);
+    gfx.fullscreen(program, {
+      uSewerGeometry: atlas, uSewerCount: counts,
+      uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
+      uSewerMotion: reducedMotion.matches ? 0 : performance.now() / 1000,
+      uBoost: [0.28, 1.0, 0.43], uCollectibleColour: [0.48, 1.0, 0.32],
+      ...GAME.overlay.uniforms(rings, guide, stars),
+    });
+  }
+  return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3], clipped }) };
+}
+
+GAME.sewerFlightRenderer = { create };
 
 })();
 
@@ -12232,7 +12995,7 @@ function create(panel, { touch }) {
     try {
       const result = await (kind === 'key' ? GAME.shop.buyCollapseKey() : GAME.shop.buyLift());
       q('#shop-message').textContent = result.ok
-        ? kind === 'key' ? 'Collapse Key saved. Hidden rings can now be found on Hard and Extreme.' : 'Lift Boost added to your inventory.'
+        ? kind === 'key' ? 'Collapse Key saved.' : 'Lift Boost added to your inventory.'
         : result.message;
     } catch { q('#shop-message').textContent = 'Could not save your purchase. Please try again.'; }
     finally { busy = null; render(); }
@@ -12446,8 +13209,8 @@ GAME.soundtrack = { create };
 // Each load gets a fresh copy: later runs must not mutate a cached world or its collision data.
 const cache = new Map(), CACHE_SIZE = 8;
 let active = null, workerURL = null;
-const wantsCollapse = (difficulty, options) => !!options.collapse && ['hard', 'extreme'].includes(difficulty);
-const keyOf = (seed, difficulty, options = {}) => `${seed}:${difficulty}${wantsCollapse(difficulty, options) ? ':collapse' : ''}`;
+const wantsCollapse = (difficulty, options) => options.environment !== 'sewer' && !!options.collapse && ['hard', 'extreme'].includes(difficulty);
+const keyOf = (seed, difficulty, options = {}) => `${options.environment === 'sewer' ? 'sewer:' : ''}${seed}:${difficulty}${wantsCollapse(difficulty, options) ? ':collapse' : ''}`;
 
 function cancel() {
   active?.cancel();
@@ -12486,7 +13249,8 @@ async function load(seed, difficulty, options = {}) {
       finish(null, new Error(event.message || 'Course worker could not start'));
     };
     worker.onmessageerror = () => finish(null, new Error('Course data could not be read'));
-    try { worker.postMessage({ seed, difficulty, collapse, world: collapse ? cache.get(keyOf(seed, difficulty)) : undefined }); }
+    try { worker.postMessage({ seed, difficulty, environment: options.environment || 'surface', collapse,
+      world: collapse ? cache.get(keyOf(seed, difficulty)) : undefined }); }
     catch (error) { finish(null, error); }
   });
   cache.set(key, data);
@@ -12539,7 +13303,7 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, sewerRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
+let renderer, sewerRenderer, sewerFlightRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
 const syncTouchStick = () => {
   const selected = usesTouchStick();
@@ -12552,32 +13316,37 @@ const syncTouchStick = () => {
 };
 let seedCode, city, course, run, guide, pilot;
 let collapse = null, surfaceSession = null, collapsePreparation = null;
-let menuEnvironment = GAME.access.environment();
+let menuEnvironment = params.get('environment') === 'surface' ? 'surface'
+  : params.get('environment') === 'sewer' ? GAME.access.sewerUnlocked() ? 'sewer' : 'surface' : GAME.access.environment();
+const isSewer = () => course?.environment === 'sewer';
+const environmentCourses = new Map();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const collapseOptions = () => ({ collapse: GAME.shop.state().collapseKey });
+const worldOptions = environment => ({ environment, collapse: environment !== 'sewer' && GAME.shop.state().collapseKey });
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
 const sessionExtremeUnlocks = new Set();
-const extremeUnlockKey = code => `neonflight.unlock.v${GAME.course.UNLOCK_VERSION}.extreme.${code}`;
-function extremeUnlocked(code) {
-  if (sessionExtremeUnlocks.has(code)) return true;
-  try { return localStorage.getItem(extremeUnlockKey(code)) === '1'; } catch { return false; }
+const extremeUnlockKey = (code, environment = isSewer() ? 'sewer' : 'surface') => environment === 'sewer'
+  ? `neonflight.sewer.unlock.v1.extreme.${code}` : `neonflight.unlock.v${GAME.course.UNLOCK_VERSION}.extreme.${code}`;
+function extremeUnlocked(code, environment = isSewer() ? 'sewer' : 'surface') {
+  if (sessionExtremeUnlocks.has(`${environment}:${code}`)) return true;
+  try { return localStorage.getItem(extremeUnlockKey(code, environment)) === '1'; } catch { return false; }
 }
 function grantExtreme(code) {
-  sessionExtremeUnlocks.add(code);
+  sessionExtremeUnlocks.add(`${isSewer() ? 'sewer' : 'surface'}:${code}`);
   try { localStorage.setItem(extremeUnlockKey(code), '1'); } catch { /* available for this session */ }
 }
 
 // Generation runs off-thread. Keep the old world and its URL intact until its replacement is
 // fully ready, so cancelling or failing a load leaves a playable course.
 let courseLoading = false, flowVersion = 0, flightStarting = false;
-async function loadCourse(seed, selectedDifficulty = difficulty) {
+async function loadCourse(seed, selectedDifficulty = difficulty, environment = course ? isSewer() ? 'sewer' : 'surface' : menuEnvironment) {
   if (courseLoading) return false;
+  if (environment === 'sewer' && !GAME.access.sewerUnlocked()) return false;
   flowVersion++;
   const t0 = performance.now(), code = GAME.rng.seedToCode(seed);
-  const lockedExtreme = selectedDifficulty === 'extreme' && !extremeUnlocked(code);
+  const lockedExtreme = selectedDifficulty === 'extreme' && !extremeUnlocked(code, environment);
   const nextDifficulty = lockedExtreme ? 'hard' : selectedDifficulty;
-  const options = collapseOptions(), cached = GAME.courseLoader.has(seed, nextDifficulty, options);
+  const options = worldOptions(environment), cached = GAME.courseLoader.has(seed, nextDifficulty, options);
   const loading = $('course-loading'), cancel = $('loading-cancel');
   const focus = document.activeElement;
   const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen];
@@ -12585,8 +13354,8 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
   let patience;
   courseLoading = true;
   if (!cached) {
-    $('loading-title').textContent = `Preparing ${GAME.course.DIFFICULTIES[nextDifficulty].label} course`;
-    $('loading-detail').textContent = 'Finding a clear route through the city…';
+    $('loading-title').textContent = `Preparing ${GAME.course.DIFFICULTIES[nextDifficulty].label} ${environment === 'sewer' ? 'Sewer ' : ''}course`;
+    $('loading-detail').textContent = environment === 'sewer' ? 'Connecting tunnels and finding a clear flight…' : 'Finding a clear route through the city…';
     cancel.hidden = !course || !!document.pointerLockElement;
     $('loading-escape').hidden = !course || !document.pointerLockElement;
     screens.forEach(screen => { screen.inert = true; });
@@ -12604,9 +13373,14 @@ async function loadCourse(seed, selectedDifficulty = difficulty) {
     seedCode = code;
     difficulty = nextDifficulty;
     requestedLockedExtreme = lockedExtreme;
-    renderer.setWorld(city, course.pads);
-    history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${AUTOPILOT ? '&autopilot' : ''}`);
-    console.log(`[game] course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.boosters.length} boosters, ${course.obstacles} avenue buildings, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms (attempt ${course.attempt + 1})`);
+    if (isSewer()) sewerFlightRenderer.setWorld(city, course);
+    else renderer.setWorld(city, course.pads);
+    menuEnvironment = environment;
+    environmentCourses.set(environment, { seed, difficulty });
+    stage.classList.toggle('sewer-world', isSewer());
+    history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${isSewer() ? '&environment=sewer' : ''}${AUTOPILOT ? '&autopilot' : ''}`);
+    if (GAME.access.environment() !== environment) GAME.access.setEnvironment(environment);
+    console.log(`[game] ${environment} course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms`);
     newRun();
     return true;
   } catch (error) {
@@ -12634,7 +13408,7 @@ let newStars = 0;
 let usingLift = false;
 // Buying a key while paused must add the secret to this course without replacing its run.
 async function ensureCollapsePrepared() {
-  if (!course || collapse || courseLoading || !GAME.shop.state().collapseKey || !['hard', 'extreme'].includes(difficulty)
+  if (!course || isSewer() || collapse || courseLoading || !GAME.shop.state().collapseKey || !['hard', 'extreme'].includes(difficulty)
       || course.collapse !== undefined) return;
   if (collapsePreparation?.course === course) return collapsePreparation.promise;
   const original = course, code = seedCode, selected = difficulty;
@@ -12670,7 +13444,7 @@ function newRun() {
   newStars = 0;
   soundtrack?.reset();
   run = GAME.run.create(city, course);
-  for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
+  if (!isSewer()) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   stepBefore = null;
   guide = GAME.guide.create(course);
   pilot = { k: 0 };
@@ -12728,6 +13502,7 @@ let stepBefore = null;         // the glider one step back, while steps run back
 function setMode(m) {
   flowVersion++;
   mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m);
+  stage.classList.toggle('sewer-menu', isSewer() && m === 'title');
   // The portrait reminder is useful before Fly, but must not cover a run if the phone rotates.
   document.body.classList.toggle('run-started', m !== 'title');
   syncTouchStick();
@@ -12761,7 +13536,7 @@ function handle(events) {
   const sewer = events.some(e => e.type === 'sewer');
   events = events.filter(e => e.type !== 'sewer');
   // If another tab saved this slot during the flight step, suppress the duplicate pickup feedback.
-  events = events.filter(e => e.type !== 'star' || GAME.starBank.claim(seedCode, difficulty, e.star));
+  events = events.filter(e => e.type !== 'star' || (!isSewer() && GAME.starBank.claim(seedCode, difficulty, e.star)));
   soundtrack.events(events);
   for (const e of events) {
     if (e.type === 'gate') { GAME.guide.onGate(guide, e.gate, run.time); hud.gatePassed(); }
@@ -12777,7 +13552,8 @@ function handle(events) {
     else if (e.type === 'crash') {
       const offCourse = e.hit.kind === 'offCourse';
       const retryBooster = e.hit.retryBooster !== undefined;
-      const what = retryBooster ? 'retry booster' : { ground: 'hit the street', tower: 'crashed', bounds: 'left the city', offCourse: 'off course' }[e.hit.kind];
+      const what = retryBooster ? 'retry booster' : isSewer() ? { ground: 'hit the water', water: 'hit the water', dirt: 'hit the dirt', pipe: 'hit a pipe', wall: 'hit the tunnel', tower: 'crashed', offCourse: 'off course' }[e.hit.kind] || 'crashed'
+        : { ground: 'hit the street', tower: 'crashed', bounds: 'left the city', offCourse: 'off course' }[e.hit.kind];
       hud.message(what, 'bad');
       hud.toast(offCourse ? `returning to last gate · +${GAME.run.PENALTY.crash + GAME.run.PENALTY.offCourse} s`
         : retryBooster ? `back before booster · +${GAME.run.PENALTY.crash} s` : `+${GAME.run.PENALTY.crash} s`,
@@ -12794,12 +13570,13 @@ function handle(events) {
 }
 
 // The stick for each physics step: the player's, or the autopilot's when it flies.
-const autoSteer = routed => collapse ? GAME.collapse.steer(pilot, run.glider, routed) : GAME.autopilot.steer(pilot, run.glider, routed);
+const autoSteer = routed => collapse ? GAME.collapse.steer(pilot, run.glider, routed)
+  : isSewer() ? GAME.sewerCourse.steer(pilot, run.glider, routed) : GAME.autopilot.steer(pilot, run.glider, routed);
 let pilotStick = AUTOPILOT ? () => autoSteer(course) : () => input.stick(run.glider, PHYSICS_DT);
 
 // Back at the last gate passed; the guide line and the autopilot's progress restart there too.
 function respawn() {
-  GAME.run.respawn(run);
+  if (isSewer()) GAME.sewerCourse.respawn(run); else GAME.run.respawn(run);
   const s = run.checkpoint >= 0 ? course.gates[run.checkpoint].s : 0;
   GAME.guide.jumpTo(guide, s);
   pilot.k = Math.round(s / course.sample);
@@ -12814,7 +13591,7 @@ function coast(dt) {
   acc += dt;
   for (; acc >= PHYSICS_DT; acc -= PHYSICS_DT) {
     const g = GAME.flight.step({ ...run.glider }, COAST_STICK, PHYSICS_DT, () => 0);
-    if (GAME.collide.sphere(city, g.x, g.y, g.z, FLIGHT.RADIUS)) { acc = 0; stepBefore = null; return; }
+    if ((isSewer() ? GAME.sewerCourse : GAME.collide).sphere(city, g.x, g.y, g.z, FLIGHT.RADIUS)) { acc = 0; stepBefore = null; return; }
     stepBefore = run.glider;
     run.glider = g;
   }
@@ -12838,9 +13615,9 @@ function update(dt) {
       acc -= PHYSICS_DT;
       stepBefore = { ...run.glider };
       const events = collapse ? GAME.collapse.step(collapse, run, pilotStick(), PHYSICS_DT)
-        : GAME.run.step(run, pilotStick(), PHYSICS_DT);
+        : isSewer() ? GAME.sewerCourse.step(run, pilotStick(), PHYSICS_DT) : GAME.run.step(run, pilotStick(), PHYSICS_DT);
       handle(events);
-      if (!collapse && mode === 'playing' && GAME.shop.state().collapseKey && course.collapse?.trigger
+      if (!isSewer() && !collapse && mode === 'playing' && GAME.shop.state().collapseKey && course.collapse?.trigger
           && GAME.collapse.through([stepBefore.x, stepBefore.y, stepBefore.z], [run.glider.x, run.glider.y, run.glider.z], course.collapse.trigger)) enterCollapse();
     }
   } else if (mode === 'crashed' && modeTime > crashPause) {
@@ -12863,7 +13640,8 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v1.${difficulty}.${code}`
+  : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
     const v = localStorage.getItem(bestKey(code));
@@ -12907,12 +13685,13 @@ function render(now, w, h) {
   const view = GAME.guide.frame(guide, run, run.time);
   GAME.gfx.setFrame({ t: now / 1000, width: w, height: h });
   bindTarget(target);
-  const sewerMenu = mode === 'title' && menuEnvironment === 'sewer';
+  const sewerMenu = mode === 'title' && isSewer() && !params.has('freeze');
   const secret = !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger : null;
   if (secret && Math.hypot(g.x - secret.x, g.y - secret.y, g.z - secret.z) < 125) {
     view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, kind: 'secret', flare: 0, xray: 0 }];
   }
   if (sewerMenu) sewerRenderer.draw(now / 1000, w / h);
+  else if (isSewer()) sewerFlightRenderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, []);
   else renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
@@ -12959,10 +13738,10 @@ function hudFrame({ cam, next }) {
     stars: run.stars.size, starTotal: course.stars.length,
     lifts: GAME.shop.state().lifts, powerUsed: run.powerUsed, canLift: !collapse && mode === 'playing' && !usingLift && GAME.run.canPowerBoost(run),
     aimScreen, nextScreen: offCourseCrash ? null : next ? gateOnScreen(cam, next) : null,
-    groundH: GAME.collide.groundHeight(city, run.glider.x, run.glider.z),
+    groundH: isSewer() ? GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y) : GAME.collide.groundHeight(city, run.glider.x, run.glider.z),
     boundary: offCourseCrash ? 1 : mode === 'playing' ? run.boundary.intensity : 0,
     boundaryText: collapse ? 'FOLLOW THE ESCAPE RINGS' : offCourseCrash ? 'RETURNING TO THE LAST GATE' : 'RETURN TO THE COURSE · FOLLOW THE NEXT GATE',
-    label: collapse ? 'COLLAPSE · REACH THE SEWER' : `COURSE ${seedCode}${AUTOPILOT ? ' · AUTOPILOT' : ''}`,
+    label: collapse ? 'COLLAPSE · REACH THE SEWER' : `${isSewer() ? 'SEWER' : 'COURSE'} ${seedCode}${AUTOPILOT ? ' · AUTOPILOT' : ''}`,
   });
 }
 
@@ -12970,7 +13749,7 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
   // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
-  if (!collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
+  if (!isSewer() && !collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
@@ -13081,9 +13860,22 @@ function showTitle() {
   const best = readBest(seedCode), medals = medalLadder(course);
   resetCopy($('title-copy'));
   GAME.hud.showTitle(overlay, { code: seedCode, difficulty, gates: course.gates.length, medals, best, bestMedal: best === null ? null : medalFor(best, medals),
-    stars: GAME.starBank.collected(seedCode, difficulty).length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
+    stars: isSewer() ? 0 : GAME.starBank.collected(seedCode, difficulty).length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
   const unlocked = extremeUnlocked(seedCode);
+  const sewerDescriptions = {
+    easy: 'Wide cylindrical collectors and gentle connecting passages',
+    medium: 'Smaller connecting tunnels, round pipes and dirt banks',
+    hard: 'Narrow tunnels, tighter rings and frequent pipe obstacles',
+    extreme: 'The smallest tunnels and rings, dense pipes and faster flight',
+  };
   for (const button of document.querySelectorAll('[data-difficulty]')) {
+    button.dataset.surfaceTitle ??= button.title;
+    button.dataset.surfaceLabel ??= button.getAttribute('aria-label');
+    if (button.dataset.difficulty !== 'extreme') {
+      const description = sewerDescriptions[button.dataset.difficulty];
+      button.title = isSewer() ? description : button.dataset.surfaceTitle;
+      button.setAttribute('aria-label', isSewer() ? `${button.textContent.trim()}: ${description}` : button.dataset.surfaceLabel);
+    }
     button.setAttribute('aria-pressed', String(button.dataset.difficulty === difficulty));
     if (button.dataset.difficulty === 'extreme') {
       button.disabled = !unlocked;
@@ -13102,11 +13894,10 @@ function showTitle() {
 }
 
 function syncEnvironmentMenu() {
-  menuEnvironment = GAME.access.environment();
-  const sewer = menuEnvironment === 'sewer';
+  const sewer = isSewer();
   stage.classList.toggle('sewer-menu', sewer && mode === 'title');
   $('title').textContent = sewer ? 'THE SEWER' : 'NEON FLIGHT';
-  $('sewer-note').hidden = !sewer;
+  $('sewer-note').hidden = true;
   $('environment-switch').hidden = !GAME.access.sewerUnlocked();
   $('environment-switch').querySelector('span').textContent = sewer ? 'Return to the surface ↑' : 'The Sewer ↓';
   $('environment-switch').setAttribute('aria-label', sewer ? 'Return to the surface menu' : 'Enter The Sewer menu');
@@ -13115,7 +13906,10 @@ function syncEnvironmentMenu() {
 
 async function switchEnvironment() {
   if (mode !== 'title' || courseLoading) return;
-  GAME.access.setEnvironment(menuEnvironment === 'sewer' ? 'surface' : 'sewer');
+  const next = isSewer() ? 'surface' : 'sewer';
+  const remembered = environmentCourses.get(next) || { seed: GAME.rng.codeToSeed(seedCode), difficulty };
+  if (!await loadCourse(remembered.seed, remembered.difficulty, next)) return;
+  showTitle();
   soundtrack.reset(); GAME.sound.setLevel(0);
   await GAME.sound.setEnvironment(menuEnvironment);
 }
@@ -13389,7 +14183,7 @@ const playHint = () => AUTOPILOT ? 'autopilot' : usesTouchStick() ? 'hold & drag
 
 // A fresh run of the current course, after a countdown.
 async function fly({ calibrate = false, seed = null } = {}) {
-  if (flightStarting || courseLoading || (mode === 'title' && menuEnvironment === 'sewer')) return;
+  if (flightStarting || courseLoading) return;
   flightStarting = true;
   leaveCollapse();
   const originMode = mode;
@@ -13422,8 +14216,7 @@ async function fly({ calibrate = false, seed = null } = {}) {
     const intendedCourse = course;
     await ensureCollapsePrepared();
     // Course/menu actions can cancel the worker while its old Fly callback is pending.
-    if (request !== flowVersion || course !== intendedCourse || mode !== originMode || courseLoading
-        || (mode === 'title' && GAME.access.environment() === 'sewer')) return;
+    if (request !== flowVersion || course !== intendedCourse || mode !== originMode || courseLoading) return;
     clearControlFailure();
     stage.classList.remove('sewer-menu');
     hideScreens();
@@ -13588,6 +14381,7 @@ async function boot() {
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
   sewerRenderer = GAME.sewerRenderer.create(GAME.gfx);
+  sewerFlightRenderer = GAME.sewerFlightRenderer.create(GAME.gfx);
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause, onLift: () => useLift().catch(fail) });
   input = GAME.input.create(canvas);
   if (TOUCH) touchStick = GAME.touchStick.create(stage, (x, y) => input.setTouchStick(x, y));
@@ -13602,7 +14396,12 @@ async function boot() {
   GAME.access.onChange(() => {
     GAME.settings.updateSongOptions();
     if (mode === 'title') {
-      syncEnvironmentMenu();
+      const desired = GAME.access.environment(), loaded = isSewer() ? 'sewer' : 'surface';
+      if (course && !courseLoading && desired !== loaded) {
+        loadCourse(GAME.rng.codeToSeed(seedCode), difficulty, desired).then(ok => {
+          if (ok) showTitle(); else GAME.access.setEnvironment(loaded);
+        }).catch(fail);
+      } else syncEnvironmentMenu();
     }
   });
   refreshShopButtons();
@@ -13623,11 +14422,15 @@ async function boot() {
   api.ready = true;
   api.state = () => ({
     mode, loading: courseLoading, input: input.mode, code: seedCode, difficulty, extremeUnlocked: extremeUnlocked(seedCode), courseLength: course.length,
-    environment: menuEnvironment, sewerUnlocked: GAME.access.sewerUnlocked(), collapseActive: !!collapse,
+    environment: isSewer() ? 'sewer' : 'surface', menuEnvironment, sewerUnlocked: GAME.access.sewerUnlocked(), collapseActive: !!collapse,
+    sewer: isSewer() ? { tunnels: city.sewer.tunnels.length, pipes: city.sewer.pipes.length, dirt: city.sewer.dirt.length,
+      inflows: city.sewer.inflows.length, shafts: city.sewer.shafts.length,
+      waterHeight: GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y),
+      inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS) } : null,
     collapse: collapse ? { time: collapse.time, progress: collapse.progress, hole: { ...collapse.hole }, hazards: collapse.hazards } : null,
     collapseTrigger: !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger ?? null : null,
     fountains: course.fountains ?? [],
-    obstacles: city.obstacles.length, routeObstacles: course.obstacles,
+    obstacles: city.obstacles?.length ?? course.obstacles ?? 0, routeObstacles: course.obstacles,
     props: city.courseProps?.length ?? 0, pipes: city.courseProps?.filter(p => p.type === 'pipe').length ?? 0,
     bridges: city.bridgePipes?.length ?? 0, activeBridges: course.activeBridges ?? 0,
     turnIslands: course.turnIslands ?? 0, zigzagTurns: course.zigzagTurns ?? 0,
@@ -13635,13 +14438,15 @@ async function boot() {
       s0: w.s0, s1: w.s1, distance: w.distance, width: w.width,
       turnAngle: w.turnAngle, approach: w.approach, cornerSides: w.cornerSides, turnIslands: w.turnIslands,
     })) ?? [],
-    glider: { ...run.glider }, next: run.next, checkpoint: run.checkpoint, checkpointPose: GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
+    glider: { ...run.glider }, next: run.next, checkpoint: run.checkpoint,
+    checkpointPose: isSewer() ? GAME.sewerCourse.respawnPose(run) : GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
     proof: course.proof, medals: collapse ? [] : medalLadder(course),
     stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), newStars, starBank: GAME.starBank.total(),
     shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
-    view: { ...drawn, theme: renderer.theme.id, maxPixels: resolution.maxPixels },
+    view: { ...drawn, theme: isSewer() ? 'sewer' : renderer.theme.id, maxPixels: resolution.maxPixels,
+      sewerVisible: isSewer() ? sewerFlightRenderer.visible() : undefined },
   });
   if (AUTOPILOT) api.autopilot = autopilotTools();
   requestAnimationFrame(now => { lastNow = now; loop(now); });
@@ -13652,7 +14457,10 @@ async function boot() {
 // in one scripted run. A mistake wraps the stick provider until it has been made. Each returns
 // true once made.
 const MISTAKES = {
-  crash() { run.glider.y = -1; return true; },
+  crash() {
+    run.glider.y = isSewer() ? GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y) - 2 : -1;
+    return true;
+  },
   // Just before the next gate, lift the glider over its ring: too late to correct, so it's a miss.
   miss() {
     const g = run.glider, gate = course.gates[run.next];
@@ -13754,7 +14562,9 @@ function startFrozen() {
     return { width: canvas.width, height: canvas.height, results: out };
   };
   api.glider = () => run.glider;
-  api.course = { code: seedCode, gates: course.gates.length, boosters: course.boosters.map(b => ({ type: b.type, s: b.s })), stars: course.stars, start: course.start };
+  api.course = { code: seedCode, environment: isSewer() ? 'sewer' : 'surface', gates: course.gates.length,
+    boosters: course.boosters.map(b => ({ type: b.type, s: b.s })), stars: course.stars, start: course.start,
+    sewer: isSewer() ? city.sewer : null, sections: course.sections };
   requestAnimationFrame(frozen);
   api.ready = true;
 }
