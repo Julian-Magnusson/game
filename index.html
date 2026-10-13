@@ -403,6 +403,8 @@
   .shop-key-art { width: 64px; height: 64px; flex: 0 0 64px; color: #ff7775; filter: drop-shadow(0 0 8px #ff464644); }
   .shop-key-copy { flex: 1; } .shop-key-copy h3 { margin: 4px 0; font-size: 21px; font-weight: 500; }
   .shop-key-copy p { margin: 5px 0; color: #b5c6d6; font-size: 12px; line-height: 1.5; }
+  .shop-key-copy #shop-key-hint { color: #ffd3bb; font-size: 21px; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+  #shop-key-context { color: #9baeb9; font-size: 10px; margin: 0 7px 0 0; letter-spacing: 0.07em; }
   .shop-key-copy .shop-badge, #shop-key-owned { color: #ff9e97; font-size: 11px; }
   #shop-key-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
   #shop-key-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
@@ -594,13 +596,14 @@
       <p class="surface-rules">Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p class="surface-rules">Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
       <p class="sewer-rules">Follow the rings through the main collectors, smaller connecting tunnels and winding shafts. Moving air supports a level glide; rising shafts have an updraft. Steer around round pipes and dirt banks, and stay above the green water. The water, walls and obstacles all cause a crash.</p>
-      <p>A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
+      <p class="surface-rules">A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
+      <p class="sewer-rules">A missed gate adds <strong>2 seconds</strong>. Any crash restarts the entire course with a fresh timer.</p>
       <p class="surface-rules">Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
-      <p class="surface-rules">Look for spinning <b>stars</b> tucked beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close to collect them. Finds are shared across difficulties for that course and stay saved through crashes and retries. Stars you already own become faint outlines. Stars are optional; collecting one adds no time bonus or penalty.</p>
+      <p class="surface-rules">Look for spinning <b>stars</b> tucked in harder detours beside the route: <b>1</b> on Easy and Medium, <b>2</b> on Hard, <b>3</b> on Extreme. Fly close, then <b>finish the course to save them</b>. A checkpoint crash keeps your finds for that attempt; returning to the menu, restarting or reloading discards unfinished finds. Saved stars are shared across difficulties for that course and become faint outlines. Stars are optional and add no time bonus or penalty.</p>
     </section>
     <section class="info-section"><h3>Star shop</h3>
       <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
-      <p>Using one makes the flight <strong>assisted</strong>: collected stars still save, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
+      <p>Using one makes the flight <strong>assisted</strong>: stars still save when you finish, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
     </section>
     <section class="info-section"><h3>Difficulty</h3>
       <ul class="info-difficulties surface-rules">
@@ -657,12 +660,12 @@
         <p class="shop-small">Saved until used. Crashing or retrying never uses another boost automatically.</p>
       </aside>
     </div>
-    <div class="shop-footer" id="shop-rules">Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
+    <div class="shop-footer" id="shop-rules">Finish to save found stars. Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
     <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
     <div id="shop-message" role="status" aria-live="polite"></div>
     <article class="shop-key-item">
       <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
-      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p>???</p><span id="shop-key-owned">Not owned</span></div>
+      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p id="shop-key-hint">???</p><span id="shop-key-context"></span><span id="shop-key-owned">Not owned</span></div>
       <strong id="shop-key-price">★ 10</strong><button id="shop-key-buy" class="btn" type="button">unlock · 10 ★</button>
     </article>
   </div>
@@ -5462,6 +5465,9 @@ GAME.autopilot = { steer, fly };
 // real-physics flight proves that all stars can be taken together without missing a gate.
 const COUNTS = Object.freeze({ easy: 1, medium: 1, hard: 2, extreme: 3 });
 const RADIUS = 3.2, PICKUP = 4.2;
+// A star should call for a deliberate turn into a side pocket, not a small correction while
+// following the racing line. Every candidate leaves a whole star's radius beyond the pickup bubble.
+const MIN_DETOUR = 10, RACE_CLEARANCE = PICKUP + GAME.flight.FLIGHT.RADIUS + RADIUS;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 function segmentDistance(p, a, b) {
@@ -5502,60 +5508,108 @@ function collect(run, from, to) {
   return events;
 }
 
+function copyRun(run, course = run.course) {
+  return { ...run, course, glider: { ...run.glider }, boundary: { ...run.boundary },
+    used: new Set(run.used), taken: new Set(run.taken), stars: new Set(run.stars) };
+}
+
+// Reuse the unchanged approach to each candidate. Most rejected detours fail near the star;
+// flying the remaining two kilometres for each one would make difficulty changes needlessly slow.
+function approachSnapshots(city, course, stars) {
+  const trial = { ...course, stars }, routed = { ...trial, line: detourLine(course, stars) };
+  const run = GAME.run.create(city, trial), pilot = { k: 0 }, snapshots = [];
+  while (!run.finished && !run.crashed && !run.missed && run.time < course.par * 3 + 20) {
+    const stick = GAME.autopilot.steer(pilot, run.glider, routed);
+    if (!snapshots[pilot.k]) snapshots[pilot.k] = { run: copyRun(run), k: pilot.k };
+    GAME.run.step(run, stick, 1 / 120);
+  }
+  return snapshots;
+}
+
+function reachesStar(snapshots, course, stars, star, line) {
+  // Leave at least 96 units before the first changed sample, beyond every proof-pilot lookahead.
+  let k = Math.max(0, star.detour.k - star.detour.span - 24);
+  while (k > 0 && !snapshots[k]) k--;
+  const snapshot = snapshots[k];
+  if (!snapshot) return false;
+  const trial = { ...course, stars }, run = copyRun(snapshot.run, trial), pilot = { k: snapshot.k };
+  const routed = { ...trial, line }, end = star.detour.k + star.detour.span + 24;
+  while (!run.finished && !run.crashed && !run.missed && pilot.k <= end && run.time < course.par * 3 + 20) {
+    GAME.run.step(run, GAME.autopilot.steer(pilot, run.glider, routed), 1 / 120);
+  }
+  return run.stars.has(star.id) && !run.crashed && !run.missed;
+}
+
 function place(city, course, seed) {
   const count = COUNTS[course.difficulty], L = course.line, sample = course.sample;
   const rng = GAME.rng.stream(seed, `stars:${course.difficulty}`);
   const baseline = GAME.autopilot.fly(city, course, { tracePath: true }).path;
   const markers = [0, ...course.gates.map(g => g.s), ...course.boosters.flatMap(b => [b.pickup - 15, b.climbEnd + 15])].sort((a, b) => a - b);
-  const chosen = [];
+  const candidates = [];
   let tries = 0;
-  for (let id = 0; id < count; id++) {
-    const target = course.length * (id + 1) / (count + 1);
-    const candidates = [];
-    for (let k = 40; k < L.n - 40; k += 4) {
-      const s = k * sample;
-      if (chosen.some(v => Math.abs(v.s - s) < 340)) continue;
-      const before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
-      const span = Math.floor(Math.min(108, s - before - 16, after - s - 20) / sample);
-      if (span * sample < 52) continue;
-      const a = Math.max(0, k - 4), b = Math.min(L.n - 1, k + 4);
-      const length = Math.hypot(L.x[b] - L.x[a], L.z[b] - L.z[a]);
-      if (length < 1) continue;
-      const nx = -(L.z[b] - L.z[a]) / length, nz = (L.x[b] - L.x[a]) / length;
-      for (const offset of [14, -14, 10, -10, 7, -7, 4, -4]) for (const dy of [0, -6, 5]) {
-        if (Math.hypot(offset, dy) < 7) continue;
-        const star = { id, s, x: L.x[k] + nx * offset, y: L.y[k] + dy, z: L.z[k] + nz * offset,
-          radius: RADIUS, phase: rng() * Math.PI * 2, detour: { k, span, dx: nx * offset, dy, dz: nz * offset } };
-        if (GAME.collide.sphere(city, star.x, star.y, star.z, RADIUS + 0.8)) continue;
-        // Keep it optional: the clean racing flight must go outside its collection bubble.
-        if (baseline.some((p, i) => i && segmentDistance(star, baseline[i - 1], p) < PICKUP + GAME.flight.FLIGHT.RADIUS + 1)) continue;
-        const line = detourLine(course, [star]);
-        let clear = true;
-        for (let j = k - span; j <= k + span; j++) {
-          if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], GAME.flight.FLIGHT.RADIUS + 0.8)) { clear = false; break; }
-        }
-        if (!clear) continue;
-        const scenery = GAME.collide.sphere(city, star.x, star.y, star.z, 16) ? 100 : 0;
-        candidates.push({ star, score: Math.abs(s - target) - scenery + Math.abs(offset) * 2 + rng() * 50 });
+  for (let k = 40; k < L.n - 40; k += 4) {
+    const s = k * sample;
+    const before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
+    const span = Math.floor(Math.min(140, s - before - 16, after - s - 20) / sample);
+    if (span * sample < 52) continue;
+    const a = Math.max(0, k - 4), b = Math.min(L.n - 1, k + 4);
+    const length = Math.hypot(L.x[b] - L.x[a], L.z[b] - L.z[a]);
+    if (length < 1) continue;
+    const nx = -(L.z[b] - L.z[a]) / length, nz = (L.x[b] - L.x[a]) / length;
+    for (const offset of [28, -28, 22, -22, 16, -16, 12, -12, 10, -10, 8, -8, 6, -6, 4, -4, 2, -2, 0]) for (const dy of [0, -10, 8, -12, 12, 10]) {
+      if (Math.hypot(offset, dy) < MIN_DETOUR) continue;
+      const star = { s, x: L.x[k] + nx * offset, y: L.y[k] + dy, z: L.z[k] + nz * offset,
+        radius: RADIUS, phase: rng() * Math.PI * 2, detour: { k, span, dx: nx * offset, dy, dz: nz * offset } };
+      if (GAME.collide.sphere(city, star.x, star.y, star.z, RADIUS + 0.8)) continue;
+      // Keep it optional: the clean racing flight must go outside its collection bubble.
+      if (baseline.some((p, i) => i && segmentDistance(star, baseline[i - 1], p) < RACE_CLEARANCE)) continue;
+      const line = detourLine(course, [star]);
+      let clear = true;
+      for (let j = k - span; j <= k + span; j++) {
+        if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], GAME.flight.FLIGHT.RADIUS + 0.8)) { clear = false; break; }
       }
+      if (!clear) continue;
+      const scenery = GAME.collide.sphere(city, star.x, star.y, star.z, 20) ? 100 : 0;
+      // Prefer a longer side route framed by a roof, branch, or wall. Prove the whole flight
+      // afterwards so a tempting pocket never strands the player before a mandatory ring.
+      candidates.push({ star, score: -scenery - Math.abs(offset) * 4 - Math.abs(dy) * 2 + rng() * 35 });
     }
-    candidates.sort((a, b) => a.score - b.score);
-    let picked = null;
-    for (const { star } of candidates) {
-      const stars = [...chosen, star], trial = { ...course, stars };
-      tries++;
-      const proof = GAME.autopilot.fly(city, trial, { line: detourLine(course, stars) });
-      if (proof.finished && !proof.crashes && !proof.missed && proof.events.filter(e => e.type === 'star').length === stars.length) { picked = star; break; }
-    }
-    if (!picked) throw new Error(`no reachable star ${id + 1}/${count} for ${seed} ${course.difficulty}`);
-    chosen.push(picked);
   }
+  const ranked = Array.from({ length: count }, (_, id) => {
+    const target = course.length * (id + 1) / (count + 1);
+    return candidates.slice().sort((a, b) => Math.abs(a.star.s - target) + a.score - Math.abs(b.star.s - target) - b.score);
+  });
+  function pick(chosen) {
+    const id = chosen.length;
+    if (id === count) return chosen;
+    const snapshots = approachSnapshots(city, course, chosen);
+    for (const candidate of ranked[id]) {
+      if (tries >= 256) break;
+      const star = { ...candidate.star, id };
+      // Separate the actual turn-out/return intervals. A fixed long gap would discard two
+      // distinct, short pockets on a narrow course even when both are cleanly reachable.
+      if (chosen.some(v => Math.abs(v.s - star.s) < (v.detour.span + star.detour.span) * sample + 32)) continue;
+      const stars = [...chosen, star], trial = { ...course, stars };
+      const line = detourLine(course, stars);
+      if (!reachesStar(snapshots, course, stars, star, line)) continue;
+      tries++;
+      const proof = GAME.autopilot.fly(city, trial, { line });
+      if (!(proof.finished && !proof.crashes && !proof.missed && proof.events.filter(e => e.type === 'star').length === stars.length)) continue;
+      // A difficult second detour can make a third impossible. Try another clean combination
+      // before giving up; never move a star back into the easy pickup band to fill the count.
+      const result = pick(stars);
+      if (result) return result;
+    }
+    return null;
+  }
+  const chosen = pick([]);
+  if (!chosen) throw new Error(`no reachable ${count}-star detour for ${seed} ${course.difficulty}`);
   course.stars = chosen;
   course.starTries = tries;
   return chosen;
 }
 
-GAME.stars = { COUNTS, RADIUS, PICKUP, place, collect, detourLine, segmentDistance };
+GAME.stars = { COUNTS, RADIUS, PICKUP, MIN_DETOUR, RACE_CLEARANCE, place, collect, detourLine, segmentDistance };
 
 })();
 
@@ -7423,6 +7477,7 @@ GAME.courseData = { pack, unpack };
 // A hidden, optional flight. Its city is a separate copy: finding the red ring never changes
 // the seeded race, its stars, its proof time or the world's cached geometry.
 const SAMPLE = 4, LENGTH = 600, HOLE_RADIUS = 20, TRIGGER_RADIUS = 2.25;
+const NOTICE_RANGE = 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = v => { v = clamp(v, 0, 1); return v * v * (3 - 2 * v); };
 
@@ -7454,9 +7509,17 @@ function approach(city, course, trigger, line) {
     const g = run.glider, distance = Math.hypot(g.x - trigger.x, g.y - trigger.y, g.z - trigger.z);
     if (distance < closest) { closest = distance; best = { ...g }; }
     // The secret is exactly on the proved detour's flight, not at an altitude only the plan has.
-    if (pilot.k > trigger.detour.k + 5) break;
+    if (pilot.k > trigger.detour.k + 18) break;
     if (run.crashed) return null;
     if (through(previous, [g.x, g.y, g.z], trigger)) return { glider: { ...g }, trigger };
+    // Steep low turns can settle a little beyond their planned centre. Place the tiny ring
+    // on that real street-level flight point, while the original boundary still permits it.
+    if (pilot.k >= trigger.detour.k && g.y >= 4 && g.y <= 8 && Math.hypot(g.x - trigger.x, g.z - trigger.z) < 55
+      && GAME.run.routeDistance(run, g.x, g.z) > 34 && GAME.collide.groundHeight(city, g.x, g.z) === 0) {
+      const corrected = { ...trigger, x: g.x, y: g.y, z: g.z, s: pilot.k * course.sample,
+        n: [Math.sin(g.yaw), 0, Math.cos(g.yaw)] };
+      return { glider: { ...g }, trigger: corrected };
+    }
   }
   if (!best || closest > 7 || run.crashed) return null;
   const corrected = { ...trigger, x: best.x, y: best.y, z: best.z,
@@ -7514,7 +7577,7 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   const course = { difficulty: sourceCourse.difficulty, collapse: true, line, sample: SAMPLE, length: LENGTH,
     start: { x: trigger.x, y: initial.y, z: trigger.z, yaw: Math.atan2(direction[0], direction[2]) },
     gates, boosters: [], pads: [], stars: [], sections: [], par: LENGTH / GAME.flight.cruise(sourceCourse.difficulty),
-    ambientLift: initial.y < 65 ? 2.4 : 0, // Burning gardens supply a gentle thermal on low entries.
+    ambientLift: initial.y < 65 ? 5.6 : 0, // Heat lets a street-level entry clear the burning gardens.
     energyAt: s => height(s) + 8 };
   const falls = new Float32Array(city.n * city.n * 4), hazards = [];
   for (const [index, s] of [100, 220, 340, 460].entries()) {
@@ -7592,18 +7655,18 @@ function prove(world, initial) {
 // The ordinary proof pilot treats a booster lift as a reason not to dive. Heat here is gentle
 // continuous air, so compensate it without inhibiting the deliberate descent into the shaft.
 function steer(pilot, glider, course) {
-  const stick = GAME.autopilot.steer(pilot, { ...glider, lift: 0 }, course);
-  const F = GAME.flight.FLIGHT, lift = course.ambientLift || 0;
-  if (!lift) return stick;
-  const gamma = stick.y >= 0 ? stick.y * F.CLIMB_ANGLE : stick.y * F.DIVE_ANGLE;
-  const target = Math.asin(clamp(Math.sin(gamma) - lift / glider.speed, -1, 1));
-  stick.y = clamp(target / (target >= 0 ? F.CLIMB_ANGLE : F.DIVE_ANGLE), -1, 1);
-  return stick;
+  // A continuous thermal is available to climb with. Unlike a race booster, it must also
+  // permit a dive into the shaft, so the detour controller accounts for it directly.
+  return approachSteer(pilot, { ...glider, lift: course.ambientLift || 0 }, course);
 }
 
-// A hidden side climb may spend speed below cruise. The ordinary racing pilot conserves that
-// energy for later mandatory rings; this branch instead uses it to reach the tiny red ring.
+// The optional entrance trades height into speed to reach a small pavement ring. Once the
+// detour starts, its low line takes priority over conserving energy for later racing gates.
 function approachSteer(pilot, glider, course) {
+  // Before the optional turn, keep the ordinary proof pilot's energy conservation and booster
+  // behaviour. Applying the low-entry controller to an entire race can waste an earlier lift.
+  const detour = course.line.collapseDetour;
+  if (detour && pilot.k < detour.k - detour.span - 6) return GAME.autopilot.steer(pilot, glider, course);
   const stick = GAME.autopilot.steer(pilot, glider, course), F = GAME.flight.FLIGHT, L = course.line;
   const ahead = distance => Math.min(L.n - 1, pilot.k + Math.round(distance / course.sample));
   const a = ahead(glider.speed * 0.3), b = Math.min(L.n - 1, a + 2);
@@ -7614,46 +7677,170 @@ function approachSteer(pilot, glider, course) {
   return stick;
 }
 
+// Exact visibility against the same solid shapes as the city renderer. A real clean run,
+// rather than s / cruise, supplies the clock: dives, turns and booster lifts change its pace.
+function lineOfSight(city, from, to) {
+  const delta = to.map((v, i) => v - from[i]), distance = Math.hypot(...delta);
+  if (distance < 1e-6) return true;
+  const rd = delta.map(v => v / distance), cells = new Set();
+  let ix = Math.floor(from[0] / city.cell), iz = Math.floor(from[2] / city.cell);
+  const sx = Math.sign(rd[0]), sz = Math.sign(rd[2]);
+  const dx = sx ? city.cell / Math.abs(rd[0]) : Infinity, dz = sz ? city.cell / Math.abs(rd[2]) : Infinity;
+  let tx = sx ? ((ix + (sx > 0 ? 1 : 0)) * city.cell - from[0]) / rd[0] : Infinity;
+  let tz = sz ? ((iz + (sz > 0 ? 1 : 0)) * city.cell - from[2]) / rd[2] : Infinity;
+  for (let t = 0; t <= distance;) {
+    if (ix < 0 || iz < 0 || ix >= city.n || iz >= city.n) return false;
+    cells.add(iz * city.n + ix);
+    const next = Math.min(tx, tz);
+    if (tx <= next) { ix += sx; tx += dx; }
+    if (tz <= next) { iz += sz; tz += dz; }
+    t = next;
+  }
+  for (const cell of cells) {
+    if (cell < 0) return false;
+    for (const b of city.boxes(cell)) {
+      if (b[6] === 9) continue;
+      let near = 0, far = distance;
+      for (let axis = 0; axis < 3; axis++) {
+        if (Math.abs(rd[axis]) < 1e-9) {
+          if (from[axis] < b[axis] || from[axis] > b[axis + 3]) { near = Infinity; break; }
+        } else {
+          const a = (b[axis] - from[axis]) / rd[axis], c = (b[axis + 3] - from[axis]) / rd[axis];
+          near = Math.max(near, Math.min(a, c)); far = Math.min(far, Math.max(a, c));
+        }
+      }
+      if (near > far || near >= distance - 0.05 || far <= 0.05) continue;
+      if (b[7] >= GAME.street.SHAPE.BRANCH_X) {
+        if (GAME.collide.capsuleHit(b, from, rd) < distance - 0.05) return false;
+      } else if (b[7] === GAME.street.SHAPE.ELLIPSOID) {
+        const c = [0, 1, 2].map(i => (b[i] + b[i + 3]) / 2), r = [0, 1, 2].map(i => (b[i + 3] - b[i]) / 2);
+        const o = from.map((v, i) => (v - c[i]) / r[i]), d = rd.map((v, i) => v / r[i]);
+        const A = d.reduce((s, v) => s + v * v, 0), B = d.reduce((s, v, i) => s + v * o[i], 0);
+        const C = o.reduce((s, v) => s + v * v, -1), disc = B * B - A * C;
+        if (disc >= 0 && (-B + Math.sqrt(disc)) / A > 0.05 && (-B - Math.sqrt(disc)) / A < distance - 0.05) return false;
+      } else return false;
+    }
+  }
+  return true;
+}
+
+function normalTrace(city, course) {
+  const run = GAME.run.create(city, course), pilot = { k: 0 }, points = [];
+  let tick = 0;
+  while (!run.finished && !run.crashed && run.time < course.par * 2 + 10) {
+    if (tick++ % 6 === 0) points.push({ ...run.glider, time: run.time, next: run.next,
+      checkpoint: run.checkpoint, s: pilot.k * course.sample });
+    GAME.run.step(run, GAME.autopilot.steer(pilot, run.glider, course), 1 / 120);
+  }
+  return run.finished && !run.crashed ? points : [];
+}
+
+function visibleFrom(city, pose, target, range = NOTICE_RANGE) {
+  const delta = [target.x - pose.x, target.y - pose.y, target.z - pose.z];
+  if (Math.hypot(...delta) >= range) return false;
+  const cg = Math.cos(pose.gamma), fwd = [Math.sin(pose.yaw) * cg, Math.sin(pose.gamma), Math.cos(pose.yaw) * cg];
+  const right = [-Math.cos(pose.yaw), 0, Math.sin(pose.yaw)], up = [-Math.sin(pose.yaw) * Math.sin(pose.gamma), cg, -Math.cos(pose.yaw) * Math.sin(pose.gamma)];
+  const dot = a => a.reduce((s, v, i) => s + v * delta[i], 0), depth = dot(fwd);
+  if (depth <= 0) return false;
+  const cb = Math.cos(pose.bank), sb = Math.sin(pose.bank), rx = dot(right), uy = dot(up);
+  const tanY = Math.tan((68 * Math.PI / 180 + Math.max(0, pose.speed - GAME.flight.FLIGHT.CRUISE) * 0.004) / 2);
+  if (Math.abs(rx * cb - uy * sb) > depth * tanY * 16 / 9 || Math.abs(uy * cb + rx * sb) > depth * tanY) return false;
+  return lineOfSight(city, [pose.x, pose.y, pose.z], [target.x, target.y, target.z]);
+}
+
+function notice(city, trace, trigger, raised = false) {
+  // A raised, recessed red light display draws the eye above the tiny pavement ring.
+  const heights = raised ? [60, 75] : [trigger.y + 7.5, Math.max(30, trigger.y + 7.5), Math.max(45, trigger.y + 7.5)];
+  for (const y of heights) {
+    const landmark = { x: trigger.x, y, z: trigger.z, n: [...trigger.n], halfWidth: 5, halfHeight: 2.4 };
+    if (GAME.collide.sphere(city, landmark.x, landmark.y, landmark.z, 2.5)) continue;
+    // The shop prints MM:SS, so a fleeting view between seconds cannot be its promised cue.
+    // Choose the first actually visible whole-second pose, rather than rounding a glimpse
+    // forward into a moment where another tree or facade may already hide the entrance.
+    const point = trace.find(p => Math.abs(p.time - Math.round(p.time)) < 1e-7
+      && (visibleFrom(city, p, trigger, 125) || visibleFrom(city, p, landmark)));
+    if (point) {
+      const time = Math.round(point.time);
+      return { landmark, visibilityTime: time, visibilityPoint: { ...point, time } };
+    }
+  }
+  return null;
+}
+
 function prepare(city, course, seed = city.seed) {
   if (!['hard', 'extreme'].includes(course.difficulty)) return null;
   if (course.collapse && typeof course.collapse === 'object') return course.collapse;
   const L = course.line, markers = [0, ...course.gates.map(g => g.s),
     ...course.boosters.flatMap(b => [b.pickup - 24, b.climbEnd + 24])].sort((a, b) => a - b);
-  const candidates = [], random = GAME.rng.stream(seed, 'collapse-secret');
-  for (let k = 35; k < L.n - 50; k += 8) {
-    const s = k * course.sample, before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
-    const span = Math.floor(Math.min(150, Math.max(100, s - before - 12, after - s - 12), s - 8, course.length - s - 8) / course.sample);
-    if (span * course.sample < 80 || L.y[k] < 20) continue;
-    const a = k - 3, b = k + 3, dx = L.x[b] - L.x[a], dz = L.z[b] - L.z[a], length = Math.hypot(dx, dz);
-    if (length < 20) continue;
-    const direction = [dx / length, 0, dz / length], side = [-direction[2], 0, direction[0]];
-    for (const lateral of [48, -48, 40, -40, 56, -56]) for (const dy of [0, 16, 28, 40]) {
-      const trigger = { x: L.x[k] + side[0] * lateral, y: L.y[k] + dy, z: L.z[k] + side[2] * lateral,
-        n: direction, radius: TRIGGER_RADIUS, s, detour: { k, span, dx: side[0] * lateral, dy, dz: side[2] * lateral } };
-      const end = [trigger.x + direction[0] * LENGTH, trigger.z + direction[2] * LENGTH];
-      if (end.some(v => v < 80 || v > city.size - 80) || GAME.collide.sphere(city, trigger.x, trigger.y, trigger.z, 3.5)) continue;
-      const line = GAME.stars.detourLine(course, [trigger]);
-      let clear = true;
-      for (let j = k - span; j <= k; j++) if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], 2.7)) { clear = false; break; }
-      if (clear) candidates.push({ trigger, line, score: s * 0.001 + random() * 2 + Math.abs(lateral) * 0.015 + dy * 0.1 });
-    }
-  }
-  candidates.sort((a, b) => a.score - b.score);
-  for (const { trigger, line } of candidates.slice(0, 32)) {
-    const flight = approach(city, course, trigger, line);
-    if (!flight) continue;
+  const random = GAME.rng.stream(seed, 'collapse-secret'), trace = normalTrace(city, course);
+  const groundApproaches = [];
+  function finish(flight, line, hint) {
     const world = escapeWorld(city, course, flight.trigger, flight.glider);
-    if (!world) continue;
+    if (!world) return null;
     const proof = prove(world, flight.glider);
-    if (!proof.finished || proof.crashes || proof.gates !== 5) continue;
+    if (!proof.finished || proof.crashes || proof.gates !== 5) return null;
     delete world.city.collapse;
     const secret = { trigger: flight.trigger, approachLine: line, entry: { ...flight.glider },
       world: GAME.courseData.pack(world.city, world.course), falls: world.state.falls,
-      hole: world.state.hole, hazards: world.state.hazards, proof };
+      hole: world.state.hole, hazards: world.state.hazards, proof, ...hint };
     course.collapse = secret;
     return secret;
   }
-  // A Key remains useful on another seeded course; never stall loading or publish an unproved exit.
+  function search(step, offsets, limit) {
+    const candidates = [];
+    for (let k = 35; k < L.n - 15; k += step) {
+      const s = k * course.sample, before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
+      const span = Math.floor(Math.min(150, Math.max(100, s - before - 12, after - s - 12), s - 8, course.length - s - 8) / course.sample);
+      if (span * course.sample < 80 || L.y[k] > 65) continue;
+      const a = k - 3, b = k + 3, dx = L.x[b] - L.x[a], dz = L.z[b] - L.z[a], length = Math.hypot(dx, dz);
+      if (length < 20) continue;
+      const direction = [dx / length, 0, dz / length], side = [-direction[2], 0, direction[0]];
+      for (const lateral of offsets) for (const y of [6, 4.5, 8]) {
+        const dy = y - L.y[k];
+        const trigger = { x: L.x[k] + side[0] * lateral, y: L.y[k] + dy, z: L.z[k] + side[2] * lateral,
+          n: direction, radius: TRIGGER_RADIUS, s, detour: { k, span, dx: side[0] * lateral, dy, dz: side[2] * lateral } };
+        const end = [trigger.x + direction[0] * LENGTH, trigger.z + direction[2] * LENGTH];
+        if (end.some(v => v < 80 || v > city.size - 80) || GAME.collide.sphere(city, trigger.x, trigger.y, trigger.z, 3.5)) continue;
+        const line = GAME.stars.detourLine(course, [trigger]);
+        line.collapseDetour = { k, span };
+        // Stay low beyond the crossing: looking ahead must not pull the glider back up before
+        // it reaches the street ring. This line is used only to find the optional entrance.
+        for (let j = k; j <= Math.min(k + 40, line.n - 1); j++) line.y[j] = y;
+        let clear = true;
+        for (let j = k - span; j <= k; j++) if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], 2.7)) { clear = false; break; }
+        if (clear) candidates.push({ trigger, line, score: s * 0.001 + random() * 2 + Math.abs(lateral) * 0.015 + L.y[k] * 0.25 });
+      }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    for (const { trigger, line } of candidates.slice(0, limit)) {
+      const flight = approach(city, course, trigger, line);
+      if (!flight) continue;
+      if (flight.trigger.y > 8.5 || flight.trigger.y < 3.6 || GAME.collide.groundHeight(city, flight.trigger.x, flight.trigger.z) > 1) continue;
+      const hint = notice(city, trace, flight.trigger);
+      if (!hint) { groundApproaches.push({ flight, line }); continue; }
+      const secret = finish(flight, line, hint);
+      if (secret) return secret;
+    }
+    return null;
+  }
+  const coarseOffsets = [48, -48, 40, -40, 56, -56, 64, -64, 72, -72, 80, -80, 88, -88];
+  const coarse = search(4, coarseOffsets, 120);
+  if (coarse) return coarse;
+  // Tight street pockets can fall between coarse samples. Keep the common path quick, then
+  // search every route sample and intermediate offsets before declaring a seed unavailable.
+  const offsets = [];
+  for (let d = 36; d <= 96; d += 4) offsets.push(d, -d);
+  const dense = search(1, offsets, 600);
+  if (dense) return dense;
+  // Dense foliage can hide every lower display at the clock ticks. Reuse the ground flights
+  // already proved above for a higher window, without rebuilding and flying both pools again.
+  // Ordinary successes return first, so their entrance and clock stay unchanged.
+  for (const { flight, line } of groundApproaches) {
+    const hint = notice(city, trace, flight.trigger, true);
+    if (!hint) continue;
+    const secret = finish(flight, line, hint);
+    if (secret) return secret;
+  }
   course.collapse = null;
   return null;
 }
@@ -7668,7 +7855,8 @@ function begin(city, course, secret = course.collapse, glider = null) {
   return { ...world, state };
 }
 
-GAME.collapse = { prepare, begin, step, steer, approachSteer, prove, through, crossing, fallOffset, TRIGGER_RADIUS, HOLE_RADIUS };
+GAME.collapse = { prepare, begin, step, steer, approachSteer, prove, through, crossing, fallOffset,
+  lineOfSight, normalTrace, visibleFrom, NOTICE_RANGE, TRIGGER_RADIUS, HOLE_RADIUS };
 
 })();
 
@@ -7774,7 +7962,7 @@ function step(run, stick, dt) {
   run.time += dt;
   const to = [g.x, g.y, g.z], hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS);
   if (hit) {
-    run.crashed = hit; run.crashes++; run.retries++; run.penalty += GAME.run.PENALTY.crash;
+    run.crashed = hit; run.crashes++; run.retries++;
     // Keep the crash camera in the enclosed air. At maximum speed the attempted position can
     // cross the wall itself in one step; freezing there would show the void outside the bore.
     [g.x, g.y, g.z] = run.lastSafePosition;
@@ -7808,17 +7996,13 @@ function linePose(course, s) {
 }
 
 function respawnPose(run) {
-  // Never add the surface's retry height: a tunnel roof is just as solid as its water floor.
-  const s = run.checkpoint < 0 ? 0 : run.course.gates[run.checkpoint].s + 8;
-  return linePose(run.course, s);
+  return { ...run.course.start };
 }
 
 function respawn(run) {
-  run.glider = GAME.flight.create(respawnPose(run), run.course.difficulty);
+  // A lost underground attempt starts a completely new race, with no checkpoint return.
+  Object.assign(run, GAME.run.create(run.city, run.course));
   run.lastSafePosition = [run.glider.x, run.glider.y, run.glider.z];
-  run.crashed = null; run.lift = 0; run.powerLift = 0;
-  run.boundary = { distance: 0, travel: 0, intensity: 0, tick: 0 };
-  // powerUsed belongs to the attempt and deliberately survives a crash.
 }
 
 function steer(pilot, glider, course) {
@@ -7846,26 +8030,28 @@ function steer(pilot, glider, course) {
 function prove(city, course, mistakes = null) {
   const run = GAME.run.create(city, course), pilot = { k: 0 }, events = [], path = [];
   const crashes = [...(mistakes?.crashAt || [])], random = GAME.rng.stream(city.seed, 'sewer-shaky');
-  let wobble = { x: 0, y: 0 }, tick = 0;
-  while (!run.finished && run.time < course.par * 3 + 30) {
+  let wobble = { x: 0, y: 0 }, tick = 0, elapsed = 0, failures = 0;
+  while (!run.finished && elapsed < course.par * 3 + 30) {
     const stick = steer(pilot, run.glider, course);
     if (mistakes?.noise) {
       if (tick % 30 === 0) wobble = { x: (random() * 2 - 1) * mistakes.noise, y: (random() * 2 - 1) * mistakes.noise };
       stick.x = clamp(stick.x + wobble.x, -1, 1); stick.y = clamp(stick.y + wobble.y, -1, 1);
     }
-    if (crashes.length && run.time >= crashes[0]) {
+    if (crashes.length && elapsed >= crashes[0]) {
       crashes.shift(); const p = run.glider;
       p.y = groundHeight(city, p.x, p.z, p.y) - 2;
     }
     events.push(...step(run, stick, DT).map(event => ({ ...event, time: run.time })));
+    elapsed += DT;
     if (tick++ % 8 === 0 && !run.crashed) path.push({ x: run.glider.x, y: run.glider.y, z: run.glider.z });
     if (run.crashed) {
-      if (!mistakes || run.crashes > 8) break;
+      failures++;
+      if (!mistakes || failures > 8) break;
       respawn(run);
-      pilot.k = Math.round((run.checkpoint < 0 ? 0 : course.gates[run.checkpoint].s + 8) / course.sample);
+      pilot.k = 0;
     }
   }
-  return { finished: run.finished, time: run.time, total: GAME.run.total(run), crashes: run.crashes,
+  return { finished: run.finished, time: run.time, total: GAME.run.total(run), crashes: failures,
     missed: run.missed, gate: run.next, boosts: 0, events, path };
 }
 
@@ -8264,6 +8450,16 @@ function claim(code, difficulty, id) {
 }
 const collected = (code, difficulty) => Array.from({ length: GAME.stars.COUNTS[difficulty] }, (_, id) => id)
   .filter(id => claims.has(keyFor(code, id)));
+// Flight pickups are provisional. Only a completed surface race can turn them into wallet stars.
+function finish(code, difficulty, run, found = run?.stars) {
+  if (!run?.finished || run.crashed || run.course?.environment === 'sewer' || run.course?.collapse === true
+      || run.next !== run.course.gates.length) return [];
+  const awarded = [];
+  for (const star of run.course.stars) {
+    if (found.has(star.id) && run.stars.has(star.id) && claim(code, difficulty, star.id)) awarded.push(star.id);
+  }
+  return awarded;
+}
 window.addEventListener('storage', e => {
   if (e.key === null) { records.clear(); sessionClaims.clear(); rebuild(); return; }
   const shared = sharedKey(e.key);
@@ -8276,7 +8472,7 @@ function savedTotal() {
   const saved = tally(readSaved());
   return saved.shared.size + saved.credit;
 }
-GAME.starBank = { load, claim, collected, savedTotal, total: () => claims.size + legacyCredit };
+GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claims.size + legacyCredit };
 
 })();
 
@@ -9832,6 +10028,8 @@ uniform vec4 uCollectibles[3];                 // centre xyz, radius (0 = unused
 uniform vec4 uCollectiblePhases;
 uniform vec4 uCollectibleSaved;                // 1 = already owned, a faint outline without halo/glints
 uniform vec3 uCollectibleColour;
+uniform vec4 uSecretDisplay;                   // raised display centre xyz; 0 radius disables it
+uniform vec4 uSecretDisplayN;                  // plane normal xyz; half-height
 // Course lights share a look no tower has: a white-hot core in a coloured halo, and motion.
 const vec3 HOT = vec3(1.0, 0.86, 0.95);
 const vec3 GATE_NEXT = vec3(1.0, 0.1, 0.5);
@@ -9907,7 +10105,12 @@ vec3 ringLight(vec3 ro, vec3 rd, vec4 c, vec4 n, vec2 f, float tMax, float pixAn
   if (d > 0.5 * R + 12.0 + 9.0 * px) return vec3(0.0);        // beyond every style's outermost glow
   float kind = n.w;
   if (hidden) return (kind == RING_FINISH ? FINISH : GATE_NEXT) * tube(d, max(0.3, px * 0.7), px * 1.2) * 0.6 * f.y;
-  if (kind == RING_SECRET) return vec3(0.55, 0.008, 0.014) * tube(d, 0.13, max(0.025, px)) * (1.0 - smoothstep(65.0, 125.0, t));
+  if (kind == RING_SECRET) {
+    float near = 1.0 - smoothstep(20.0, 100.0, t);
+    float breathe = 0.88 + 0.12 * sin(uTime * 1.8);
+    return vec3(0.65, 0.008, 0.014) * tube(d, 0.13 + near * 0.06, max(0.025, px))
+         * (0.35 + near * 0.65) * breathe * (1.0 - smoothstep(90.0, 125.0, t));
+  }
   vec3 reference = abs(n.y) > 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
   vec3 side = normalize(cross(n.xyz, reference));
   vec2 lq = vec2(dot(q, side), dot(q, cross(side, n.xyz)));   // also supports a horizontal shaft ring
@@ -10017,6 +10220,31 @@ vec3 overScene(vec3 scene, vec3 light) {
   return scene * (1.0 - 0.8 * saturate(3.0 * max(light.r, max(light.g, light.b)))) + light;
 }
 
+// A small raised light display, like an out-of-hours shop window over a street entrance.
+// Its warm awning and red outline can be noticed from the race; the thin ring below stays
+// almost transparent until approached. It never shines through a wall or adds a guide arrow.
+vec3 secretDisplayLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
+  if (uSecretDisplay.w <= 0.0) return vec3(0.0);
+  float den = dot(rd, uSecretDisplayN.xyz);
+  if (abs(den) < 1e-4) return vec3(0.0);
+  float t = dot(uSecretDisplay.xyz - ro, uSecretDisplayN.xyz) / den;
+  if (t <= 0.0 || t >= tMax || distance(ro, uSecretDisplay.xyz) >= 180.0) return vec3(0.0);
+  vec3 side = normalize(cross(uSecretDisplayN.xyz, vec3(0.0, 1.0, 0.0)));
+  vec3 q = ro + rd * t - uSecretDisplay.xyz;
+  vec2 p = vec2(dot(q, side), q.y), size = vec2(uSecretDisplay.w, uSecretDisplayN.w);
+  float px = max(0.03, t * pixAngle), box = max(abs(p.x) - size.x, abs(p.y) - size.y);
+  if (box > 4.0 + px * 3.0) return vec3(0.0);
+  float rim = tube(box, 0.13, px * 1.15);
+  float glass = (1.0 - smoothstep(-px, px, box)) * 0.022;
+  float warm = tube(p.y - size.y + 0.45, 0.20, px) * (1.0 - smoothstep(size.x - 0.4, size.x, abs(p.x)))
+             * (0.35 + 0.65 * pulseAA(p.x * 0.4, 0.46, px * 0.4));
+  float bulb = tube(length(p - vec2(0.0, -0.2)), 0.30, px);
+  float breathe = 0.90 + 0.10 * sin(uTime * 1.8);
+  vec3 col = vec3(1.25, 0.035, 0.023) * (rim * breathe + glass + bulb * 0.7)
+           + vec3(0.85, 0.34, 0.10) * warm * 0.55;
+  return col * (1.0 - smoothstep(145.0, 180.0, distance(ro, uSecretDisplay.xyz)));
+}
+
 // Signed distance to a five-point star, with crisp anti-aliased edges at any render scale.
 float starDistance(vec2 p, float radius) {
   float nearest = 1e6;
@@ -10095,7 +10323,7 @@ vec3 courseLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
     if (uRingN[i].w == RING_FINISH) col += beaconLight(ro, rd, uRingC[i], tMax, pixAngle);
   }
   for (int i = 0; i < 3; i++) col += collectibleLight(ro, rd, uCollectibles[i], uCollectiblePhases[i], uCollectibleSaved[i], tMax, pixAngle);
-  return col + guideLight(ro, rd, tMax, pixAngle);
+  return col + guideLight(ro, rd, tMax, pixAngle) + secretDisplayLight(ro, rd, tMax, pixAngle);
 }
 `;
 
@@ -10123,6 +10351,7 @@ function uniforms(rings, guide, stars = []) {
   const ringC = new Float32Array(MAX_RINGS * 4), ringN = new Float32Array(MAX_RINGS * 4), ringF = new Float32Array(MAX_RINGS * 2);
   const path = new Float32Array(PATH_POINTS * 4), pathM = new Float32Array(PATH_POINTS * 2);
   const collectibles = new Float32Array(12), phases = new Float32Array(4), saved = new Float32Array(4);
+  const secretDisplay = new Float32Array(4), secretDisplayN = new Float32Array(4);
   if (stars.length > 3) throw new Error('at most three stars per course');
   stars.forEach((s, i) => {
     collectibles.set([s.x, s.y, s.z, s.radius], i * 4); phases[i] = s.phase; saved[i] = s.collected ? 1 : 0;
@@ -10133,13 +10362,19 @@ function uniforms(rings, guide, stars = []) {
     ringC.set([r.x, r.y, r.z, r.radius], i * 4);
     ringN.set([r.n[0], r.n[1], r.n[2], RING_KIND[r.kind]], i * 4);
     ringF.set([r.flare, r.xray], i * 2);
+    if (r.kind === 'secret' && r.landmark) {
+      const m = r.landmark;
+      secretDisplay.set([m.x, m.y, m.z, m.halfWidth]);
+      secretDisplayN.set([...m.n, m.halfHeight]);
+    }
   });
   guide.forEach((p, i) => {
     if (p.length !== 6) throw new Error(`guide point ${i} has ${p.length} values, expected [x, y, z, brightness, s, xray]`);
     path.set(p.slice(0, 4), i * 4);
     pathM.set(p.slice(4), i * 2);
   });
-  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases, uCollectibleSaved: saved };
+  return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases, uCollectibleSaved: saved,
+    uSecretDisplay: secretDisplay, uSecretDisplayN: secretDisplayN };
 }
 
 // The boosters' colour in a city theme (GAME.themes): lime, unless the theme brings its own.
@@ -10421,7 +10656,51 @@ vec3 parkGround(vec3 p, vec2 local, float pix) {
   return mix(grass, stone, path) + vec3(0.09, 0.105, 0.1) * curb;
 }
 
+vec3 streetSnow(vec3 col, vec3 p, vec3 normal, float fp, float light, float bark) {
+  float amount = smoothstep(0.75, 1.0, uSurface.y);
+  if (amount <= 0.0) return col;
+  float grain = tnoise(p * vec3(0.63, 0.38, 0.63));
+  // Snow rests on the upper halves of every rounded crown and on the tops of exposed limbs.
+  // Uneven edges leave the undersides green, so spreading trees and small shrubs keep their shape.
+  float cap = smoothstep(0.08, 0.43, normal.y + (grain - 0.5) * 0.21);
+  float frost = smoothstep(0.52, 0.77, tnoise(p * vec3(2.2, 0.14, 2.2)))
+    * max(dot(normal, normalize(vec3(-0.7, 0.05, -0.6))), 0.0) * bark * 0.32;
+  float fine = 1.0 - smoothstep(0.12, 0.55, fp);
+  float crystals = fine > 0.0 ? tnoise(p * 8.0) : 0.5;
+  vec3 snow = vec3(0.4, 0.49, 0.61) * (0.78 + grain * 0.15 + crystals * fine * 0.12)
+    * (0.62 + light * 0.55);
+  return mix(col, snow, max(cap, frost) * amount);
+}
+
+vec3 frozenFountain(Hit h, vec3 p, vec3 rd, float fp, vec3 centre, float light) {
+  float detail = 1.0 - smoothstep(0.09, 0.5, fp);
+  float fresnel = pow(1.0 - abs(dot(h.n, rd)), 3.0);
+  float grain = tnoise(p * 3.8), facets = tnoise(p * vec3(2.8, 0.55, 2.8));
+  // The basin is opaque blue ice. Two offset Voronoi-like cell seams form fixed hairline cracks;
+  // the standing jets become frost-covered ice columns with vertical grooves, never flowing water.
+  vec3 col = mix(vec3(0.12, 0.23, 0.33), vec3(0.31, 0.43, 0.55), facets) * light;
+  col += vec3(0.065, 0.09, 0.12) * fresnel;
+  if (h.b.y - h.b.x < 0.2) {
+    vec2 uv = p.xz + vec2(0.5 * sin(p.z * 0.67), 0.4 * sin(p.x * 0.81));
+    vec2 cell = min(fract(uv / 2.1), 1.0 - fract(uv / 2.1)) * 2.1;
+    float crack = 1.0 - smoothstep(0.018, 0.035 + fp, min(cell.x, cell.y));
+    col = mix(col, vec3(0.04, 0.105, 0.16) * light, crack * detail * 0.65);
+    float radius = length(p.xz - centre.xz);
+    float halfSize = min(h.a.z - h.a.x, h.a.w - h.a.y) * 0.5;
+    float frost = smoothstep(halfSize * 0.65, halfSize * 0.94, radius) * 0.55
+      + smoothstep(0.55, 0.8, grain) * 0.25;
+    return mix(col, vec3(0.43, 0.52, 0.63) * light, min(frost, 0.8));
+  }
+  float grooves = pulseAA((p.x + p.z) * 4.2 + facets * 0.2, 0.17, fp * 5.9);
+  col *= 0.82 + grooves * detail * 0.24;
+  float frost = 0.42 + smoothstep(0.3, 0.72, grain) * 0.35;
+  col = mix(col, vec3(0.36, 0.47, 0.6) * (0.88 + facets * 0.2) * light, frost);
+  return streetSnow(col, p, h.n, fp, light, 0.0);
+}
+
 vec3 fountainWater(Hit h, vec3 p, vec3 rd, float fp, vec3 centre, float light) {
+  // Only the fully snowy Arctic theme freezes fountains; every ice detail is independent of time.
+  if (uSurface.y > 0.8) return frozenFountain(h, p, rd, fp, centre, light);
   float detail = 1.0 - smoothstep(0.09, 0.5, fp);
   vec3 tint = mix(vec3(0.035, 0.14, 0.18), vec3(0.045, 0.2, 0.07), uToxic * 0.7);
   tint = mix(tint, vec3(0.08, 0.17, 0.27), uSurface.y * 0.6);
@@ -10479,6 +10758,7 @@ vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
     }
     col = mix(col, vec3(0.21, 0.095, 0.028) * (0.6 + mass * 0.5), uSurface.z * variation * 0.6);
     col = mix(col, vec3(0.13, 0.2, 0.28), max(h.n.y, 0.0) * uSurface.y * (0.55 + mass * 0.35));
+    col = streetSnow(col, p, h.n, fp, light, 0.0);
     return col + vec3(0.008, 0.016, 0.006) * pow(max(dot(-rd, uSunDir), 0.0), 4.0);
   } else if (material < 3.5) {
     float grain = sin(p.x * 2.4 + tnoise(p * 0.4) * 4.0);
@@ -10509,7 +10789,8 @@ vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
   } else {
     return fountainWater(h, p, rd, fp, centre, light);
   }
-  return themeEquipment(col * light, p, h.n, pix);
+  col = themeEquipment(col * light, p, h.n, pix);
+  return streetSnow(col, p, h.n, fp, light, material < 1.5 ? 1.0 : 0.0);
 }
 `;
 
@@ -12959,7 +13240,7 @@ GAME.settingsPanel = { create: createSettingsPanel };
 'use strict';
 // ---- src/ui/shop-panel.js ----
 // A focused shop overlay. Opening it from pause never resumes or recalibrates the flight.
-function create(panel, { touch }) {
+function create(panel, { touch, collapseHint = () => null }) {
   const q = selector => panel.querySelector(selector), buy = q('#shop-buy'), keyBuy = q('#shop-key-buy');
   let origin = null, opener = null, busy = null;
   q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
@@ -12980,6 +13261,11 @@ function create(panel, { touch }) {
     buy.textContent = busy === 'lift' ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
       : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
     const key = GAME.shop.COLLAPSE_KEY;
+    const hint = collapseHint();
+    const seconds = hint ? Math.max(0, Math.ceil(hint.seconds - 1e-7)) : null;
+    q('#shop-key-hint').textContent = seconds === null ? '???'
+      : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    q('#shop-key-context').textContent = hint ? `${hint.code} · ${hint.difficulty}` : '';
     q('#shop-key-price').textContent = `★ ${key.price}`;
     q('#shop-key-owned').textContent = s.collapseKey ? 'permanently owned' : 'permanent · one purchase';
     const keyHadFocus = document.activeElement === keyBuy;
@@ -13033,7 +13319,7 @@ function create(panel, { touch }) {
       panel.classList.remove('hidden');
       q('#shop-done').focus();
     },
-    close, get isOpen() { return !!origin; },
+    close, refresh: render, get isOpen() { return !!origin; },
   };
 }
 GAME.shopPanel = { create };
@@ -13321,7 +13607,7 @@ let menuEnvironment = params.get('environment') === 'surface' ? 'surface'
 const isSewer = () => course?.environment === 'sewer';
 const environmentCourses = new Map();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const worldOptions = environment => ({ environment, collapse: environment !== 'sewer' && GAME.shop.state().collapseKey });
+const worldOptions = environment => ({ environment, collapse: environment !== 'sewer' });
 let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, params.get('difficulty')) ? params.get('difficulty') : 'medium';
 let requestedLockedExtreme = false;
 const sessionExtremeUnlocks = new Set();
@@ -13405,6 +13691,7 @@ async function loadCourse(seed, selectedDifficulty = difficulty, environment = c
 // Boosters taken this run (run.used can't say: a respawn re-arms the boosters after the checkpoint).
 let boostsTaken = 0;
 let newStars = 0;
+let pendingStars = new Set();
 let usingLift = false;
 // Buying a key while paused must add the secret to this course without replacing its run.
 async function ensureCollapsePrepared() {
@@ -13414,7 +13701,7 @@ async function ensureCollapsePrepared() {
   const original = course, code = seedCode, selected = difficulty;
   const request = { course: original, promise: null };
   request.promise = GAME.courseLoader.load(GAME.rng.codeToSeed(code), selected, { collapse: true })
-    .then(world => { if (course === original) original.collapse = world.course.collapse; })
+    .then(world => { if (course === original) { original.collapse = world.course.collapse; shopPanel?.refresh(); } })
     .catch(error => { if (error.name !== 'AbortError') console.warn(`[game] secret preparation: ${error.message}`); })
     .finally(() => { if (collapsePreparation === request) collapsePreparation = null; });
   collapsePreparation = request;
@@ -13442,6 +13729,7 @@ async function useLift() {
 function newRun() {
   boostsTaken = 0;
   newStars = 0;
+  pendingStars = new Set();
   soundtrack?.reset();
   run = GAME.run.create(city, course);
   if (!isSewer()) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
@@ -13454,7 +13742,7 @@ function leaveCollapse() {
   GAME.sound.setAlarm(false);
   if (!surfaceSession) return;
   hud.clearToasts();
-  ({ city, course, run, guide, pilot, boostsTaken, newStars } = surfaceSession);
+  ({ city, course, run, guide, pilot, boostsTaken, newStars, pendingStars } = surfaceSession);
   surfaceSession = collapse = null;
   renderer.setWorld(city, course.pads);
   renderer.setCollapse(null);
@@ -13463,7 +13751,8 @@ function leaveCollapse() {
 
 function enterCollapse() {
   const glider = { ...run.glider }, world = GAME.collapse.begin(city, course, course.collapse, glider);
-  surfaceSession = { city, course, run, guide, pilot, boostsTaken, newStars };
+  surfaceSession = { city, course, run, guide, pilot, boostsTaken, newStars, pendingStars };
+  pendingStars = new Set(); newStars = 0;
   city = world.city; course = world.course; collapse = world.state;
   run = GAME.run.create(city, course); run.glider = glider;
   guide = GAME.guide.create(course); pilot = { k: 0 };
@@ -13536,7 +13825,7 @@ function handle(events) {
   const sewer = events.some(e => e.type === 'sewer');
   events = events.filter(e => e.type !== 'sewer');
   // If another tab saved this slot during the flight step, suppress the duplicate pickup feedback.
-  events = events.filter(e => e.type !== 'star' || (!isSewer() && GAME.starBank.claim(seedCode, difficulty, e.star)));
+  events = events.filter(e => e.type !== 'star' || (!isSewer() && !GAME.starBank.collected(seedCode, difficulty).includes(e.star)));
   soundtrack.events(events);
   for (const e of events) {
     if (e.type === 'gate') { GAME.guide.onGate(guide, e.gate, run.time); hud.gatePassed(); }
@@ -13544,9 +13833,8 @@ function handle(events) {
     else if (e.type === 'missed') hud.toast(`${course.gates[e.gate].finish ? 'outside the ring' : 'missed gate'} +${GAME.run.PENALTY.missed} s`, 'bad');
     else if (e.type === 'boost') { boostsTaken++; hud.toast(`lift +${Math.round(e.lift)}`, 'good'); boostGlow = 1; }
     else if (e.type === 'star') {
-      newStars++;
-      GAME.shop.refresh();
-      hud.toast(`★ star saved · ${GAME.starBank.total()} total`, 'star', 2);
+      pendingStars.add(e.star); newStars = pendingStars.size;
+      hud.toast('★ star found · finish to save', 'star', 2);
       hud.starCollected();
     }
     else if (e.type === 'crash') {
@@ -13555,13 +13843,18 @@ function handle(events) {
       const what = retryBooster ? 'retry booster' : isSewer() ? { ground: 'hit the water', water: 'hit the water', dirt: 'hit the dirt', pipe: 'hit a pipe', wall: 'hit the tunnel', tower: 'crashed', offCourse: 'off course' }[e.hit.kind] || 'crashed'
         : { ground: 'hit the street', tower: 'crashed', bounds: 'left the city', offCourse: 'off course' }[e.hit.kind];
       hud.message(what, 'bad');
-      hud.toast(offCourse ? `returning to last gate · +${GAME.run.PENALTY.crash + GAME.run.PENALTY.offCourse} s`
+      hud.toast(isSewer() ? 'Course lost · restarting from the beginning' : offCourse ? `returning to last gate · +${GAME.run.PENALTY.crash + GAME.run.PENALTY.offCourse} s`
         : retryBooster ? `back before booster · +${GAME.run.PENALTY.crash} s` : `+${GAME.run.PENALTY.crash} s`,
       'bad', offCourse ? OFF_COURSE_PAUSE : retryBooster ? BOOSTER_RETRY_PAUSE : 1.4);
       crashFlash = 1;
       crashPause = offCourse ? OFF_COURSE_PAUSE : retryBooster ? BOOSTER_RETRY_PAUSE : CRASH_PAUSE;
       setMode('crashed');
     } else if (e.type === 'finish') {
+      if (!isSewer() && !collapse) {
+        newStars = GAME.starBank.finish(seedCode, difficulty, run, pendingStars).length;
+        pendingStars.clear();
+        GAME.shop.refresh();
+      }
       hud.message('finish', 'finish');
       setMode('finished');
     }
@@ -13574,14 +13867,17 @@ const autoSteer = routed => collapse ? GAME.collapse.steer(pilot, run.glider, ro
   : isSewer() ? GAME.sewerCourse.steer(pilot, run.glider, routed) : GAME.autopilot.steer(pilot, run.glider, routed);
 let pilotStick = AUTOPILOT ? () => autoSteer(course) : () => input.stick(run.glider, PHYSICS_DT);
 
-// Back at the last gate passed; the guide line and the autopilot's progress restart there too.
+// Surface crashes return to the checkpoint; Sewer crashes start a fresh full course.
 function respawn() {
-  if (isSewer()) GAME.sewerCourse.respawn(run); else GAME.run.respawn(run);
+  if (isSewer()) {
+    newRun(); hud.clearToasts();
+    hud.toast('New attempt · from the start', 'bad', 2);
+  } else GAME.run.respawn(run);
   const s = run.checkpoint >= 0 ? course.gates[run.checkpoint].s : 0;
   GAME.guide.jumpTo(guide, s);
   pilot.k = Math.round(s / course.sample);
   hud.message('');
-  startCountdown(RESPAWN_TICKS);
+  startCountdown(isSewer() ? COUNT_TICKS : RESPAWN_TICKS);
 }
 
 // Past the finish the glider glides on, level and gently climbing, instead of freezing: the run is
@@ -13687,8 +13983,10 @@ function render(now, w, h) {
   bindTarget(target);
   const sewerMenu = mode === 'title' && isSewer() && !params.has('freeze');
   const secret = !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger : null;
-  if (secret && Math.hypot(g.x - secret.x, g.y - secret.y, g.z - secret.z) < 125) {
-    view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, kind: 'secret', flare: 0, xray: 0 }];
+  const landmark = secret ? course.collapse.landmark : null;
+  if (secret && (Math.hypot(g.x - secret.x, g.y - secret.y, g.z - secret.z) < 125
+      || (landmark && Math.hypot(g.x - landmark.x, g.y - landmark.y, g.z - landmark.z) < 180))) {
+    view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, landmark, kind: 'secret', flare: 0, xray: 0 }];
   }
   if (sewerMenu) sewerRenderer.draw(now / 1000, w / h);
   else if (isSewer()) sewerFlightRenderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, []);
@@ -13749,7 +14047,10 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
   // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
-  if (!isSewer() && !collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
+  if (!isSewer() && !collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) {
+    run.stars.add(id);
+    if (pendingStars.delete(id) && !run.finished) newStars = pendingStars.size;
+  }
   // Orientation properties can change before their events reach the page. Recheck on every frame
   // so a browser that ignores its orientation lock is counter-rotated at the first opportunity.
   if (TOUCH && sidewaysAngle !== null && runScreenAngle === null) followSidewaysHold();
@@ -13891,6 +14192,7 @@ function showTitle() {
   $('course-input').value = '';
   $('course-error').textContent = '';
   syncEnvironmentMenu();
+  shopPanel?.refresh();
 }
 
 function syncEnvironmentMenu() {
@@ -14391,7 +14693,11 @@ async function boot() {
   GAME.sound.load(GAME.settings.get('musicTrack'));
   if (menuEnvironment === 'sewer') GAME.sound.setEnvironment('sewer');
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
-  shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH });
+  shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH, collapseHint: () => {
+    const selected = surfaceSession?.course ?? course;
+    return selected?.collapse?.visibilityTime !== undefined
+      ? { seconds: selected.collapse.visibilityTime, code: seedCode, difficulty: selected.difficulty } : null;
+  } });
   GAME.shop.onChange(() => { refreshShopButtons(); ensureCollapsePrepared(); });
   GAME.access.onChange(() => {
     GAME.settings.updateSongOptions();
@@ -14429,6 +14735,7 @@ async function boot() {
       inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS) } : null,
     collapse: collapse ? { time: collapse.time, progress: collapse.progress, hole: { ...collapse.hole }, hazards: collapse.hazards } : null,
     collapseTrigger: !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger ?? null : null,
+    collapseVisibilityTime: !isSewer() ? (surfaceSession?.course ?? course)?.collapse?.visibilityTime ?? null : null,
     fountains: course.fountains ?? [],
     obstacles: city.obstacles?.length ?? course.obstacles ?? 0, routeObstacles: course.obstacles,
     props: city.courseProps?.length ?? 0, pipes: city.courseProps?.filter(p => p.type === 'pipe').length ?? 0,
@@ -14442,7 +14749,8 @@ async function boot() {
     checkpointPose: isSewer() ? GAME.sewerCourse.respawnPose(run) : GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
     proof: course.proof, medals: collapse ? [] : medalLadder(course),
-    stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), newStars, starBank: GAME.starBank.total(),
+    stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id), saved: !isSewer() && GAME.starBank.collected(seedCode, difficulty).includes(s.id) })),
+    newStars, pendingStars: [...pendingStars], starBank: GAME.starBank.total(),
     shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
     view: { ...drawn, theme: isSewer() ? 'sewer' : renderer.theme.id, maxPixels: resolution.maxPixels,
