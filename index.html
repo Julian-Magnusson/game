@@ -3731,8 +3731,10 @@ GAME.structures = { TYPE, boxes, decorate };
 'use strict';
 // ---- src/world/street.js ----
 // Street furniture and parks share their exact solids with collision and the ray tracer.
-// Pieces are [minX,minY,minZ,maxX,maxY,maxZ,material,shape,object]; shape 1 is an ellipsoid.
+// Pieces are [minX,minY,minZ,maxX,maxY,maxZ,material,shape,object]. Rounded tree limbs are
+// capsules, decoded from their bounds; crowns and bushes are ellipsoids.
 const MATERIAL = Object.freeze({ BARK: 1, LEAVES: 2, WOOD: 3, METAL: 4, GLASS: 5, STONE: 6, BRONZE: 7, SIGN: 8 });
+const SHAPE = Object.freeze({ BOX: 0, ELLIPSOID: 1, BRANCH_X: 2, BRANCH_NEG_X: 3, BRANCH_Z: 4, BRANCH_NEG_Z: 5, TRUNK: 6 });
 const MAX_PIECES = 16;
 
 function reset(city) {
@@ -3750,11 +3752,75 @@ const distance2 = (b, p) => Math.max(b[0] - p.x, 0, p.x - b[3]) ** 2
 const box = (x, y, z, hx, hy, hz, material, shape = 0) =>
   [x - hx, y - hy, z - hz, x + hx, y + hy, z + hz, material, shape];
 
-function tree(x, z, h, width) {
-  return [box(x, h * 0.3, z, 0.42 + h * 0.008, h * 0.3, 0.42 + h * 0.008, MATERIAL.BARK),
-    box(x, h * 0.59, z, width, h * 0.24, width * 0.82, MATERIAL.LEAVES, 1),
-    box(x - width * 0.23, h * 0.78, z + width * 0.13, width * 0.74, h * 0.22, width * 0.72, MATERIAL.LEAVES, 1),
-    box(x + width * 0.42, h * 0.63, z - width * 0.25, width * 0.67, h * 0.19, width * 0.68, MATERIAL.LEAVES, 1)];
+function limb(a, b, radius) {
+  const shape = a[0] !== b[0] ? b[0] > a[0] ? SHAPE.BRANCH_X : SHAPE.BRANCH_NEG_X
+    : a[2] !== b[2] ? b[2] > a[2] ? SHAPE.BRANCH_Z : SHAPE.BRANCH_NEG_Z : SHAPE.TRUNK;
+  return [...a.map((v, i) => Math.min(v, b[i]) - radius),
+    ...a.map((v, i) => Math.max(v, b[i]) + radius), MATERIAL.BARK, shape];
+}
+
+// One compact encoding shared with the ray tracer. Each limb rises in one horizontal plane;
+// its unchanged perpendicular width gives the capsule radius without another texture.
+function capsuleData(b) {
+  const shape = b[7], mid = [0, 1, 2].map(i => (b[i] + b[i + 3]) / 2);
+  const alongX = shape === SHAPE.BRANCH_X || shape === SHAPE.BRANCH_NEG_X;
+  const radius = (alongX ? b[5] - b[2] : b[3] - b[0]) / 2;
+  const a = [...mid], end = [...mid];
+  a[1] = b[1] + radius; end[1] = b[4] - radius;
+  if (shape !== SHAPE.TRUNK) {
+    const axis = alongX ? 0 : 2, positive = shape === SHAPE.BRANCH_X || shape === SHAPE.BRANCH_Z;
+    a[axis] = positive ? b[axis] + radius : b[axis + 3] - radius;
+    end[axis] = positive ? b[axis + 3] - radius : b[axis] + radius;
+  }
+  return { a, b: end, radius };
+}
+
+function vegetation(type, x, z, h, width, turns = 0) {
+  const crown = (x, y, z, rx, ry, rz) => box(x, y, z, rx, ry, rz, MATERIAL.LEAVES, SHAPE.ELLIPSOID);
+  const trunk = (radius, top) => limb([0, radius, 0], [0, top - radius, 0], radius);
+  let pieces;
+  if (type === 'spreading') {
+    const radius = 0.8 + h * 0.018;
+    pieces = [trunk(radius, h * 0.64), box(0, 1.25, 0, radius * 1.6, 1.25, radius * 1.5, MATERIAL.BARK, SHAPE.ELLIPSOID),
+      limb([0, h * 0.4, 0], [-width * 0.75, h * 0.64, 0], radius * 0.57),
+      limb([0, h * 0.48, 0], [width * 0.77, h * 0.71, 0], radius * 0.49),
+      limb([0, h * 0.46, 0], [0, h * 0.65, -width * 0.68], radius * 0.52),
+      limb([0, h * 0.5, 0], [0, h * 0.73, width * 0.67], radius * 0.44),
+      crown(0, h * 0.83, 0, width * 0.73, h * 0.17, width * 0.68),
+      crown(-width * 0.64, h * 0.72, 0, width * 0.45, h * 0.19, width * 0.6),
+      crown(width * 0.67, h * 0.77, 0, width * 0.4, h * 0.16, width * 0.53),
+      crown(0, h * 0.73, -width * 0.56, width * 0.52, h * 0.17, width * 0.43),
+      crown(width * 0.12, h * 0.81, width * 0.54, width * 0.51, h * 0.17, width * 0.4)];
+  } else if (type === 'conifer') {
+    pieces = [trunk(0.35 + h * 0.012, h * 0.86),
+      ...[0, 1, 2, 3].map(j => crown(0, h * (0.35 + j * 0.17), 0,
+        width * (1 - j * 0.21), h * (0.17 - j * 0.016), width * (0.88 - j * 0.18)))];
+  } else if (type === 'small') {
+    const radius = 0.2 + h * 0.012;
+    pieces = [trunk(radius, h * 0.72),
+      limb([0, h * 0.42, 0], [-width * 0.6, h * 0.65, 0], radius * 0.55),
+      limb([0, h * 0.54, 0], [0, h * 0.78, width * 0.52], radius * 0.46),
+      crown(-width * 0.4, h * 0.72, 0, width * 0.67, h * 0.22, width * 0.64),
+      crown(width * 0.18, h * 0.82, width * 0.2, width * 0.72, h * 0.18, width * 0.62)];
+  } else if (type === 'bush') {
+    pieces = [crown(-width * 0.35, h * 0.4, 0, width * 0.7, h * 0.4, width * 0.8),
+      crown(width * 0.3, h * 0.43, width * 0.17, width * 0.68, h * 0.43, width * 0.64),
+      crown(0, h * 0.65, -width * 0.13, width * 0.62, h * 0.35, width * 0.63)];
+  } else {
+    pieces = [trunk(0.42 + h * 0.008, h * 0.6),
+      crown(0, h * 0.59, 0, width, h * 0.24, width * 0.82),
+      crown(-width * 0.23, h * 0.78, width * 0.13, width * 0.74, h * 0.22, width * 0.72),
+      crown(width * 0.42, h * 0.63, -width * 0.25, width * 0.67, h * 0.19, width * 0.68)];
+  }
+  return pieces.map(piece => {
+    const b = [...piece];
+    for (let j = 0; j < turns; j++) {
+      [b[0], b[2], b[3], b[5]] = [-b[5], b[0], -b[2], b[3]];
+      b[7] = ({ 2: 4, 3: 5, 4: 3, 5: 2 })[b[7]] ?? b[7];
+    }
+    b[0] += x; b[3] += x; b[2] += z; b[5] += z;
+    return b;
+  });
 }
 
 function bench(x, z, alongZ = false) {
@@ -3780,7 +3846,7 @@ function shelter(x, z, alongZ) {
 function decorate(city, course) {
   city.clearGeometryCache();
   const { line, sample } = course, finish = course.gates.at(-1);
-  course.parks = []; course.sculptures = [];
+  course.parks = []; course.sculptures = []; course.parkBushes = [];
   let nextObject = 1;
   const removedObjects = new Set();
   // Keep supporting buildings and the established difficulty hazards intact at park edges.
@@ -3869,7 +3935,7 @@ function decorate(city, course) {
     }
     return true;
   }
-  // Split furniture crossing a cell boundary. Ellipsoids always fit wholly in one cell;
+  // Split furniture crossing a cell boundary. Rounded solids fit wholly in one cell;
   // splitting their envelope would change their curved geometry.
   function place(pieces, check = true) {
     if (check && pieces.some(b => !safe(b))) return false;
@@ -3929,9 +3995,10 @@ function decorate(city, course) {
     const cell = city.cellIndex(x, z);
     if (!city.park[cell] || course.parkTrees.some(t => Math.hypot(t.x - x, t.z - z) < 30)) continue;
     const h = Math.min(72, Math.max(36, line.y[k] / 0.68));
-    const pieces = tree(x, z, h, 1.8), bypass = { x: oldX[k], y: line.y[k], z: oldZ[k] };
-    if (!pieces.some(b => b[7] && GAME.collide.ellipsoidDistance2(b, bypass.x, bypass.y, bypass.z) <= GAME.flight.FLIGHT.RADIUS ** 2)) continue;
-    if (place(pieces)) course.parkTrees.push({ cell, x, z, h, shortcut: true,
+    const pieces = vegetation('column', x, z, h, 1.8), bypass = { x: oldX[k], y: line.y[k], z: oldZ[k] };
+    if (!pieces.some(b => b[7] === SHAPE.ELLIPSOID && GAME.collide.ellipsoidDistance2(b, bypass.x, bypass.y, bypass.z) <= GAME.flight.FLIGHT.RADIUS ** 2)) continue;
+    const object = place(pieces);
+    if (object) course.parkTrees.push({ object, type: 'column', cell, x, z, h, shortcut: true,
       s: k * sample, bypass: { x: oldX[k], y: line.y[k], z: oldZ[k] } });
   }
   for (let i = 0; i < city.kind.length; i++) {
@@ -3939,16 +4006,26 @@ function decorate(city, course) {
     const isPark = city.park[i] > 0, plaza = city.kind[i] === city.KIND.PLAZA;
     if (isPark || plaza) {
       if (!isPark) city.park[i] = 1;
-      for (let j = 0; j < (isPark ? 2 : 1); j++) {
-        const x = cx + (j ? 1 : -1) * r.range(4, 9), z = cz + r.range(-8, 8);
-        const h = isPark ? r.range(21, 42) : r.range(8, 15), width = isPark ? r.range(3.2, 6.2) : r.range(2.1, 3.5);
-        if (place(tree(x, z, h, width)) && isPark) course.parkTrees.push({ cell: i, x, z, h });
+      const spreading = isPark && r() < 0.28;
+      for (let j = 0; j < (isPark && !spreading ? 2 : 1); j++) {
+        const type = spreading ? 'spreading' : !isPark || r() < 0.3 ? 'small' : r() < 0.45 ? 'conifer' : 'column';
+        const x = cx + (spreading ? r.range(-2, 2) : (j ? 1 : -1) * r.range(4, 9));
+        const z = cz + r.range(spreading ? -2 : -7, spreading ? 2 : 7);
+        const h = type === 'spreading' ? r.range(38, 58) : type === 'small' ? r.range(8, 15) : r.range(21, 42);
+        const width = type === 'spreading' ? r.range(8.5, 11.5) : type === 'small' ? r.range(2.1, 3.5) : r.range(3.2, 5.3);
+        const object = place(vegetation(type, x, z, h, width, Math.floor(r.range(0, 4))));
+        if (object && isPark) course.parkTrees.push({ object, type, cell: i, x, z, h });
+      }
+      if (r() < 0.8) {
+        const x = cx + (r() < 0.5 ? -1 : 1) * r.range(9, 12), z = cz + r.range(-11, 11), h = r.range(1.7, 4.1);
+        const object = place(vegetation('bush', x, z, h, r.range(1.6, 2.7), Math.floor(r.range(0, 4))));
+        if (object && isPark) course.parkBushes.push({ object, cell: i, x, z, h });
       }
       if (r() < 0.55) place(bench(cx + 9, cz - 10, r() < 0.5));
     } else if (city.kind[i] === city.KIND.AVENUE) {
       const alongZ = i % city.n % GAME.city.AVENUE_X === 0;
       if (r() < 0.16) place(shelter(cx + (alongZ ? 12 : 0), cz + (alongZ ? 0 : 12), alongZ));
-      else if (r() < 0.23) place(tree(cx + (alongZ ? -12 : 0), cz + (alongZ ? 0 : -12), r.range(7, 12), 2));
+      else if (r() < 0.23) place(vegetation('small', cx + (alongZ ? -12 : 0), cz + (alongZ ? 0 : -12), r.range(7, 12), 2));
     } else if (r() < 0.28) {
       // Benches sit on the pavement outside the ground-floor shop fronts.
       place(bench(cx, cz + 13.8));
@@ -3997,14 +4074,14 @@ function decorate(city, course) {
     }
   }
   course.sculptures = course.sculptures.filter(s => !removedObjects.has(s.object));
-  course.parkTrees = course.parkTrees.filter(t => city.streetBoxes[t.cell]?.some(b => b[6] === MATERIAL.BARK
-    && t.x >= b[0] && t.x <= b[3] && t.z >= b[2] && t.z <= b[5]));
+  course.parkTrees = course.parkTrees.filter(t => !removedObjects.has(t.object));
+  course.parkBushes = course.parkBushes.filter(b => !removedObjects.has(b.object));
   course.proof = GAME.autopilot.fly(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed)
     throw new Error('street decoration must preserve a clean course proof');
 }
 
-GAME.street = { MATERIAL, MAX_PIECES, reset, decorate };
+GAME.street = { MATERIAL, SHAPE, MAX_PIECES, reset, decorate, vegetation, capsuleData };
 
 })();
 
@@ -4633,7 +4710,7 @@ function sphere(city, x, y, z, r) {
         const px = Math.max(b[0] - x, 0, x - b[3]);
         const pz = Math.max(b[2] - z, 0, z - b[5]);
         if (px * px + py * py + pz * pz <= r * r
-          && (!b[7] || ellipsoidDistance2(b, x, y, z) <= r * r)) return { kind: 'tower', cell };
+          && (!b[7] || solidDistance2(b, x, y, z) <= r * r)) return { kind: 'tower', cell };
       }
     }
   }
@@ -4647,7 +4724,11 @@ function groundHeight(city, x, z) {
   let h = 0;
   for (const b of city.boxes(i)) if (x >= b[0] && x <= b[3] && z >= b[2] && z <= b[5]) {
     let top = b[4];
-    if (b[7]) {
+    if (b[7] >= GAME.street.SHAPE.BRANCH_X) {
+      const distance = capsuleHit(b, [x, b[4] + 1, z], [0, -1, 0]);
+      if (!Number.isFinite(distance)) continue;
+      top = b[4] + 1 - distance;
+    } else if (b[7] === GAME.street.SHAPE.ELLIPSOID) {
       const q = ((x - (b[0] + b[3]) / 2) / ((b[3] - b[0]) / 2)) ** 2
         + ((z - (b[2] + b[5]) / 2) / ((b[5] - b[2]) / 2)) ** 2;
       if (q > 1) continue;
@@ -4656,6 +4737,47 @@ function groundHeight(city, x, z) {
     h = Math.max(h, top);
   }
   return h;
+}
+
+function solidDistance2(b, x, y, z) {
+  if (b[7] === GAME.street.SHAPE.ELLIPSOID) return ellipsoidDistance2(b, x, y, z);
+  if (b[7] >= GAME.street.SHAPE.BRANCH_X) {
+    const { a, b: end, radius } = GAME.street.capsuleData(b);
+    const ba = end.map((v, i) => v - a[i]), pa = [x - a[0], y - a[1], z - a[2]];
+    const length2 = ba.reduce((sum, v) => sum + v * v, 0);
+    const t = Math.max(0, Math.min(1, pa.reduce((sum, v, i) => sum + v * ba[i], 0) / (length2 || 1)));
+    return Math.max(0, Math.hypot(...pa.map((v, i) => v - ba[i] * t)) - radius) ** 2;
+  }
+  return Math.max(b[0] - x, 0, x - b[3]) ** 2 + Math.max(b[1] - y, 0, y - b[4]) ** 2
+    + Math.max(b[2] - z, 0, z - b[5]) ** 2;
+}
+
+// Exact ray hit against the cylinder and its two hemispherical caps. Ground-height queries
+// use a vertical ray, so altitude follows the visible sloping branches instead of their bounds.
+function capsuleHit(bounds, ro, rd) {
+  const { a, b, radius } = GAME.street.capsuleData(bounds);
+  const dot = (u, v) => u.reduce((sum, x, i) => sum + x * v[i], 0);
+  const ba = b.map((v, i) => v - a[i]), oa = ro.map((v, i) => v - a[i]);
+  const rr = dot(rd, rd), baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa);
+  let hit = Infinity;
+  const check = (t, cap) => {
+    if (t < 0 || t >= hit) return;
+    const y = baoa + t * bard;
+    if (cap === 0 ? y >= 0 && y <= baba : cap === 1 ? y <= 0 : y >= baba) hit = t;
+  };
+  const A = baba * rr - bard * bard, B = baba * dot(rd, oa) - baoa * bard;
+  const C = baba * (dot(oa, oa) - radius * radius) - baoa * baoa, disc = B * B - A * C;
+  if (A > 1e-9 && disc >= 0) {
+    check((-B - Math.sqrt(disc)) / A, 0); check((-B + Math.sqrt(disc)) / A, 0);
+  }
+  for (const [i, centre] of [a, b].entries()) {
+    const oc = ro.map((v, k) => v - centre[k]), B = dot(oc, rd);
+    const disc = B * B - rr * (dot(oc, oc) - radius * radius);
+    if (disc >= 0) {
+      check((-B - Math.sqrt(disc)) / rr, i + 1); check((-B + Math.sqrt(disc)) / rr, i + 1);
+    }
+  }
+  return hit;
 }
 
 // Closest point on an ellipsoid. The multiplier search gives the true contact distance for
@@ -4673,7 +4795,7 @@ function ellipsoidDistance2(b, x, y, z) {
   return p.reduce((sum, v, i) => sum + (v * hi / (hi + r2[i])) ** 2, 0);
 }
 
-GAME.collide = { sphere, groundHeight, ellipsoidDistance2 };
+GAME.collide = { sphere, groundHeight, ellipsoidDistance2, solidDistance2, capsuleHit };
 
 })();
 
@@ -9315,6 +9437,17 @@ vec3 shadeStreet(Hit h, vec3 p, vec3 rd, float pix) {
     float variation = hash12(centre.xz * 0.04);
     col = foliageColour(0.18 + mass * 0.5 + variation * 0.16, light);
     col *= 0.68 + mass * 0.22 + leaf * 0.34;
+    // Low shrubs have lighter new growth and a few tiny blossoms in Overgrown City's gardens.
+    if (h.b.y < 5.0) {
+      col *= 1.12;
+      if (detail > 0.0 && uGrowth > 0.0) {
+        vec2 uv = abs(h.n.y) > 0.6 ? p.xz : abs(h.n.x) > abs(h.n.z) ? p.zy : p.xy;
+        vec3 bud = hash33(vec3(floor(uv * 4.0), 7.3));
+        vec2 q = fract(uv * 4.0) - (0.25 + bud.xy * 0.5);
+        float flowers = discAA(q, 0.14, fp * 4.0) * step(0.92, bud.z) * detail;
+        col = mix(col, vec3(0.32, 0.075, 0.12), flowers * uGrowth * 0.7);
+      }
+    }
     col = mix(col, vec3(0.21, 0.095, 0.028) * (0.6 + mass * 0.5), uSurface.z * variation * 0.6);
     col = mix(col, vec3(0.13, 0.2, 0.28), max(h.n.y, 0.0) * uSurface.y * (0.55 + mass * 0.35));
     return col + vec3(0.008, 0.016, 0.006) * pow(max(dot(-rd, uSunDir), 0.0), 4.0);
@@ -9463,6 +9596,49 @@ float ellipsoidHit(vec3 ro, vec3 rd, vec3 lo, vec3 hi, out vec3 n) {
   return t;
 }
 
+// Rounded trunks and rising branches use the same capsule endpoints as street.capsuleData.
+// Cylinder roots and hemispherical caps also handle a ray starting inside a limb.
+float capsuleHit(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape, out vec3 n) {
+  bool alongX = shape < 3.5;
+  float radius = 0.5 * (alongX ? hi.z - lo.z : hi.x - lo.x);
+  vec3 a = (lo + hi) * 0.5, b = a;
+  a.y = lo.y + radius; b.y = hi.y - radius;
+  if (shape < 5.5) {
+    bool positive = shape < 2.5 || (shape > 3.5 && shape < 4.5);
+    if (alongX) { a.x = positive ? lo.x + radius : hi.x - radius; b.x = positive ? hi.x - radius : lo.x + radius; }
+    else { a.z = positive ? lo.z + radius : hi.z - radius; b.z = positive ? hi.z - radius : lo.z + radius; }
+  }
+  vec3 ba = b - a, oa = ro - a;
+  float rr = dot(rd, rd), baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), hit = 1e9;
+  float A = baba * rr - bard * bard, B = baba * dot(rd, oa) - baoa * bard;
+  float C = baba * (dot(oa, oa) - radius * radius) - baoa * baoa, disc = B * B - A * C;
+  if (A > 1e-6 && disc >= 0.0) {
+    float root = sqrt(disc);
+    for (int j = 0; j < 2; j++) {
+      float t = (-B + (j == 0 ? -root : root)) / A, y = baoa + t * bard;
+      if (t >= 0.0 && t < hit && y >= 0.0 && y <= baba) {
+        hit = t; n = normalize(oa + rd * t - ba * y / baba);
+        // A valid entry on the cylinder is already the first surface. From inside its body,
+        // a valid exit is first too; avoid tracing the caps across most trunk pixels.
+        if (j == 0 || (baoa >= 0.0 && baoa <= baba)) return hit;
+      }
+    }
+  }
+  for (int cap = 0; cap < 2; cap++) {
+    vec3 centre = cap == 0 ? a : b, oc = ro - centre;
+    float B = dot(oc, rd), disc = B * B - rr * (dot(oc, oc) - radius * radius);
+    if (disc < 0.0) continue;
+    float root = sqrt(disc);
+    for (int j = 0; j < 2; j++) {
+      float t = (-B + (j == 0 ? -root : root)) / rr, y = baoa + t * bard;
+      if (t >= 0.0 && t < hit && (cap == 0 ? y <= 0.0 : y >= baba)) {
+        hit = t; n = normalize(ro + rd * t - centre);
+      }
+    }
+  }
+  return hit;
+}
+
 // ---- Course overlay ----------------------------------------------------------------------------
 ${GAME.overlay.GLSL}
 
@@ -9496,7 +9672,12 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           ivec2 at = cell + ivec2(0, part * 2 * int(uN));
           vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
           vec3 lo = vec3(P.x, Q.x, P.y), hi = vec3(P.z, Q.y, P.w), normal;
-          float tp = Q.w > 0.5 ? ellipsoidHit(ro, rd, lo, hi, normal) : boxHit(ro, inv, lo, hi, normal);
+          if (Q.w > 1.5) {
+            vec2 bounds = slab(ro, inv, lo, hi, normal);
+            if (bounds.x > bounds.y || bounds.y < 0.0 || bounds.x > tStreet) continue;
+          }
+          float tp = Q.w > 1.5 ? capsuleHit(ro, rd, lo, hi, Q.w, normal)
+            : Q.w > 0.5 ? ellipsoidHit(ro, rd, lo, hi, normal) : boxHit(ro, inv, lo, hi, normal);
           if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; }
         }
       }
