@@ -20,8 +20,11 @@ connecting tunnels, and winding upward/downward chambers. Dodge round pipes and 
 the murky green water causes a crash, like the street above. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
 underground, with records kept separate from the city.
-The manhole menu button switches between the Sewer and the surface. **Undertow** provides
-the underground soundtrack.
+Collapse's chapter card opens the Sewer menu directly. The menu previews the actual starting
+tunnel, keeping the same scenery through **3, 2, 1, Go**. Brickwork, arch detail, lamps, services,
+stone ledges and drains carry the menu's detail into the course. Side flows match their inlet's
+flat waterline and full width before spilling into the lower collector. The manhole menu button
+switches between the Sewer and the surface. **Undertow** provides the underground soundtrack.
 
 Arctic Dawn has snowy trees and frozen fountains. Surface rain and snow stay above ground.
 

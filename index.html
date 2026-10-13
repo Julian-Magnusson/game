@@ -405,7 +405,7 @@
   .shop-key-copy p { margin: 5px 0; color: #b5c6d6; font-size: 12px; line-height: 1.5; }
   .shop-key-copy #shop-key-hint { color: #ffd3bb; font-size: 21px; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
   #shop-key-context { color: #9baeb9; font-size: 10px; margin: 0 7px 0 0; letter-spacing: 0.07em; }
-  .shop-key-copy .shop-badge, #shop-key-owned { color: #ff9e97; font-size: 11px; }
+  .shop-key-copy .shop-badge { color: #ff9e97; font-size: 11px; }
   #shop-key-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
   #shop-key-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
   #shop-key-buy:disabled { opacity: 0.55; }
@@ -665,7 +665,7 @@
     <div id="shop-message" role="status" aria-live="polite"></div>
     <article class="shop-key-item">
       <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
-      <div class="shop-key-copy"><span class="shop-badge">Permanent unlock</span><h3>Collapse Key</h3><p id="shop-key-hint">???</p><span id="shop-key-context"></span><span id="shop-key-owned">Not owned</span></div>
+      <div class="shop-key-copy"><span class="shop-badge">Unlock</span><h3>Collapse Key</h3><p id="shop-key-hint">???</p><span id="shop-key-context"></span></div>
       <strong id="shop-key-price">★ 10</strong><button id="shop-key-buy" class="btn" type="button">unlock · 10 ★</button>
     </article>
   </div>
@@ -12790,25 +12790,55 @@ int sewerNearestTunnel(vec3 p) {
   return index;
 }
 
-vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour) {
+float sewerLampSpacing(int index) {
+  return sewerData(index, 2).y > 1.5 ? 24.0 : 20.0;
+}
+
+vec3 sewerLamp(int index, float rung) {
   vec4 a = sewerData(index, 0), b = sewerData(index, 1);
   mat3 frame = sewerFrame(a.xyz, b.xyz);
   float phase = sewerData(index, 2).x;
-  float along = dot(p - a.xyz, frame[2]);
-  float rung = floor((along + phase) / 32.0 + 0.5) * 32.0 - phase;
+  float spacing = sewerLampSpacing(index);
   vec3 centre = a.xyz + frame[2] * clamp(rung, 0.0, length(b.xyz - a.xyz));
-  float side = mod(floor((rung + phase) / 32.0), 2.0) < 0.5 ? -1.0 : 1.0;
-  lamp = centre + normalize(frame[0] * side * 0.78 + frame[1] * 0.60) * a.w * 0.995;
-  lampColour = vec3(1.8, 1.12, 0.44);
-  vec3 delta = lamp - p;
-  float diffuse = max(dot(normalize(delta), n), 0.0);
-  vec3 light = vec3(0.50, 0.68, 0.47) * (0.72 + n.y * 0.16);
-  light += lampColour * diffuse * 4.5 / (1.0 + dot(delta, delta) * 0.025);
-  // A quieter teal service light makes water and corners readable beyond the amber pool.
-  vec3 cool = centre - (frame[0] * side * 0.78 - frame[1] * 0.60) * a.w * 0.95;
-  delta = cool - p;
-  light += vec3(0.14, 0.55, 0.48) * max(dot(normalize(delta), n), 0.0) * 1.6 / (1.0 + dot(delta, delta) * 0.015);
+  float side = mod(floor((rung + phase) / spacing), 2.0) < 0.5 ? -1.0 : 1.0;
+  return centre + normalize(frame[0] * side * 0.93 + frame[1] * 0.37) * a.w * 0.999;
+}
+
+vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour) {
+  vec4 a = sewerData(index, 0), b = sewerData(index, 1);
+  mat3 frame = sewerFrame(a.xyz, b.xyz);
+  float phase = sewerData(index, 2).x, spacing = sewerLampSpacing(index);
+  float along = dot(p - a.xyz, frame[2]);
+  float rung = floor((along + phase) / spacing + 0.5) * spacing - phase;
+  lamp = sewerLamp(index, rung);
+  lampColour = vec3(2.1, 0.96, 0.29);
+  vec3 light = vec3(0.31, 0.40, 0.39) * (0.78 + n.y * 0.16);
+  // Pools from both neighbouring lamps make the vault feel continuous through long collectors.
+  for (int j = -1; j <= 1; j++) {
+    vec3 delta = sewerLamp(index, rung + float(j) * spacing) - p;
+    float diffuse = max(dot(normalize(delta), n), 0.0);
+    light += lampColour * (0.075 + diffuse) * 3.7 / (1.0 + dot(delta, delta) * 0.045);
+  }
+  vec3 centre = sewerAxisPoint(p, a.xyz, b.xyz);
+  light += vec3(0.08, 0.15, 0.15) * (0.4 + max(dot(normalize(centre - p), n), 0.0));
   return light;
+}
+
+vec3 sewerSpillRipples(vec3 p, float pixel) {
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < INFLOWS; i++) {
+    if (float(i) >= uSewerCount.w) break;
+    vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1);
+    if (abs(p.y - b.w) > 0.03) continue;
+    vec3 axis = normalize(b.xyz - a.xyz), delta = p - b.xyz;
+    float across = abs(dot(delta, vec3(-axis.z, 0.0, axis.x)));
+    float d = length(vec2(dot(delta, axis), max(across - a.w, 0.0)));
+    if (d > 5.5) continue;
+    float ripple = bandAA(mod(d - uSewerMotion * 1.55 + 0.75, 1.5) - 0.75, 0.065, pixel);
+    float foam = exp(-d * d * 3.0) * (0.68 + 0.32 * sin(across * 3.2 + uSewerMotion * 2.2));
+    glow += vec3(0.015, 0.043, 0.025) * (ripple * exp(-d * 0.5) + foam * 1.3);
+  }
+  return glow;
 }
 
 vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
@@ -12819,50 +12849,106 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
   vec3 radial = p - axisPoint;
   float along = dot(p - a.xyz, frame[2]), angle = atan(dot(radial, frame[0]), dot(radial, frame[1]));
   vec2 uv = vec2(along, angle * a.w);
-  float grain = tnoise(p * 1.7), grime = tnoise(p * vec3(0.12, 0.24, 0.14));
+  float grain = tnoise(p * 3.8), grime = tnoise(p * vec3(0.22, 0.07, 0.27));
   vec3 lamp, lampColour;
   vec3 light = sewerLighting(p, h.n, index, lamp, lampColour), col;
   if (h.kind == 1) {
-    float row = floor(uv.y / 0.72);
-    vec2 bricks = vec2(uv.x / 1.7 + mod(row, 2.0) * 0.5, uv.y / 0.72);
-    vec2 edges = min(fract(bricks), 1.0 - fract(bricks)) * vec2(1.7, 0.72);
-    float mortar = 1.0 - smoothstep(0.055, 0.085 + pixel, min(edges.x, edges.y));
+    float row = floor(uv.y / 0.46);
+    vec2 bricks = vec2(uv.x / 1.08 + mod(row, 2.0) * 0.5, uv.y / 0.46);
+    vec2 edges = min(fract(bricks), 1.0 - fract(bricks)) * vec2(1.08, 0.46);
+    float mortar = 1.0 - smoothstep(0.025, 0.048 + pixel, min(edges.x, edges.y));
     float key = hash12(floor(bricks));
     float kind = sewerData(index, 2).y;
-    col = mix(vec3(0.16, 0.11, 0.058), vec3(0.11, 0.14, 0.105), key * 0.72);
-    col *= 0.77 + grain * 0.48;
-    col = mix(col, vec3(0.035, 0.050, 0.035), mortar * 0.87);
-    if (kind > 1.5) {
-      col = vec3(0.125, 0.15, 0.12) * (0.7 + grain * 0.35);
-      float seams = max(bandAA(mod(uv.x + 6.0, 12.0) - 6.0, 0.055, pixel), bandAA(mod(uv.y + 4.0, 8.0) - 4.0, 0.045, pixel));
-      col *= 1.0 - seams * 0.68;
+    col = mix(vec3(0.20, 0.11, 0.065), vec3(0.10, 0.13, 0.12), key * 0.68);
+    col *= 0.75 + grain * 0.38;
+    col = mix(col, vec3(0.029, 0.037, 0.033), mortar * 0.9);
+    // Bevel highlights and recess shadows give each small brick the same relief as the menu.
+    float bevel = bandAA(fract(bricks.y) * 0.46 - 0.07, 0.025, pixel);
+    col *= 0.90 + bevel * 0.18;
+    if (kind > 1.5 && kind < 2.5) {
+      col = mix(col, vec3(0.13, 0.15, 0.135) * (0.7 + grain * 0.35), 0.48);
+      float seams = max(bandAA(mod(uv.x + 6.0, 12.0) - 6.0, 0.07, pixel), bandAA(mod(uv.y + 3.0, 6.0) - 3.0, 0.045, pixel));
+      col *= 1.0 - seams * 0.58;
     }
-    float rib = bandAA(mod(along + sewerData(index, 2).x + 16.0, 32.0) - 16.0, 0.70, pixel);
-    col = mix(col, vec3(0.15, 0.18, 0.145) * (0.82 + grain * 0.25), rib * 0.85);
+    float period = kind > 1.5 && kind < 2.5 ? 24.0 : 20.0;
+    float ribCoord = mod(along + sewerData(index, 2).x + period * 0.5, period) - period * 0.5;
+    float rib = bandAA(ribCoord, 0.66, pixel);
+    float ribShadow = bandAA(ribCoord - 0.92, 0.19, pixel);
+    float ribBevel = bandAA(ribCoord + 0.50, 0.11, pixel);
+    col = mix(col, vec3(0.16, 0.18, 0.155) * (0.76 + grain * 0.22), rib);
+    col *= 1.0 - ribShadow * 0.63;
+    col += vec3(0.037, 0.042, 0.037) * ribBevel;
     float waterY = b.w > -99999.0 ? b.w : a.y - a.w * 0.65;
-    float damp = (1.0 - smoothstep(waterY + 2.0, waterY + 15.0, p.y)) * smoothstep(0.30, 0.75, grime);
-    col = mix(col, vec3(0.024, 0.098, 0.024) * (0.7 + grain * 0.6), damp * 0.85);
+    float damp = (1.0 - smoothstep(waterY + 2.0, waterY + 15.0, p.y)) * smoothstep(0.34, 0.76, grime);
+    col = mix(col, vec3(0.018, 0.065, 0.033) * (0.7 + grain * 0.6), damp * 0.83);
     float streak = tnoise(vec3(uv.x * 0.42, p.y * 0.04, angle * 3.0));
     col *= 1.0 - smoothstep(0.61, 0.85, streak) * 0.3;
+    // Embedded iron services and drain courses remain flush with the exact collision wall.
+    float serviceAngle = acos(clamp((waterY + 5.0 - axisPoint.y) / a.w, -0.96, 0.96));
+    float service = (abs(angle) - serviceAngle) * a.w;
+    float conduit = bandAA(service, 0.30, pixel);
+    float collar = bandAA(mod(along + 3.0, 6.0) - 3.0, 0.17, pixel);
+    float rust = smoothstep(0.42, 0.72, grime + grain * 0.12);
+    vec3 iron = mix(vec3(0.074, 0.105, 0.10), vec3(0.15, 0.061, 0.037), rust);
+    iron *= 0.60 + 0.50 * sqrt(max(0.0, 1.0 - service * service / 0.09));
+    iron += vec3(0.027, 0.033, 0.029) * collar;
+    col = mix(col, iron, conduit);
+    col *= 1.0 - bandAA(service - 0.43, 0.075, pixel) * 0.53;
     col *= light;
-    // Flush utility fixtures are painted on the wall; all protruding collision remains data.
+    // Rectangular caged lamps echo the menu; no decorative fixture projects into flight air.
     vec3 fixture = p - lamp;
-    float face = length(fixture);
-    float panel = 1.0 - smoothstep(1.2, 1.2 + pixel, face);
-    float bars = pulseAA(dot(fixture, frame[2]) / 0.32, 0.22, pixel / 0.32);
-    col = mix(col, lampColour * (1.5 - bars * 1.2), panel);
-    col += vec3(0.08, 0.10, 0.045) * pow(1.0 - abs(dot(h.n, rd)), 5.0) * damp;
+    vec3 lampRadial = normalize(lamp - sewerAxisPoint(lamp, a.xyz, b.xyz));
+    vec3 lampTangent = normalize(cross(frame[2], lampRadial));
+    vec2 face = vec2(dot(fixture, frame[2]), dot(fixture, lampTangent));
+    float panel = bandAA(face.x, 0.55, pixel) * bandAA(face.y, 0.92, pixel) * (1.0 - smoothstep(0.3, 0.8, abs(dot(fixture, lampRadial))));
+    float casing = bandAA(face.x, 0.68, pixel) * bandAA(face.y, 1.05, pixel) * (1.0 - smoothstep(0.3, 0.8, abs(dot(fixture, lampRadial))));
+    float bars = pulseAA((face.y + 0.12) / 0.26, 0.14, pixel / 0.26);
+    col = mix(col, vec3(0.023, 0.033, 0.030), casing);
+    col = mix(col, lampColour * (1.4 - bars * 1.25), panel);
+    col += vec3(0.04, 0.07, 0.065) * pow(1.0 - abs(dot(h.n, rd)), 5.0) * damp;
   } else if (h.kind == 2) {
     float wave = sin(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) + sin(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8);
     vec3 n = normalize(vec3(cos(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) * 0.055, 1.0, cos(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8) * 0.07));
-    col = vec3(0.017, 0.072, 0.012) * (0.78 + grain * 0.32 + wave * 0.08);
+    col = vec3(0.010, 0.033, 0.010) * (0.80 + grain * 0.27 + wave * 0.08);
     vec3 delta = lamp - p;
     float spec = pow(max(dot(reflect(-normalize(delta), n), -rd), 0.0), 40.0);
-    col += lampColour * spec * 2.0 / (1.0 + length(delta) * 0.03);
+    col += lampColour * spec * 1.2 / (1.0 + length(delta) * 0.035);
+    float spacing = sewerLampSpacing(index), phase = sewerData(index, 2).x;
+    float rung = floor((along + phase) / spacing + 0.5) * spacing - phase;
+    // Amber reflections are projected onto the water, rather than clean transparent floors.
+    for (int j = -1; j <= 1; j++) {
+      vec3 reflection = sewerLamp(index, rung + float(j) * spacing);
+      reflection.y = 2.0 * p.y - reflection.y;
+      float depth = dot(reflection - uCamPos, rd);
+      vec3 miss = uCamPos + rd * max(depth, 0.0) - reflection;
+      float halo = exp(-dot(miss * vec3(0.46, 1.5, 0.46), miss * vec3(0.46, 1.5, 0.46)) * 0.17);
+      col += lampColour * halo * (0.11 + wave * 0.018) * step(0.0, depth);
+    }
     // Oily scum travels with the channel. There is no transparent view of a clean floor below.
     float scum = smoothstep(0.66, 0.82, tnoise(vec3(p.x * 0.33, 2.3, p.z * 0.2 - uSewerMotion * 0.08)));
-    col = mix(col, vec3(0.054, 0.14, 0.029), scum * 0.65);
-    col += vec3(0.018, 0.036, 0.009) * tube(wave - 1.2, 0.10, pixel * 0.5);
+    col = mix(col, vec3(0.035, 0.090, 0.024), scum * 0.47);
+    col += vec3(0.010, 0.023, 0.010) * tube(wave - 1.2, 0.10, pixel * 0.5);
+    float kind = sewerData(index, 2).y;
+    if (kind < 1.5 && abs(frame[2].y) < 0.1) {
+      // The outer portions of this already-solid ground plane are wet masonry ledges.
+      // Keeping them at the exact water height preserves every collision and race proof.
+      float halfSection = sqrt(max(0.0, a.w * a.w - (p.y - axisPoint.y) * (p.y - axisPoint.y)));
+      float across = abs(dot(radial, frame[0])), channel = halfSection * 0.64;
+      float bank = smoothstep(channel - pixel, channel + pixel, across);
+      vec2 tiles = vec2(dot(radial, frame[0]) / 1.5, along / 2.4);
+      vec2 edges = min(fract(tiles), 1.0 - fract(tiles)) * vec2(1.5, 2.4);
+      float joints = 1.0 - smoothstep(0.027, 0.06 + pixel, min(edges.x, edges.y));
+      vec3 stone = vec3(0.11, 0.13, 0.12) * (0.78 + grain * 0.25) * (1.0 - joints * 0.66);
+      stone = mix(stone, vec3(0.027, 0.066, 0.040), smoothstep(0.42, 0.75, grime) * 0.52);
+      float gutter = bandAA(across - channel - 0.65, 0.18, pixel);
+      float slot = bandAA(mod(along + 0.16, 0.32) - 0.16, 0.06, pixel);
+      stone *= 1.0 - gutter * (0.24 + slot * 0.71);
+      stone *= 1.0 - bandAA(across - channel - 0.11, 0.07, pixel) * 0.65;
+      stone *= light;
+      stone += lampColour * spec * 0.18;
+      col = mix(col, stone, bank);
+    }
+    col += sewerSpillRipples(p, pixel);
   } else if (h.kind == 3) {
     vec4 pa = sewerData(h.index, 0), pb = sewerData(h.index, 1);
     vec3 axis = normalize(pb.xyz - pa.xyz);
@@ -12885,22 +12971,57 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
   return col;
 }
 
-vec3 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle) {
-  vec3 colour = vec3(0.0);
+vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) {
+  vec4 result = vec4(0.0); float nearest = wall;
+  depth = wall;
   for (int i = 0; i < INFLOWS; i++) {
     if (float(i) >= uSewerCount.w) break;
     vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1);
-    if (!sewerBroadPhase(ro, rd, a.xyz, b.xyz, a.w)) continue;
-    vec2 span = sewerCapsuleInterval(ro, rd, a.xyz, b.xyz, a.w);
-    float t = max(span.x, 0.001);
-    if (span.x > span.y || span.y <= 0.0 || t >= wall) continue;
-    vec3 p = ro + rd * t;
-    float along = dot(p - a.xyz, normalize(b.xyz - a.xyz));
-    float flow = pulseAA(along / 1.3 - uSewerMotion * 2.1, 0.28, t * pixAngle / 1.3);
-    colour += vec3(0.015, 0.14, 0.041) * (0.55 + flow * 0.55);
-    colour += vec3(0.04, 0.065, 0.031) * tube(along - length(b.xyz - a.xyz), 1.5, t * pixAngle);
+    vec3 axis = normalize(b.xyz - a.xyz), acrossAxis = vec3(-axis.z, 0.0, axis.x);
+    float lengthAB = length(b.xyz - a.xyz);
+    for (int face = 0; face < 2; face++) {
+      float denominator = face == 0 ? rd.y : dot(rd, axis);
+      if (abs(denominator) < 0.000001) continue;
+      float t = face == 0 ? (a.y - ro.y) / denominator : dot(b.xyz - ro, axis) / denominator;
+      if (t <= 0.001 || t > nearest + 0.005) continue;
+      vec3 p = ro + rd * t;
+      float along = dot(p - a.xyz, axis), across = abs(dot(p - a.xyz, acrossAxis));
+      float pixel = max(t * pixAngle, 0.002);
+      if (across > a.w + pixel) continue;
+      float alpha = 1.0 - smoothstep(a.w - pixel, a.w + pixel, across);
+      vec3 colour; float opacity = 0.94;
+      if (face == 0) {
+        if (along < -pixel || along > lengthAB + pixel) continue;
+        // The complete source water chord stays horizontal at its unchanged waterline.
+        SewerHit water; water.t = t; water.kind = 2; water.index = int(sewerData(FLOW_BASE + i, 2).z); water.n = vec3(0.0, 1.0, 0.0);
+        colour = sewerSurface(water, p, rd, pixel);
+        float streak = pulseAA(along / 1.6 - uSewerMotion * 0.85, 0.12, pixel / 1.6);
+        colour += vec3(0.006, 0.021, 0.008) * streak;
+        alpha *= smoothstep(-pixel, pixel, along) * (1.0 - smoothstep(lengthAB - pixel, lengthAB + pixel, along));
+      } else {
+        if (p.y < b.w - pixel || p.y > a.y + pixel) continue;
+        // At the lip, the same wide sheet falls as a thin curtain into the real collector.
+        // Its receiving height is rendering metadata; the underlying tunnel air is unchanged.
+        alpha *= smoothstep(b.w - pixel, b.w + pixel, p.y) * (1.0 - smoothstep(a.y - pixel, a.y + pixel, p.y));
+        vec3 n = -sign(denominator) * axis, lamp, lampColour;
+        vec3 light = sewerLighting(p, n, int(sewerData(FLOW_BASE + i, 2).z), lamp, lampColour);
+        float acrossCoordinate = dot(p - b.xyz, acrossAxis);
+        float grain = tnoise(vec3(acrossCoordinate * 1.8, p.y * 0.24 + uSewerMotion * 2.2, float(i) * 3.7));
+        float flowing = tnoise(vec3(acrossCoordinate * 0.45, p.y * 1.1 + uSewerMotion * 5.0, float(i) * 4.9));
+        float streams = pow(0.5 + 0.5 * sin(acrossCoordinate * 5.1 + grain * 4.2), 5.0);
+        colour = vec3(0.012, 0.057, 0.030) * (0.70 + grain * 0.55) * (light * 0.65 + 0.42);
+        colour += vec3(0.010, 0.037, 0.027) * streams * (0.30 + flowing * 0.65);
+        // A thin falling film exposes the damp masonry behind its irregular moving streaks.
+        opacity = 0.63 + flowing * 0.10;
+        vec3 delta = lamp - p;
+        float spec = pow(max(dot(reflect(-normalize(delta), n), -rd), 0.0), 22.0);
+        colour += lampColour * spec * 0.35 / (1.0 + length(delta) * 0.04);
+        colour += vec3(0.025, 0.067, 0.039) * tube(p.y - b.w, 0.20, pixel);
+      }
+      result = vec4(colour, alpha * opacity); nearest = t; depth = t;
+    }
   }
-  return colour;
+  return result;
 }
 
 void main() {
@@ -12909,13 +13030,16 @@ void main() {
   vec3 rd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   SewerHit hit = sewerTrace(ro, rd);
-  vec3 fog = vec3(0.013, 0.031, 0.015);
+  vec3 fog = vec3(0.012, 0.030, 0.032);
   vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
   float haze = 1.0 - exp(-hit.t * 0.0105);
   col = mix(col, fog, haze);
-  col += sewerInflow(ro, rd, hit.t, pixAngle) * (1.0 - haze * 0.7);
+  float inflowDepth;
+  vec4 inflow = sewerInflow(ro, rd, hit.t, pixAngle, inflowDepth);
+  float inflowHaze = 1.0 - exp(-inflowDepth * 0.0105);
+  col = mix(col, mix(inflow.rgb, fog, inflowHaze), inflow.a);
   // Existing ring/guide/stars have the same depth and controls as surface flight.
-  vec3 markers = courseLight(ro, rd, hit.t, pixAngle);
+  vec3 markers = courseLight(ro, rd, inflow.a > 0.55 ? min(hit.t, inflowDepth) : hit.t, pixAngle);
   float opacity = saturate(max(markers.r, max(markers.g, markers.b)));
   col = col * (1.0 - opacity * 0.74) + markers;
   fragColor = vec4(max(col, vec3(0.0)), 1.0);
@@ -12930,16 +13054,33 @@ function distanceToSegment(p, a, b) {
   return Math.hypot(...q.map((v, i) => v - along * axis[i]));
 }
 
+// Each source inlet and inflow share their mouth. Derive rendering from that actual cylinder;
+// the old decorative descending capsule must not determine either the width or water height.
+function inflowSheets(world) {
+  const inlets = world.tunnels.map((tube, index) => ({ tube, index })).filter(({ tube }) => tube.kind === 'inlet');
+  return (world.inflows || []).flatMap(flow => {
+    const source = inlets.find(({ tube }) => tube.a.every((v, i) => Math.abs(v - flow.a[i]) < 1e-5));
+    if (!source || !Number.isFinite(source.tube.water)) return [];
+    const { tube, index } = source, dx = tube.b[0] - tube.a[0], dz = tube.b[2] - tube.a[2], length = Math.hypot(dx, dz);
+    if (length < 1e-5) return [];
+    const a = [tube.a[0], tube.water, tube.a[2]];
+    const radius = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2));
+    const receivingWater = flow.b[1] - 0.6; // Existing generation stores collector water +0.6.
+    return [{ a, b: [a[0] - dx / length * 7, a[1], a[2] - dz / length * 7], radius,
+      receivingWater, source: index }];
+  });
+}
+
 function create(gfx) {
   const { gl } = gfx;
   const program = gfx.program('sewer-flight', FRAG);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const data = new Float32Array(ATLAS_WIDTH * 3 * 4);
   const atlas = gfx.createTexture(ATLAS_WIDTH, 3, { format: 'rgba32f', filter: 'nearest', data });
-  let world = null, last = null, counts = [0, 0, 0, 0], clipped = 0;
+  let world = null, flows = [], last = null, counts = [0, 0, 0, 0], clipped = 0;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
-    world = city.sewer; last = null; clipped = 0;
+    world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0;
   }
   function select(items, position, maximum, radius) {
     return items.map((value, index) => ({ value, index, distance: value.centre
@@ -12950,7 +13091,9 @@ function create(gfx) {
   function pack(position) {
     data.fill(0);
     const selected = [select(world.tunnels, position, TUNNELS, t => t.radius), select(world.pipes || [], position, PIPES, p => p.radius),
-      select(world.dirt || [], position, DIRT), select(world.inflows || [], position, INFLOWS, f => f.radius)];
+      select(world.dirt || [], position, DIRT), select(flows, position, INFLOWS, f => f.radius)];
+    const tunnelSlots = new Map(selected[0].map(({ index }, slot) => [index, slot]));
+    selected[3] = selected[3].filter(({ value }) => tunnelSlots.has(value.source));
     counts = selected.map(v => v.length);
     const put = (index, row, values) => data.set(values, (row * ATLAS_WIDTH + index) * 4);
     selected.forEach((items, group) => items.forEach(({ value, index }, slot) => {
@@ -12958,9 +13101,9 @@ function create(gfx) {
       if (group === 2) { put(base, 0, [...value.centre, Math.max(...value.radii)]); put(base, 1, [...value.radii, 0]); }
       else {
         put(base, 0, [...value.a, value.radius]);
-        put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : 0]);
-        const kind = /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
-        put(base, 2, [(index * 13.71) % 32, kind, index, 0]);
+        put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : group === 3 ? value.receivingWater : 0]);
+        const kind = value.kind === 'inlet' ? 3 : /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
+        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index, 0]);
       }
     }));
     gl.bindTexture(gl.TEXTURE_2D, atlas);
@@ -12984,7 +13127,7 @@ function create(gfx) {
   return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3], clipped }) };
 }
 
-GAME.sewerFlightRenderer = { create };
+GAME.sewerFlightRenderer = { create, inflowSheets };
 
 })();
 
@@ -13849,11 +13992,10 @@ function create(panel, { touch, collapseHint = () => null }) {
       : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
     q('#shop-key-context').textContent = hint ? `${hint.code} · ${hint.difficulty}` : '';
     q('#shop-key-price').textContent = `★ ${key.price}`;
-    q('#shop-key-owned').textContent = s.collapseKey ? 'permanently owned' : 'permanent · one purchase';
     const keyHadFocus = document.activeElement === keyBuy;
     keyBuy.disabled = !!busy || !s.available || s.collapseKey || s.balance < key.price;
     if (keyHadFocus && keyBuy.disabled) q('#shop-done').focus();
-    keyBuy.textContent = busy === 'key' ? 'saving…' : s.collapseKey ? 'owned · permanent' : !s.available ? 'unavailable'
+    keyBuy.textContent = busy === 'key' ? 'saving…' : s.collapseKey ? 'owned' : !s.available ? 'unavailable'
       : s.balance < key.price ? `need ${key.price - s.balance} more ★` : `buy key · ${key.price} ★`;
     q('#shop-storage').hidden = s.available;
   }
@@ -14171,7 +14313,7 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, sewerRenderer, sewerFlightRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
+let renderer, sewerFlightRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
 const syncTouchStick = () => {
   const selected = usesTouchStick();
@@ -14184,6 +14326,7 @@ const syncTouchStick = () => {
 };
 let seedCode, city, course, run, guide, pilot;
 let collapse = null, surfaceSession = null, collapsePreparation = null;
+let sewerArrival = null;
 let menuEnvironment = params.get('environment') === 'surface' ? 'surface'
   : params.get('environment') === 'sewer' ? GAME.access.sewerUnlocked() ? 'sewer' : 'surface' : GAME.access.environment();
 const isSewer = () => course?.environment === 'sewer';
@@ -14207,6 +14350,21 @@ function grantExtreme(code) {
 // Generation runs off-thread. Keep the old world and its URL intact until its replacement is
 // fully ready, so cancelling or failing a load leaves a playable course.
 let courseLoading = false, flowVersion = 0, flightStarting = false;
+function commitCourse(world, seed, selectedDifficulty, environment, lockedExtreme = false) {
+  leaveCollapse();
+  city = world.city; course = world.course;
+  seedCode = GAME.rng.seedToCode(seed); difficulty = selectedDifficulty;
+  requestedLockedExtreme = lockedExtreme;
+  if (isSewer()) sewerFlightRenderer.setWorld(city, course);
+  else renderer.setWorld(city, course.pads);
+  menuEnvironment = environment;
+  environmentCourses.set(environment, { seed, difficulty });
+  stage.classList.toggle('sewer-world', isSewer());
+  history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${isSewer() ? '&environment=sewer' : ''}${AUTOPILOT ? '&autopilot' : ''}`);
+  if (GAME.access.environment() !== environment) GAME.access.setEnvironment(environment);
+  newRun();
+}
+
 async function loadCourse(seed, selectedDifficulty = difficulty, environment = course ? isSewer() ? 'sewer' : 'surface' : menuEnvironment) {
   if (courseLoading) return false;
   if (environment === 'sewer' && !GAME.access.sewerUnlocked()) return false;
@@ -14235,21 +14393,8 @@ async function loadCourse(seed, selectedDifficulty = difficulty, environment = c
   }
   try {
     const world = await GAME.courseLoader.load(seed, nextDifficulty, options);
-    leaveCollapse();
-    city = world.city;
-    course = world.course;
-    seedCode = code;
-    difficulty = nextDifficulty;
-    requestedLockedExtreme = lockedExtreme;
-    if (isSewer()) sewerFlightRenderer.setWorld(city, course);
-    else renderer.setWorld(city, course.pads);
-    menuEnvironment = environment;
-    environmentCourses.set(environment, { seed, difficulty });
-    stage.classList.toggle('sewer-world', isSewer());
-    history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${isSewer() ? '&environment=sewer' : ''}${AUTOPILOT ? '&autopilot' : ''}`);
-    if (GAME.access.environment() !== environment) GAME.access.setEnvironment(environment);
+    commitCourse(world, seed, nextDifficulty, environment, lockedExtreme);
     console.log(`[game] ${environment} course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms`);
-    newRun();
     return true;
   } catch (error) {
     if (error.name === 'AbortError') return false;
@@ -14352,6 +14497,39 @@ function revealSewer() {
   hud.show(false); setMode('sewer-reveal');
   if (document.pointerLockElement) document.exitPointerLock();
   $('sewer-reveal').classList.remove('hidden', 'revealed');
+  const seed = GAME.rng.codeToSeed(seedCode);
+  const lockedExtreme = difficulty === 'extreme' && !extremeUnlocked(seedCode, 'sewer');
+  const selectedDifficulty = lockedExtreme ? 'hard' : difficulty;
+  // Prepare behind the chapter card without changing its completed escape or revealing the
+  // surface menu. A lightweight local Sewer build also handles a refused worker startup.
+  const promise = GAME.courseLoader.load(seed, selectedDifficulty, worldOptions('sewer')).catch(error => {
+    console.warn(`[game] Sewer arrival worker unavailable: ${error.message}`);
+    return GAME.sewerCourse.generate(seed, selectedDifficulty);
+  }).then(world => ({ world }), error => ({ error }));
+  sewerArrival = { seed, difficulty: selectedDifficulty, lockedExtreme, promise, entering: false };
+  GAME.sound.setEnvironment('sewer');
+}
+
+async function arriveInSewer() {
+  const arrival = sewerArrival;
+  if (!arrival || arrival.entering) return;
+  arrival.entering = true;
+  try {
+    const result = await arrival.promise;
+    if (mode !== 'sewer-reveal' || sewerArrival !== arrival) return;
+    if (result.error) throw result.error;
+    commitCourse(result.world, arrival.seed, arrival.difficulty, 'sewer', arrival.lockedExtreme);
+    showMenu();
+    $('sewer-reveal').classList.add('hidden');
+    GAME.sound.setSceneMuted(false);
+    $('environment-switch').focus();
+    sewerArrival = null;
+  } catch (error) {
+    sewerArrival = null;
+    $('sewer-reveal').classList.add('hidden');
+    showMenu(); GAME.sound.setSceneMuted(false);
+    showControlFailure(new Error('Could not connect The Sewer. Try the Sewer button again.'));
+  }
 }
 
 // ---- Run flow ---------------------------------------------------------------------------------
@@ -14416,7 +14594,7 @@ function handle(events) {
     else if (e.type === 'boost') { boostsTaken++; hud.toast(`lift +${Math.round(e.lift)}`, 'good'); boostGlow = 1; }
     else if (e.type === 'star') {
       pendingStars.add(e.star); newStars = pendingStars.size;
-      hud.toast('★ star found · finish to save', 'star', 2);
+      hud.toast('★ star found', 'star', 2);
       hud.starCollected();
     }
     else if (e.type === 'crash') {
@@ -14505,11 +14683,7 @@ function update(dt) {
     if (modeTime > FINISH_PAUSE) showResults();
   } else if (mode === 'sewer-reveal') {
     if (modeTime >= 2.5) $('sewer-reveal').classList.add('revealed');
-    if (modeTime >= 4.8) {
-      $('sewer-reveal').classList.add('hidden');
-      leaveCollapse(); showMenu(); GAME.sound.setSceneMuted(false);
-      $('environment-switch').focus();
-    }
+    if (modeTime >= 4.8) arriveInSewer();
   }
   crashFlash = Math.max(0, crashFlash - dt * 2.5);
   boostGlow = Math.max(0, boostGlow - dt * 1.5);
@@ -14572,8 +14746,10 @@ function render(now, w, h) {
       || warnings.some(p => nearby(p) < 180) || (landmark && nearby(landmark) < 180))) {
     view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, landmark, warnings, kind: 'secret', flare: 0, xray: 0 }];
   }
-  if (sewerMenu) sewerRenderer.draw(now / 1000, w / h);
-  else if (isSewer()) sewerFlightRenderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, []);
+  // The menu previews this course from its real starting pose. Fly keeps the same tunnel,
+  // camera and masonry through the countdown instead of swapping an underground backdrop.
+  if (isSewer()) sewerFlightRenderer.draw(cam, sewerMenu ? [] : view.rings,
+    sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide, []);
   else renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
@@ -14593,7 +14769,8 @@ function render(now, w, h) {
   }
   if (sewerMenu) { post.ca = 0.0006; post.vignette = 0.34; post.speed = post.flash = post.glitch = 0; }
   GAME.post.present(target, post, now / 1000);
-  drawn = { at: now, width: w, height: h, fov: 2 * Math.atan(cam.tanHalf[1]) * 180 / Math.PI, pos: cam.pos };
+  drawn = { at: now, width: w, height: h, mode, scene: isSewer() ? 'sewer-flight' : 'city',
+    fov: 2 * Math.atan(cam.tanHalf[1]) * 180 / Math.PI, pos: cam.pos };
   return { cam, next: view.next };
 }
 
@@ -15266,7 +15443,6 @@ async function boot() {
   GAME.shop.refresh();
   GAME.post.init();
   renderer = GAME.cityRenderer.create(GAME.gfx);
-  sewerRenderer = GAME.sewerRenderer.create(GAME.gfx);
   sewerFlightRenderer = GAME.sewerFlightRenderer.create(GAME.gfx);
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause, onLift: () => useLift().catch(fail) });
   input = GAME.input.create(canvas);
