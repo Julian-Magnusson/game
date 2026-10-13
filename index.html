@@ -4882,6 +4882,14 @@ function sphere(city, x, y, z, r) {
   const inHole = hole && Math.hypot(x - hole.x, z - hole.z) + r < hole.radius;
   if (y - r <= 0 && (!inHole || y - r <= hole.bottom)) return { kind: 'ground' };
   if (x < 0 || z < 0 || x > city.size || z > city.size) return { kind: 'bounds' };
+  const motion = collapse?.motion ? GAME.collapseMotion.frame(collapse) : null;
+  // Rigid movers can reach well beyond their original cells. A capped world-space sphere
+  // broad phase avoids searching an expanding grid around every toppled building or crown.
+  if (motion) for (const record of motion.records) {
+    if (Math.hypot(x - record.worldCentre[0], y - record.worldCentre[1], z - record.worldCentre[2]) > record.radius + r) continue;
+    const p = GAME.collapseMotion.localPoint(record, [x, y, z]);
+    if (record.boxes.some(b => solidDistance2(b, ...p) <= r * r)) return { kind: 'tower', cell: record.cell };
+  }
   const n = city.n, ix = Math.floor(x / city.cell), iz = Math.floor(z / city.cell);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
@@ -4890,6 +4898,7 @@ function sphere(city, x, y, z, r) {
       const cell = cz * n + cx;
       const fall = collapse ? GAME.collapse.fallOffset(collapse, cell) : 0;
       for (const b of city.boxes(cell)) {
+        if (motion && GAME.collapseMotion.movingBox(motion, cell, b)) continue;
         if (b[6] === 9) continue; // Fountain water and spray never obstruct flight.
         const solidY = b[6] ? y : y + fall;
         const py = Math.max(b[1] - solidY, 0, solidY - b[4]);
@@ -4909,9 +4918,11 @@ function groundHeight(city, x, z) {
   const i = city.cellIndex(x, z);
   if (i < 0) return 0;
   const collapse = city.collapse, hole = collapse?.hole;
+  const motion = collapse?.motion ? GAME.collapseMotion.frame(collapse) : null;
   let h = hole && Math.hypot(x - hole.x, z - hole.z) < hole.radius ? hole.bottom : 0;
   const fall = collapse ? GAME.collapse.fallOffset(collapse, i) : 0;
   for (const b of city.boxes(i)) if (x >= b[0] && x <= b[3] && z >= b[2] && z <= b[5]) {
+    if (motion && GAME.collapseMotion.movingBox(motion, i, b)) continue;
     if (b[6] === 9) continue;
     let top = b[4] - (b[6] ? 0 : fall);
     if (b[7] >= GAME.street.SHAPE.BRANCH_X) {
@@ -4926,7 +4937,40 @@ function groundHeight(city, x, z) {
     }
     h = Math.max(h, top);
   }
+  if (motion) for (const record of motion.records) {
+    if (Math.hypot(x - record.worldCentre[0], z - record.worldCentre[2]) > record.radius) continue;
+    const y = record.worldCentre[1] + record.radius + 1;
+    const ro = GAME.collapseMotion.localPoint(record, [x, y, z]);
+    const rd = GAME.collapseMotion.localVector(record, [0, -1, 0]);
+    for (const b of record.boxes) {
+      const hit = rayHit(b, ro, rd);
+      if (Number.isFinite(hit)) h = Math.max(h, y - hit);
+    }
+  }
   return h;
+}
+
+function rayHit(b, ro, rd) {
+  if (b[7] >= GAME.street.SHAPE.BRANCH_X) return capsuleHit(b, ro, rd);
+  if (b[7] === GAME.street.SHAPE.ELLIPSOID) {
+    const centre = [0, 1, 2].map(i => (b[i] + b[i + 3]) / 2), radius = [0, 1, 2].map(i => (b[i + 3] - b[i]) / 2);
+    const q = ro.map((v, i) => (v - centre[i]) / radius[i]), d = rd.map((v, i) => v / radius[i]);
+    const A = d.reduce((sum, v) => sum + v * v, 0), B = q.reduce((sum, v, i) => sum + v * d[i], 0);
+    const C = q.reduce((sum, v) => sum + v * v, -1), disc = B * B - A * C;
+    if (disc < 0) return Infinity;
+    const t = (-B - Math.sqrt(disc)) / A;
+    return t >= 0 ? t : (-B + Math.sqrt(disc)) / A >= 0 ? (-B + Math.sqrt(disc)) / A : Infinity;
+  }
+  let near = -Infinity, far = Infinity;
+  for (let axis = 0; axis < 3; axis++) {
+    if (Math.abs(rd[axis]) < 1e-12) {
+      if (ro[axis] < b[axis] || ro[axis] > b[axis + 3]) return Infinity;
+    } else {
+      const a = (b[axis] - ro[axis]) / rd[axis], c = (b[axis + 3] - ro[axis]) / rd[axis];
+      near = Math.max(near, Math.min(a, c)); far = Math.min(far, Math.max(a, c));
+    }
+  }
+  return near <= far && far >= 0 ? Math.max(near, 0) : Infinity;
 }
 
 function solidDistance2(b, x, y, z) {
@@ -4985,7 +5029,7 @@ function ellipsoidDistance2(b, x, y, z) {
   return p.reduce((sum, v, i) => sum + (v * hi / (hi + r2[i])) ** 2, 0);
 }
 
-GAME.collide = { sphere, groundHeight, ellipsoidDistance2, solidDistance2, capsuleHit };
+GAME.collide = { sphere, groundHeight, ellipsoidDistance2, solidDistance2, capsuleHit, rayHit };
 
 })();
 
@@ -7473,10 +7517,141 @@ GAME.courseData = { pack, unpack };
 
 ;(function () {
 'use strict';
+// ---- src/game/collapse-motion.js ----
+// A bounded set of rigid Collapse objects. Physics and rendering use this same pivot, rotation
+// and timeline. Their full rotated bounds may cross city cells, so they have a separate broad phase.
+const MAX_MOVERS = 24, MAX_PARTS = 16, TREE_MASK_SCALE = 65536;
+const smooth = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const f32 = Math.fround;
+
+function rotate(v, axis, c, s) {
+  const dot = v[0] * axis[0] + v[2] * axis[2], k = 1 - c;
+  return [v[0] * c - axis[2] * v[1] * s + axis[0] * dot * k,
+    v[1] * c + (axis[2] * v[0] - axis[0] * v[2]) * s,
+    v[2] * c + axis[0] * v[1] * s + axis[2] * dot * k];
+}
+
+function worldPoint(record, p) {
+  const q = rotate(p.map((v, i) => v - record.pivot[i]), record.axis, record.cos, record.sin);
+  return q.map((v, i) => v + record.pivot[i] - (i === 1 ? record.offset : 0));
+}
+function localPoint(record, p) {
+  const q = p.map((v, i) => v - record.pivot[i] + (i === 1 ? record.offset : 0));
+  return rotate(q, record.axis, record.cos, -record.sin).map((v, i) => v + record.pivot[i]);
+}
+const worldVector = (record, v) => rotate(v, record.axis, record.cos, record.sin);
+const localVector = (record, v) => rotate(v, record.axis, record.cos, -record.sin);
+
+function prepare(city, state, specs = []) {
+  if (specs.length > MAX_MOVERS) throw new Error(`Collapse allows at most ${MAX_MOVERS} rigid objects`);
+  const records = [], map = new Float32Array(city.n * city.n * 4);
+  for (const spec of specs) {
+    const { cell, kind } = spec;
+    if (!Number.isInteger(cell) || cell < 0 || cell >= city.n * city.n || !['building', 'tree'].includes(kind))
+      throw new Error('invalid Collapse motion object');
+    const [cx, cz] = city.cellCenter(cell), street = city.streetBoxes[cell] || [];
+    let object = spec.object, mask = 0;
+    if (kind === 'tree' && object === undefined) {
+      const crowns = street.filter(b => b[6] === GAME.street.MATERIAL.LEAVES).sort((a, b) => b[4] - a[4]);
+      object = crowns[0]?.[8];
+    }
+    const boxes = kind === 'building' ? city.boxes(cell).filter(b => !b[6])
+      : street.filter((b, part) => {
+        const matches = b[8] === object && (b[6] === GAME.street.MATERIAL.BARK || b[6] === GAME.street.MATERIAL.LEAVES);
+        if (matches) mask |= 1 << part;
+        return matches;
+      });
+    if (!boxes.length || boxes.length > MAX_PARTS) throw new Error(`Collapse ${kind} ${cell} has invalid geometry count`);
+    const lo = [0, 1, 2].map(i => Math.min(...boxes.map(b => b[i])));
+    const hi = [0, 1, 2].map(i => Math.max(...boxes.map(b => b[i + 3])));
+    const centre = lo.map((v, i) => (v + hi[i]) / 2), radius = Math.hypot(...hi.map((v, i) => (v - lo[i]) / 2)) + 0.05;
+    const bark = boxes.filter(b => b[6] === GAME.street.MATERIAL.BARK).sort((a, b) => a[1] - b[1]);
+    const pivot = spec.pivot || (kind === 'building' ? [cx + city.boxA[cell * 4], 0, cz + city.boxA[cell * 4 + 1]]
+      : bark.length ? [(bark[0][0] + bark[0][3]) / 2, Math.max(0, bark[0][1]), (bark[0][2] + bark[0][5]) / 2]
+        : [centre[0], Math.max(0, lo[1]), centre[2]]);
+    const length = Math.hypot(...spec.axis), axis = [spec.axis[0] / length, 0, spec.axis[1] / length].map(f32);
+    const start = spec.start ?? state.falls[cell * 4], duration = spec.duration ?? state.falls[cell * 4 + 1];
+    const angle = spec.angle, drop = spec.drop ?? 0;
+    if (!(length > 0) || ![...pivot, start, duration, angle, drop].every(Number.isFinite) || duration <= 0 || drop < 0)
+      throw new Error('invalid Collapse rigid timeline');
+    const record = { cell, kind, object, mask, boxes, pivot: pivot.map(f32), axis, angle, start, duration, drop,
+      centre, firePoint: [centre[0], hi[1], centre[2]], radius, cos: 1, sin: 0, offset: 0, worldCentre: [...centre] };
+    const index = records.length + 1, a = cell * 4;
+    if (kind === 'building') {
+      if (map[a]) throw new Error('a building may only have one Collapse transform');
+      map[a] = index;
+    } else {
+      if (records.some(r => r.cell === cell && r.kind === 'tree' && r.object === object))
+        throw new Error('a vegetation object may only have one Collapse transform');
+      const slot = [1, 2, 3].find(i => !map[a + i]);
+      if (!slot) throw new Error('a street cell may have at most three moving vegetation objects');
+      map[a + slot] = index * TREE_MASK_SCALE + mask;
+    }
+    records.push(record);
+  }
+  const solids = new Float32Array(MAX_MOVERS * MAX_PARTS * 4 * 4), width = MAX_MOVERS * MAX_PARTS;
+  records.forEach((record, group) => {
+    const cell = record.cell, a = cell * 4, [cx, cz] = city.cellCenter(cell);
+    const buildingCount = city.buildingBoxes(cell).length;
+    const propCount = city.propA[a + 2] > 0 ? city.propB[a + 2] === GAME.city.PROP.PIPE ? 4 : 1 : 0;
+    const bridges = [city.bridgeA, city.bridgeB].filter(data => data[a + 3]);
+    record.boxes.forEach((b, part) => {
+      const slot = group * MAX_PARTS + part;
+      let kind, A, B;
+      if (record.kind === 'tree') { kind = 5; A = [b[0], b[2], b[3], b[5]]; B = [b[1], b[4], b[6], b[7]]; }
+      else if (part < buildingCount) { kind = 1; A = [(b[0] + b[3]) / 2 - cx, (b[2] + b[5]) / 2 - cz,
+        (b[3] - b[0]) / 2, (b[5] - b[2]) / 2]; B = [b[1], b[4], 0, 0]; }
+      else if (part < buildingCount + propCount) { kind = 3; A = Array.from(city.propA.slice(a, a + 4)); B = Array.from(city.propB.slice(a, a + 4)); }
+      else { kind = 4; A = Array.from(bridges[part - buildingCount - propCount].slice(a, a + 4)); B = [0, 0, 0, 0]; }
+      solids.set([b[0], b[1], b[2], b[7] || 0], slot * 4);
+      solids.set([b[3], b[4], b[5], kind], (width + slot) * 4);
+      solids.set(A, (width * 2 + slot) * 4); solids.set(B, (width * 3 + slot) * 4);
+    });
+  });
+  state.motion = { records, map, solids, data: new Float32Array(MAX_MOVERS * 4 * 4), bounds: new Float32Array(MAX_MOVERS * 4), lastTime: null };
+  return frame(state);
+}
+
+function frame(state) {
+  const motion = state.motion;
+  if (!motion || motion.lastTime === state.time) return motion;
+  motion.lastTime = state.time;
+  for (const [index, record] of motion.records.entries()) {
+    const progress = smooth((state.time - record.start) / record.duration);
+    record.cos = f32(Math.cos(record.angle * progress)); record.sin = f32(Math.sin(record.angle * progress));
+    record.offset = f32(record.drop * progress);
+    record.worldCentre = worldPoint(record, record.centre);
+    motion.data.set([...record.pivot, record.offset], index * 4);
+    motion.data.set([record.axis[0], record.axis[2], record.cos, record.sin], (MAX_MOVERS + index) * 4);
+    motion.data.set([record.cell, record.kind === 'building' ? 0 : 1, record.mask, record.boxes.length], (MAX_MOVERS * 2 + index) * 4);
+    motion.data.set([...worldPoint(record, record.firePoint), 0], (MAX_MOVERS * 3 + index) * 4);
+    motion.bounds.set([...record.worldCentre, record.radius], index * 4);
+  }
+  return motion;
+}
+
+function movingBox(motion, cell, b) {
+  const a = cell * 4;
+  if (!b[6]) return !!motion.map[a];
+  if (b[6] !== GAME.street.MATERIAL.BARK && b[6] !== GAME.street.MATERIAL.LEAVES) return false;
+  for (let i = 1; i <= 3; i++) {
+    const index = Math.floor(motion.map[a + i] / TREE_MASK_SCALE) - 1;
+    if (index >= 0 && motion.records[index].object === b[8]) return true;
+  }
+  return false;
+}
+
+GAME.collapseMotion = { MAX_MOVERS, MAX_PARTS, TREE_MASK_SCALE, prepare, frame, rotate,
+  worldPoint, localPoint, worldVector, localVector, movingBox };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/game/collapse.js ----
-// A hidden, optional flight. Its city is a separate copy: finding the red ring never changes
-// the seeded race, its stars, its proof time or the world's cached geometry.
-const SAMPLE = 4, LENGTH = 600, HOLE_RADIUS = 20, TRIGGER_RADIUS = 2.25;
+// A hidden, optional flight. Its destruction happens in a separate city copy. Extreme gets
+// one small departure opening; the seeded racing line, stars and medal time remain unchanged.
+const SAMPLE = 4, HOLE_RADIUS = 6, TRIGGER_RADIUS = 2.25;
 const NOTICE_RANGE = 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = v => { v = clamp(v, 0, 1); return v * v * (3 - 2 * v); };
@@ -7499,8 +7674,19 @@ function crossing(from, to, ring) {
 
 const through = (from, to, ring) => { const hit = crossing(from, to, ring); return !!hit && hit.distance <= ring.radius; };
 
-function approach(city, course, trigger, line) {
-  const run = GAME.run.create(city, course), pilot = { k: 0 }, flight = { ...course, line };
+function approach(city, course, trigger, line, snapshots = null) {
+  let run = GAME.run.create(city, course), pilot = { k: 0 };
+  const flight = { ...course, line };
+  if (snapshots) {
+    let k = Math.max(0, trigger.detour.k - trigger.detour.span - 30);
+    while (k > 0 && !snapshots[k]) k--;
+    const snapshot = snapshots[k];
+    if (snapshot) {
+      run = { ...snapshot.run, city, course, glider: { ...snapshot.run.glider }, boundary: { ...snapshot.run.boundary },
+        used: new Set(snapshot.run.used), taken: new Set(snapshot.run.taken), stars: new Set(snapshot.run.stars) };
+      pilot = { k: snapshot.k };
+    }
+  }
   const dt = 1 / 120;
   let best = null, closest = Infinity;
   while (!run.finished && !run.crashed && run.time < course.par * 2 + 10) {
@@ -7529,89 +7715,156 @@ function approach(city, course, trigger, line) {
   return { glider: best, trigger: corrected };
 }
 
-function clearCell(city, i) {
-  city.kind[i] = GAME.city.KIND.PLAZA;
-  for (const key of ['boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB']) city[key].fill(0, i * 4, i * 4 + 4);
-  city.streetBoxes[i] = null;
-  city.park[i] = 1;
-}
-
 function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   const city = GAME.courseData.unpack(structuredClone(GAME.courseData.pack(sourceCity, sourceCourse))).city;
   city.clearGeometryCache();
-  const direction = trigger.n, side = [-direction[2], 0, direction[0]];
-  const origin = [trigger.x, trigger.y, trigger.z];
-  const at = (s, lateral = 0) => [origin[0] + direction[0] * s + side[0] * lateral,
-    origin[2] + direction[2] * s + side[2] * lateral];
-  const centreEnd = at(LENGTH);
-  const hole = { x: centreEnd[0], z: centreEnd[1], radius: HOLE_RADIUS, bottom: -14 };
-  if ([hole.x, hole.z].some(v => v < 70 || v > city.size - 70)) return null;
-  // The race is untouched. Only this copied emergency corridor is opened up.
-  for (let i = 0; i < city.n * city.n; i++) {
-    const [x, z] = city.cellCenter(i), dx = x - origin[0], dz = z - origin[2];
-    const along = dx * direction[0] + dz * direction[2], across = dx * side[0] + dz * side[2];
-    if (along > -45 && along < LENGTH + 55 && Math.abs(across) < 72) clearCell(city, i);
+  const L = sourceCourse.line, k0 = Math.round(trigger.s / sourceCourse.sample);
+  const length = Math.min(760, (L.n - k0 - 18) * SAMPLE);
+  if (length < 500) return null;
+  const n = Math.round((length + 48) / SAMPLE) + 1;
+  const line = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n) };
+  const offset = [trigger.x - L.x[k0], trigger.z - L.z[k0]], height = 16;
+  for (let k = 0; k < n; k++) {
+    const s = k * SAMPLE, j = Math.min(L.n - 1, k0 + k), join = 1 - smooth(s / 160);
+    line.x[k] = L.x[j] + offset[0] * join; line.z[k] = L.z[j] + offset[1] * join;
+    const level = initial.y + (height - initial.y) * smooth(s / 180);
+    line.y[k] = s < length - 48 ? level : height - (s - (length - 48)) * 0.82;
   }
-  const turns = [[0, 0], [100, 23], [220, -23], [340, 23], [460, -23], [560, 0], [LENGTH + 44, 0]];
-  const line = { n: Math.round((LENGTH + 44) / SAMPLE) + 1,
-    x: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1),
-    y: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1),
-    z: new Float32Array(Math.round((LENGTH + 44) / SAMPLE) + 1) };
-  // Pursuit anticipates a dive, so the flight is a few units below its planning line here.
-  // Keeping the final line at street level puts the actual glider through the buried ring.
-  const height = s => s <= 500 ? initial.y + (24 - initial.y) * s / 500 : 24 - (s - 500) * 0.24;
-  for (let k = 0; k < line.n; k++) {
-    const s = k * SAMPLE;
-    let j = 0;
-    while (j + 1 < turns.length - 1 && turns[j + 1][0] < s) j++;
-    const f = smooth((s - turns[j][0]) / (turns[j + 1][0] - turns[j][0]));
-    const lateral = turns[j][1] + (turns[j + 1][1] - turns[j][1]) * f;
-    [line.x[k], line.z[k]] = at(s, lateral); line.y[k] = height(s);
-  }
-  const gates = [100, 220, 340, 460].map((s, index) => {
-    const k = Math.round(s / SAMPLE), a = k - 1, b = k + 1;
-    const dx = line.x[b] - line.x[a], dz = line.z[b] - line.z[a], length = Math.hypot(dx, dz);
-    return { index, x: line.x[k], y: line.y[k], z: line.z[k], s, n: [dx / length, 0, dz / length], radius: 8.5, finish: false };
+  const gates = [0.18, 0.38, 0.58, 0.78].map((f, index) => {
+    const k = Math.round(length * f / SAMPLE), a = Math.max(0, k - 1), b = k + 1;
+    const dx = line.x[b] - line.x[a], dz = line.z[b] - line.z[a], d = Math.hypot(dx, dz);
+    return { index, x: line.x[k], y: line.y[k], z: line.z[k], s: k * SAMPLE,
+      n: [dx / d, 0, dz / d], radius: 5.5, finish: false };
   });
-  gates.push({ index: 4, x: hole.x, y: -4, z: hole.z, s: LENGTH, n: [0, -1, 0], radius: 9, finish: true, sewer: true });
-  const course = { difficulty: sourceCourse.difficulty, collapse: true, line, sample: SAMPLE, length: LENGTH,
-    start: { x: trigger.x, y: initial.y, z: trigger.z, yaw: Math.atan2(direction[0], direction[2]) },
-    gates, boosters: [], pads: [], stars: [], sections: [], par: LENGTH / GAME.flight.cruise(sourceCourse.difficulty),
-    ambientLift: initial.y < 65 ? 5.6 : 0, // Heat lets a street-level entry clear the burning gardens.
-    energyAt: s => height(s) + 8 };
-  const falls = new Float32Array(city.n * city.n * 4), hazards = [];
-  for (const [index, s] of [100, 220, 340, 460].entries()) {
-    const [wantX, wantZ] = at(s), cell = city.cellIndex(wantX, wantZ), [cx, cz] = city.cellCenter(cell);
-    const ox = clamp(wantX - cx, -9.5, 9.5), oz = clamp(wantZ - cz, -9.5, 9.5);
-    const top = Math.max(90, initial.y + 24 - index * 8), a = cell * 4;
-    city.kind[cell] = GAME.city.KIND.TOWER; city.park[cell] = 0;
-    city.boxA.set([ox, oz, 6, 6], a); city.boxB.set([top * 0.65, top, 4.8, 4.8], a);
-    falls.set([0.65 + index * 0.65, 14, top + 18, 1], a);
-    hazards.push({ cell, s, top, x: cx + ox, z: cz + oz });
-  }
-  // Other neighbourhood towers fall faster; the four route hazards remain substantial while
-  // the player weaves around them, with their first movement visible well before arrival.
-  for (let i = 0; i < city.n * city.n; i++) {
-    if (falls[i * 4 + 3] || !city.buildingBoxes(i).length) continue;
-    const [x, z] = city.cellCenter(i), dx = x - origin[0], dz = z - origin[2];
-    const along = dx * direction[0] + dz * direction[2], across = dx * side[0] + dz * side[2];
-    if (along > -150 && along < LENGTH + 180 && Math.abs(across) < 250) {
-      const key = ((i * 0.61803398875) % 1), top = Math.abs(city.boxB[i * 4 + 1]);
-      falls.set([key * 1.5, 4 + key * 9, top + 14, 1], i * 4);
+  const end = Math.round(length / SAMPLE);
+  // A temporary wide aperture is used only to measure the steep descent. It is replaced by
+  // a genuine six-unit manhole and re-proved before any world can be offered to the player.
+  const hole = { x: line.x[end], z: line.z[end], radius: 96, bottom: -14 };
+  gates.push({ index: 4, x: hole.x, y: -3, z: hole.z, s: length, n: [0, -1, 0], radius: 96, finish: true, sewer: true });
+  const course = { difficulty: sourceCourse.difficulty, collapse: true, line, sample: SAMPLE, length,
+    start: { x: trigger.x, y: initial.y, z: trigger.z, yaw: Math.atan2(trigger.n[0], trigger.n[2]) },
+    gates, boosters: [], pads: [], stars: [], sections: [], par: length / GAME.flight.cruise(sourceCourse.difficulty),
+    ambientLift: 5.6, energyAt: s => line.y[Math.min(n - 1, Math.round(s / SAMPLE))] + 8 };
+  const state = { time: 0, falls: new Float32Array(city.n * city.n * 4), hole, hazards: [], progress: 0 };
+  city.collapse = state;
+  const changed = new Set(), removedObjects = new Set();
+  // Keep the city, its narrow streets and bends. Only the short join or a low piece of course
+  // equipment may need opening in this emergency copy; there is no cleared park corridor.
+  for (let k = 0; k < n; k++) {
+    if (line.y[k] < 1.5) continue;
+    for (let pass = 0; pass < 5; pass++) {
+      const hit = GAME.collide.sphere(city, line.x[k], line.y[k], line.z[k], 4.5);
+      if (!hit) break;
+      if (hit.kind !== 'tower') return null;
+      const cell = hit.cell, pieces = city.streetBoxes[cell] || [];
+      const object = pieces.find(b => b[6] !== 9 && GAME.collide.solidDistance2(b, line.x[k], line.y[k], line.z[k]) < 20.25)?.[8];
+      if (object !== undefined) {
+        city.streetBoxes[cell] = pieces.filter(b => b[8] !== object); removedObjects.add(object);
+      } else {
+        const a = cell * 4;
+        if (city.propA[a + 2] || city.bridgeA[a + 3] || city.bridgeB[a + 3]) {
+          city.propA.fill(0, a, a + 4); city.propB.fill(0, a, a + 4);
+          city.bridgeA.fill(0, a, a + 4); city.bridgeB.fill(0, a, a + 4);
+        } else {
+          if (changed.size >= 6) return null;
+          city.kind[cell] = GAME.city.KIND.AVENUE;
+          for (const field of ['boxA', 'boxB', 'structure']) city[field].fill(0, a, a + 4);
+          changed.add(cell);
+        }
+      }
+      city.clearGeometryCache();
     }
   }
-  // Fires have actual vegetation to cling to, rather than appearing on empty paving.
-  for (let s = 40, id = 0; s <= 530; s += 52, id++) for (const sign of [-1, 1]) {
-    const [x, z] = at(s, sign * 49), cell = city.cellIndex(x, z), [cx, cz] = city.cellCenter(cell);
-    if (city.buildingBoxes(cell).length || city.streetBoxes[cell]) continue;
-    const type = id % 3 === 0 ? 'bush' : id % 3 === 1 ? 'small' : 'spreading';
-    const pieces = GAME.street.vegetation(type, cx, cz, type === 'bush' ? 3.8 : 18, type === 'bush' ? 5 : 7);
-    city.streetBoxes[cell] = pieces.map(b => [...b, 800000 + cell]);
+  const motionSpecs = [], used = new Set();
+  for (let k = 15; k < end - 20; k += 16) {
+    const dx = line.x[k + 1] - line.x[k - 1], dz = line.z[k + 1] - line.z[k - 1], d = Math.hypot(dx, dz);
+    for (const sign of [-1, 1]) {
+      const cell = city.cellIndex(line.x[k] - dz / d * 23 * sign, line.z[k] + dx / d * 23 * sign);
+      if (cell < 0 || used.has(cell) || !city.buildingBoxes(cell).length || city.boxes(cell).filter(b => !b[6]).length > 16) continue;
+      const [cx, cz] = city.cellCenter(cell), bx = cx + city.boxA[cell * 4], bz = cz + city.boxA[cell * 4 + 1];
+      const away = [bx - line.x[k], bz - line.z[k]], norm = Math.hypot(...away);
+      if (norm < 6) continue;
+      const s = k * SAMPLE, inward = motionSpecs.length === 2;
+      const spec = { cell, kind: 'building', axis: [away[1] / norm, -away[0] / norm],
+        angle: inward ? -0.14 : 1.25, start: inward ? s / GAME.flight.cruise(sourceCourse.difficulty) + 0.65 : 0.65 + motionSpecs.length * 0.16, duration: inward ? 2.4 : 10, drop: 0 };
+      motionSpecs.push(spec); used.add(cell);
+      state.hazards.push({ cell, s, x: bx, z: bz, top: Math.abs(city.boxB[cell * 4 + 1]), kind: 'building' });
+      if (motionSpecs.length >= 10) break;
+    }
+    if (motionSpecs.length >= 10) break;
   }
-  city.maxHeight = Math.max(city.maxHeight, ...hazards.map(h => h.top));
+  for (let k = 12; k < end - 10 && motionSpecs.length < 18; k += 12) {
+    for (const cell of [city.cellIndex(line.x[k] - 16, line.z[k]), city.cellIndex(line.x[k] + 16, line.z[k]),
+      city.cellIndex(line.x[k], line.z[k] - 16), city.cellIndex(line.x[k], line.z[k] + 16)]) {
+      if (cell < 0 || used.has(cell)) continue;
+      const tree = city.streetBoxes[cell]?.find(b => b[6] === GAME.street.MATERIAL.LEAVES);
+      if (!tree) continue;
+      const [cx, cz] = city.cellCenter(cell), away = [cx - line.x[k], cz - line.z[k]], d = Math.hypot(...away);
+      if (d < 8) continue;
+      motionSpecs.push({ cell, kind: 'tree', object: tree[8], axis: [away[1] / d, -away[0] / d],
+        angle: 1.4, start: 0.5, duration: 4.5, drop: 0 }); used.add(cell);
+    }
+  }
+  // Some tight city slices contain no vegetation. One roadside tree in an existing open
+  // pavement pocket supplies the same toppling/fire detail without turning the street into a park.
+  if (!motionSpecs.some(m => m.kind === 'tree')) {
+    outer: for (let k = 20; k < end - 20; k += 8) for (const sign of [-1, 1]) {
+      const dx = line.x[k + 1] - line.x[k - 1], dz = line.z[k + 1] - line.z[k - 1], d = Math.hypot(dx, dz);
+      const x = line.x[k] - dz / d * 18 * sign, z = line.z[k] + dx / d * 18 * sign;
+      const cell = city.cellIndex(x, z);
+      if (cell < 0 || used.has(cell) || city.buildingBoxes(cell).length || GAME.collide.sphere(city, x, 5, z, 4)) continue;
+      const pieces = GAME.street.vegetation('small', x, z, 10, 2.5).map(b => [...b, 900000 + cell]);
+      if ((city.streetBoxes[cell]?.length || 0) + pieces.length > GAME.street.MAX_PIECES) continue;
+      city.streetBoxes[cell] = [...(city.streetBoxes[cell] || []), ...pieces];
+      motionSpecs.push({ cell, kind: 'tree', object: 900000 + cell, axis: [dx / d * sign, dz / d * sign],
+        angle: 1.4, start: 0.5, duration: 4.5, drop: 0 });
+      city.clearGeometryCache(); break outer;
+    }
+  }
+  if (!motionSpecs.some(m => m.kind === 'building') || !motionSpecs.some(m => m.kind === 'tree')) return null;
+  state.motionSpecs = motionSpecs;
+  GAME.collapseMotion.prepare(city, state, motionSpecs);
   city.cacheGeometry();
-  const state = { time: 0, falls, hole, hazards, progress: 0 };
-  city.collapse = state;
+  const run = GAME.run.create(city, course), pilot = { k: 0 };
+  run.glider = { ...initial };
+  let entry = null, exit = null, entryTime = null, exitTime = null;
+  while (!run.finished && !run.crashed && run.time < 25) {
+    const from = [run.glider.x, run.glider.y, run.glider.z];
+    step(state, run, steer(pilot, run.glider, course), 1 / 120);
+    const to = [run.glider.x, run.glider.y, run.glider.z];
+    const atY = y => {
+      if (!(from[1] > y && to[1] <= y)) return null;
+      const f = (from[1] - y) / (from[1] - to[1]);
+      return { point: [from[0] + (to[0] - from[0]) * f, from[2] + (to[2] - from[2]) * f], time: run.time - (1 - f) / 120 };
+    };
+    if (!entry) { const hit = atY(GAME.flight.FLIGHT.RADIUS); if (hit) { entry = hit.point; entryTime = hit.time; } }
+    if (!exit) { const hit = atY(-3); if (hit) { exit = hit.point; exitTime = hit.time; } }
+  }
+  if (!run.finished || run.next !== 5 || !entry || !exit || Math.hypot(entry[0] - exit[0], entry[1] - exit[1]) > 7.4) return null;
+  hole.x = (entry[0] + exit[0]) / 2; hole.z = (entry[1] + exit[1]) / 2; hole.radius = HOLE_RADIUS;
+  Object.assign(gates[4], { x: hole.x, z: hole.z, radius: 3.8 });
+  const pavedCells = [];
+  for (let iz = Math.floor((hole.z - 8) / city.cell); iz <= Math.floor((hole.z + 8) / city.cell); iz++) {
+    for (let ix = Math.floor((hole.x - 8) / city.cell); ix <= Math.floor((hole.x + 8) / city.cell); ix++) {
+      if (ix < 0 || iz < 0 || ix >= city.n || iz >= city.n) continue;
+      const cell = iz * city.n + ix;
+      if (city.park[cell]) { city.park[cell] = 0; pavedCells.push(cell); }
+    }
+  }
+  state.time = 0; state.progress = 0; GAME.collapseMotion.frame(state);
+  const localCells = new Set();
+  for (let k = 0; k <= end; k += 4) {
+    const ix = Math.floor(line.x[k] / city.cell), iz = Math.floor(line.z[k] / city.cell);
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (ix + dx >= 0 && iz + dz >= 0 && ix + dx < city.n && iz + dz < city.n) localCells.add((iz + dz) * city.n + ix + dx);
+    }
+  }
+  const building = v => v === GAME.city.KIND.TOWER || v === GAME.city.KIND.OBSTACLE;
+  course.escapeGeometry = { clearedCells: [...changed], removedObjects: [...removedObjects], sourceBuildings: sourceCity.kind.filter(v => v === GAME.city.KIND.TOWER || v === GAME.city.KIND.OBSTACLE).length,
+    retainedBuildings: city.kind.filter(building).length, pavedCells,
+    localCells: [...localCells], localSourceBuildings: [...localCells].filter(i => building(sourceCity.kind[i])).length,
+    localRetainedBuildings: [...localCells].filter(i => building(city.kind[i])).length };
+  course.shaftEntry = { entry, exit, entryTime, exitTime, distance: Math.hypot(entry[0] - exit[0], entry[1] - exit[1]) };
   return { city, course, state };
 }
 
@@ -7724,20 +7977,25 @@ function lineOfSight(city, from, to) {
   return true;
 }
 
-function normalTrace(city, course) {
+function normalTrace(city, course, snapshots = null) {
   const run = GAME.run.create(city, course), pilot = { k: 0 }, points = [];
   let tick = 0;
   while (!run.finished && !run.crashed && run.time < course.par * 2 + 10) {
     if (tick++ % 6 === 0) points.push({ ...run.glider, time: run.time, next: run.next,
       checkpoint: run.checkpoint, s: pilot.k * course.sample });
-    GAME.run.step(run, GAME.autopilot.steer(pilot, run.glider, course), 1 / 120);
+    const stick = GAME.autopilot.steer(pilot, run.glider, course);
+    if (snapshots && !snapshots[pilot.k]) snapshots[pilot.k] = { k: pilot.k, run: { ...run,
+      glider: { ...run.glider }, boundary: { ...run.boundary }, used: new Set(run.used), taken: new Set(run.taken), stars: new Set(run.stars) } };
+    GAME.run.step(run, stick, 1 / 120);
   }
   return run.finished && !run.crashed ? points : [];
 }
 
 function visibleFrom(city, pose, target, range = NOTICE_RANGE) {
   const delta = [target.x - pose.x, target.y - pose.y, target.z - pose.z];
-  if (Math.hypot(...delta) >= range) return false;
+  const distance = Math.hypot(...delta);
+  if (distance >= range) return false;
+  if (target.type && delta.reduce((v, d, i) => v + d * target.n[i], 0) / distance >= -0.04) return false;
   const cg = Math.cos(pose.gamma), fwd = [Math.sin(pose.yaw) * cg, Math.sin(pose.gamma), Math.cos(pose.yaw) * cg];
   const right = [-Math.cos(pose.yaw), 0, Math.sin(pose.yaw)], up = [-Math.sin(pose.yaw) * Math.sin(pose.gamma), cg, -Math.cos(pose.yaw) * Math.sin(pose.gamma)];
   const dot = a => a.reduce((s, v, i) => s + v * delta[i], 0), depth = dot(fwd);
@@ -7748,23 +8006,125 @@ function visibleFrom(city, pose, target, range = NOTICE_RANGE) {
   return lineOfSight(city, [pose.x, pose.y, pose.z], [target.x, target.y, target.z]);
 }
 
-function notice(city, trace, trigger, raised = false) {
-  // A raised, recessed red light display draws the eye above the tiny pavement ring.
-  const heights = raised ? [60, 75] : [trigger.y + 7.5, Math.max(30, trigger.y + 7.5), Math.max(45, trigger.y + 7.5)];
-  for (const y of heights) {
-    const landmark = { x: trigger.x, y, z: trigger.z, n: [...trigger.n], halfWidth: 5, halfHeight: 2.4 };
-    if (GAME.collide.sphere(city, landmark.x, landmark.y, landmark.z, 2.5)) continue;
-    // The shop prints MM:SS, so a fleeting view between seconds cannot be its promised cue.
-    // Choose the first actually visible whole-second pose, rather than rounding a glimpse
-    // forward into a moment where another tree or facade may already hide the entrance.
-    const point = trace.find(p => Math.abs(p.time - Math.round(p.time)) < 1e-7
-      && (visibleFrom(city, p, trigger, 125) || visibleFrom(city, p, landmark)));
-    if (point) {
-      const time = Math.round(point.time);
-      return { landmark, visibilityTime: time, visibilityPoint: { ...point, time } };
+function entranceBuildings(city, trigger) {
+  const buildings = [];
+  const ix = Math.floor(trigger.x / city.cell), iz = Math.floor(trigger.z / city.cell);
+  for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+    const x = ix + dx, z = iz + dz;
+    if (x < 0 || z < 0 || x >= city.n || z >= city.n) continue;
+    const cell = z * city.n + x;
+    const boxes = city.buildingBoxes(cell).filter(b => b[4] - b[1] > 8);
+    if (!boxes.length) continue;
+    const box = boxes.reduce((best, b) => (b[3] - b[0]) * (b[5] - b[2]) > (best[3] - best[0]) * (best[5] - best[2]) ? b : best);
+    const distance = Math.hypot(Math.max(box[0] - trigger.x, 0, trigger.x - box[3]), Math.max(box[2] - trigger.z, 0, trigger.z - box[5]));
+    buildings.push({ cell, box, distance });
+  }
+  buildings.sort((a, b) => a.distance - b.distance);
+  return buildings;
+}
+
+function entranceFrontage(city, trigger) {
+  const side = [-trigger.n[2], trigger.n[0]], flank = [null, null];
+  for (const { cell, box: b, distance } of entranceBuildings(city, trigger)) {
+    if (distance < 10 || distance > 35 || b[4] < trigger.y + 4) continue;
+    const q = (((b[0] + b[3]) / 2 - trigger.x) * side[0] + ((b[2] + b[5]) / 2 - trigger.z) * side[1]);
+    const index = q < 0 ? 0 : 1;
+    if (Math.abs(q) > 3 && !flank[index]) flank[index] = { cell, box: [...b], distance, side: Math.sign(q) };
+  }
+  if (!flank.every(Boolean) || city.park[city.cellIndex(trigger.x, trigger.z)]) return null;
+  return { walls: flank, pavedCell: city.cellIndex(trigger.x, trigger.z) };
+}
+
+function entrancePanels(city, trigger) {
+  if (!entranceFrontage(city, trigger)) return [];
+  const buildings = entranceBuildings(city, trigger);
+  const panels = [];
+  for (const { cell, box: b } of buildings.slice(0, 7)) {
+    const cx = (b[0] + b[3]) / 2, cz = (b[2] + b[5]) / 2, h = b[4] - b[1];
+    const faces = [[b[0] - 0.12, cz, [-1, 0, 0], (b[5] - b[2]) / 2],
+      [b[3] + 0.12, cz, [1, 0, 0], (b[5] - b[2]) / 2],
+      [cx, b[2] - 0.12, [0, 0, -1], (b[3] - b[0]) / 2],
+      [cx, b[5] + 0.12, [0, 0, 1], (b[3] - b[0]) / 2]];
+    faces.sort((a, c) => Math.hypot(a[0] - trigger.x, a[1] - trigger.z) - Math.hypot(c[0] - trigger.x, c[1] - trigger.z));
+    for (const [x, z, normal, half] of faces.slice(0, 2)) {
+      const halfWidth = Math.min(7, half - 0.7);
+      if (halfWidth < 0.8) continue;
+      const phase = (cell * 0.61803398875 % 1) * Math.PI * 2;
+      panels.push({ x, y: b[1] + Math.min(h - 3, Math.max(8, h * 0.34)), z, n: normal, halfWidth,
+        halfHeight: Math.min(5, h * 0.23), type: 'windows', phase, cell });
+      panels.push({ x, y: b[1] + Math.min(h - 2, 4.2), z, n: normal, halfWidth: Math.min(5.5, halfWidth),
+        halfHeight: 1.65, type: 'banner', phase: phase + 0.7, cell });
+      if (panels.length >= 20) return panels;
     }
   }
-  return null;
+  return panels;
+}
+
+function notice(city, trace, trigger) {
+  const warnings = entrancePanels(city, trigger);
+  if (warnings.length < 12) return null;
+  const point = trace.find(p => Math.abs(p.time - Math.round(p.time)) < 1e-7
+    && warnings.some(panel => visibleFrom(city, p, panel)));
+  if (!point) return null;
+  const time = Math.round(point.time);
+  return { warnings, frontage: entranceFrontage(city, trigger), visibilityTime: time, visibilityPoint: { ...point, time } };
+}
+
+// Open only the first few seconds of the optional Extreme departure. The normal line, gates,
+// boosters and stars keep their coordinates; unsuccessful entrance candidates restore every byte.
+function turnoutPatch(city, course, trigger) {
+  const L = course.line, start = trigger.detour.k - trigger.detour.span + 2, end = start + 14;
+  const opening = [], saves = new Map(), removed = new Set(), cleared = new Set();
+  const frontage = entranceFrontage(city, trigger), protectedCells = new Set(frontage?.walls.map(w => w.cell) || []);
+  const fields = ['kind', 'boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB', 'park'];
+  function save(cell) {
+    if (saves.has(cell)) return;
+    saves.set(cell, Object.fromEntries(fields.map(key => [key, key === 'kind' || key === 'park' ? city[key][cell] : city[key].slice(cell * 4, cell * 4 + 4)])));
+    saves.get(cell).streetBoxes = structuredClone(city.streetBoxes[cell]);
+  }
+  function rollback() {
+    for (const [cell, data] of saves) {
+      for (const key of fields) if (key === 'kind' || key === 'park') city[key][cell] = data[key]; else city[key].set(data[key], cell * 4);
+      city.streetBoxes[cell] = data.streetBoxes;
+    }
+    city.clearGeometryCache();
+  }
+  let blocked = 0;
+  for (let k = start; k <= end; k++) {
+    const dx = L.x[k + 1] - L.x[k - 1], dz = L.z[k + 1] - L.z[k - 1], d = Math.hypot(dx, dz);
+    const p = { x: L.x[k], y: L.y[k], z: L.z[k], n: [dx / d, 0, dz / d] };
+    opening.push(p);
+    for (let across = -14; across <= 14; across += 2) {
+      const x = p.x - p.n[2] * across, z = p.z + p.n[0] * across;
+      // Use the actual flying height, including overhead structures, rather than painting a
+      // wider strip on the ground while retaining the collision bottleneck above it.
+      for (let pass = 0; pass < 8; pass++) {
+        const hit = GAME.collide.sphere(city, x, p.y, z, 1.5);
+        if (!hit) break;
+        if (hit.kind !== 'tower' || protectedCells.has(hit.cell)) { rollback(); return null; }
+        blocked++;
+        const cell = hit.cell, a = cell * 4, pieces = city.streetBoxes[cell] || [];
+        const object = pieces.find(b => b[6] !== 9 && GAME.collide.solidDistance2(b, x, p.y, z) < 2.25)?.[8];
+        save(cell);
+        if (object !== undefined) {
+          city.streetBoxes[cell] = pieces.filter(b => b[8] !== object); removed.add(object);
+        } else if (city.buildingBoxes(cell).some(b => GAME.collide.solidDistance2(b, x, p.y, z) < 2.25)) {
+          if (cleared.size >= 6) { rollback(); return null; }
+          city.kind[cell] = GAME.city.KIND.AVENUE;
+          for (const field of ['boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB']) city[field].fill(0, a, a + 4);
+          city.park[cell] = 0; cleared.add(cell);
+        } else {
+          city.propA.fill(0, a, a + 4); city.propB.fill(0, a, a + 4);
+          city.bridgeA.fill(0, a, a + 4); city.bridgeB.fill(0, a, a + 4);
+        }
+        city.clearGeometryCache();
+      }
+      if (GAME.collide.sphere(city, x, p.y, z, 1.5)) { rollback(); return null; }
+    }
+  }
+  if (!blocked) { rollback(); return null; }
+  return { rollback, data: { opening, length: 56, width: 28, opened: true, existing: false,
+    changedCells: [...saves.keys()], clearedCells: [...cleared], removedObjects: [...removed], blockedPoints: blocked } };
 }
 
 function prepare(city, course, seed = city.seed) {
@@ -7772,23 +8132,46 @@ function prepare(city, course, seed = city.seed) {
   if (course.collapse && typeof course.collapse === 'object') return course.collapse;
   const L = course.line, markers = [0, ...course.gates.map(g => g.s),
     ...course.boosters.flatMap(b => [b.pickup - 24, b.climbEnd + 24])].sort((a, b) => a - b);
-  const random = GAME.rng.stream(seed, 'collapse-secret'), trace = normalTrace(city, course);
-  const groundApproaches = [];
-  function finish(flight, line, hint) {
+  const random = GAME.rng.stream(seed, 'collapse-secret'), snapshots = [], trace = normalTrace(city, course, snapshots);
+  function finish(flight, line, hint, patch) {
     const world = escapeWorld(city, course, flight.trigger, flight.glider);
     if (!world) return null;
     const proof = prove(world, flight.glider);
     if (!proof.finished || proof.crashes || proof.gates !== 5) return null;
     delete world.city.collapse;
-    const secret = { trigger: flight.trigger, approachLine: line, entry: { ...flight.glider },
+    const t = flight.trigger, side = [-t.n[2], t.n[0]];
+    const clear = (x, y, z, halfWidth, halfLength) => {
+      for (let along = -halfLength; along <= halfLength; along += 4) for (let across = -halfWidth; across <= halfWidth; across += 2) {
+        if (GAME.collide.sphere(city, x + t.n[0] * along + side[0] * across, y,
+          z + t.n[2] * along + side[1] * across, GAME.flight.FLIGHT.RADIUS)) return false;
+      }
+      return true;
+    };
+    let halfWidth = 2;
+    while (halfWidth < 20 && clear(t.x, t.y, t.z, halfWidth + 1, 10)) halfWidth++;
+    if (!clear(t.x, t.y, t.z, halfWidth, 10) || (course.difficulty === 'extreme' && halfWidth < 4)) return null;
+    const k = t.detour.k;
+    let laneHalfWidth = 0;
+    while (laneHalfWidth < 20 && clear(L.x[k], L.y[k], L.z[k], laneHalfWidth + 1, 6)) laneHalfWidth++;
+    let normal = null, stars = null;
+    if (patch) {
+      normal = GAME.autopilot.fly(city, course);
+      if (!normal.finished || normal.crashes || normal.missed || Math.abs(normal.time - course.proof.time) > 1e-7) return null;
+      stars = GAME.autopilot.fly(city, course, { line: GAME.stars.detourLine(course) });
+      if (!stars.finished || stars.crashes || stars.missed || stars.events.filter(e => e.type === 'star').length !== course.stars.length) return null;
+    }
+    const pocket = { x: t.x, y: t.y, z: t.z, n: [...t.n], length: 20, width: halfWidth * 2, laneWidth: laneHalfWidth * 2, pavedCell: hint.frontage.pavedCell };
+    const secret = { trigger: t, approachLine: line, entry: { ...flight.glider },
       world: GAME.courseData.pack(world.city, world.course), falls: world.state.falls,
-      hole: world.state.hole, hazards: world.state.hazards, proof, ...hint };
+      hole: world.state.hole, hazards: world.state.hazards, motionSpecs: world.state.motionSpecs, proof, ...hint,
+      turnout: patch ? { ...patch.data, ringPocket: pocket, normalTime: normal.time, starCount: stars.events.filter(e => e.type === 'star').length }
+        : { ...pocket, existing: true, changedCells: [] } };
     course.collapse = secret;
     return secret;
   }
   function search(step, offsets, limit) {
     const candidates = [];
-    for (let k = 35; k < L.n - 15; k += step) {
+    for (let k = 35; k < L.n - 143; k += step) {
       const s = k * course.sample, before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
       const span = Math.floor(Math.min(150, Math.max(100, s - before - 12, after - s - 12), s - 8, course.length - s - 8) / course.sample);
       if (span * course.sample < 80 || L.y[k] > 65) continue;
@@ -7799,27 +8182,40 @@ function prepare(city, course, seed = city.seed) {
         const dy = y - L.y[k];
         const trigger = { x: L.x[k] + side[0] * lateral, y: L.y[k] + dy, z: L.z[k] + side[2] * lateral,
           n: direction, radius: TRIGGER_RADIUS, s, detour: { k, span, dx: side[0] * lateral, dy, dz: side[2] * lateral } };
-        const end = [trigger.x + direction[0] * LENGTH, trigger.z + direction[2] * LENGTH];
-        if (end.some(v => v < 80 || v > city.size - 80) || GAME.collide.sphere(city, trigger.x, trigger.y, trigger.z, 3.5)) continue;
-        const line = GAME.stars.detourLine(course, [trigger]);
-        line.collapseDetour = { k, span };
-        // Stay low beyond the crossing: looking ahead must not pull the glider back up before
-        // it reaches the street ring. This line is used only to find the optional entrance.
-        for (let j = k; j <= Math.min(k + 40, line.n - 1); j++) line.y[j] = y;
-        let clear = true;
-        for (let j = k - span; j <= k; j++) if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], 2.7)) { clear = false; break; }
-        if (clear) candidates.push({ trigger, line, score: s * 0.001 + random() * 2 + Math.abs(lateral) * 0.015 + L.y[k] * 0.25 });
+        if (trigger.x < 80 || trigger.z < 80 || trigger.x > city.size - 80 || trigger.z > city.size - 80
+          || GAME.collide.sphere(city, trigger.x, trigger.y, trigger.z, 3.5)) continue;
+        // The entrance is a pavement alley. Low park sections otherwise dominate the ranking
+        // and send hundreds of nearly identical lawn detours through the expensive real pilot.
+        const parkPenalty = city.park[city.cellIndex(trigger.x, trigger.z)] ? 18 : 0;
+        candidates.push({ trigger, score: s * 0.001 + random() * 2 + Math.abs(lateral) * 0.015 + L.y[k] * 0.25 + parkPenalty });
       }
     }
     candidates.sort((a, b) => a.score - b.score);
-    for (const { trigger, line } of candidates.slice(0, limit)) {
-      const flight = approach(city, course, trigger, line);
-      if (!flight) continue;
-      if (flight.trigger.y > 8.5 || flight.trigger.y < 3.6 || GAME.collide.groundHeight(city, flight.trigger.x, flight.trigger.z) > 1) continue;
+    let attempts = 0;
+    for (const { trigger } of candidates) {
+      const { k, span } = trigger.detour, line = GAME.stars.detourLine(course, [trigger]);
+      line.collapseDetour = { k, span };
+      // Rank the inexpensive street targets first. Building and checking a full detour for
+      // every unused candidate caused long difficulty-loading tails on dense seeded cities.
+      for (let j = k; j <= Math.min(k + 40, line.n - 1); j++) line.y[j] = trigger.y;
+      let clear = true;
+      for (let j = k - span; j <= k; j++) if (GAME.collide.sphere(city, line.x[j], line.y[j], line.z[j], 2.7)) {
+        if (course.difficulty === 'extreme' && j >= k - span + 2 && j <= k - span + 16) continue;
+        clear = false; break;
+      }
+      if (!clear) continue;
+      if (attempts++ >= limit) break;
+      const patch = course.difficulty === 'extreme' ? turnoutPatch(city, course, trigger) : null;
+      if (course.difficulty === 'extreme' && !patch) continue;
+      const flight = approach(city, course, trigger, line, snapshots);
+      if (!flight || flight.trigger.y > 8.5 || flight.trigger.y < 3.6 || GAME.collide.groundHeight(city, flight.trigger.x, flight.trigger.z) > 1) { patch?.rollback(); continue; }
+      // Removal cannot change the normal flight's controls or lift. Re-test its existing real
+      // poses against the patched geometry; the final normal proof also checks identical time.
       const hint = notice(city, trace, flight.trigger);
-      if (!hint) { groundApproaches.push({ flight, line }); continue; }
-      const secret = finish(flight, line, hint);
+      if (!hint) { patch?.rollback(); continue; }
+      const secret = finish(flight, line, hint, patch);
       if (secret) return secret;
+      patch?.rollback();
     }
     return null;
   }
@@ -7832,15 +8228,6 @@ function prepare(city, course, seed = city.seed) {
   for (let d = 36; d <= 96; d += 4) offsets.push(d, -d);
   const dense = search(1, offsets, 600);
   if (dense) return dense;
-  // Dense foliage can hide every lower display at the clock ticks. Reuse the ground flights
-  // already proved above for a higher window, without rebuilding and flying both pools again.
-  // Ordinary successes return first, so their entrance and clock stay unchanged.
-  for (const { flight, line } of groundApproaches) {
-    const hint = notice(city, trace, flight.trigger, true);
-    if (!hint) continue;
-    const secret = finish(flight, line, hint);
-    if (secret) return secret;
-  }
   course.collapse = null;
   return null;
 }
@@ -7850,13 +8237,14 @@ function begin(city, course, secret = course.collapse, glider = null) {
   const world = GAME.courseData.unpack(structuredClone(secret.world));
   const state = { time: 0, falls: Float32Array.from(secret.falls), hole: { ...secret.hole },
     hazards: secret.hazards.map(h => ({ ...h })), progress: 0 };
+  GAME.collapseMotion.prepare(world.city, state, secret.motionSpecs || []);
   world.city.collapse = state;
   world.course.start = { ...world.course.start, y: glider?.y ?? world.course.start.y };
   return { ...world, state };
 }
 
 GAME.collapse = { prepare, begin, step, steer, approachSteer, prove, through, crossing, fallOffset,
-  lineOfSight, normalTrace, visibleFrom, NOTICE_RANGE, TRIGGER_RADIUS, HOLE_RADIUS };
+  lineOfSight, normalTrace, visibleFrom, entrancePanels, entranceFrontage, escapeWorld, NOTICE_RANGE, TRIGGER_RADIUS, HOLE_RADIUS };
 
 })();
 
@@ -10009,9 +10397,11 @@ GAME.resolution = {
 // GLSL goes into the city shader after its filtering helpers (pulseAA, bandAA, tube), which it
 // uses; uniforms(rings, guide) packs one frame's view of the course for it.
 
-const MAX_RINGS = 10, PATH_POINTS = 32, PATH_CHUNK = 8;
+const MAX_RINGS = 10, PATH_POINTS = 32, PATH_CHUNK = 8, MAX_WARNINGS = 20, WARNING_RANGE = 180;
+const WARNING_FACING = 0.04;
 const RING_KIND = { next: 1, later: 2, finish: 3, boost: 4, flare: 5, secret: 6 };
 const LIME = [0.35, 1.0, 0.22];                // boosters: nothing else in a city is lime
+const warningMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 const GLSL = `
 const int MAX_RINGS = ${MAX_RINGS};
@@ -10028,8 +10418,10 @@ uniform vec4 uCollectibles[3];                 // centre xyz, radius (0 = unused
 uniform vec4 uCollectiblePhases;
 uniform vec4 uCollectibleSaved;                // 1 = already owned, a faint outline without halo/glints
 uniform vec3 uCollectibleColour;
-uniform vec4 uSecretDisplay;                   // raised display centre xyz; 0 radius disables it
-uniform vec4 uSecretDisplayN;                  // plane normal xyz; half-height
+const int MAX_WARNINGS = ${MAX_WARNINGS};
+uniform vec4 uSecretWarningC[MAX_WARNINGS];     // centre xyz, half-width; negative width = banner
+uniform vec4 uSecretWarningN[MAX_WARNINGS];     // outward horizontal normal x/z, half-height, phase
+uniform float uSecretWarningCount, uSecretMotionScale;
 // Course lights share a look no tower has: a white-hot core in a coloured halo, and motion.
 const vec3 HOT = vec3(1.0, 0.86, 0.95);
 const vec3 GATE_NEXT = vec3(1.0, 0.1, 0.5);
@@ -10107,7 +10499,7 @@ vec3 ringLight(vec3 ro, vec3 rd, vec4 c, vec4 n, vec2 f, float tMax, float pixAn
   if (hidden) return (kind == RING_FINISH ? FINISH : GATE_NEXT) * tube(d, max(0.3, px * 0.7), px * 1.2) * 0.6 * f.y;
   if (kind == RING_SECRET) {
     float near = 1.0 - smoothstep(20.0, 100.0, t);
-    float breathe = 0.88 + 0.12 * sin(uTime * 1.8);
+    float breathe = 0.88 + 0.12 * sin(uTime * uSecretMotionScale * 1.8);
     return vec3(0.65, 0.008, 0.014) * tube(d, 0.13 + near * 0.06, max(0.025, px))
          * (0.35 + near * 0.65) * breathe * (1.0 - smoothstep(90.0, 125.0, t));
   }
@@ -10220,29 +10612,84 @@ vec3 overScene(vec3 scene, vec3 light) {
   return scene * (1.0 - 0.8 * saturate(3.0 * max(light.r, max(light.g, light.b)))) + light;
 }
 
-// A small raised light display, like an out-of-hours shop window over a street entrance.
-// Its warm awning and red outline can be noticed from the race; the thin ring below stays
-// almost transparent until approached. It never shines through a wall or adds a guide arrow.
-vec3 secretDisplayLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
-  if (uSecretDisplay.w <= 0.0) return vec3(0.0);
-  float den = dot(rd, uSecretDisplayN.xyz);
-  if (abs(den) < 1e-4) return vec3(0.0);
-  float t = dot(uSecretDisplay.xyz - ro, uSecretDisplayN.xyz) / den;
-  if (t <= 0.0 || t >= tMax || distance(ro, uSecretDisplay.xyz) >= 180.0) return vec3(0.0);
-  vec3 side = normalize(cross(uSecretDisplayN.xyz, vec3(0.0, 1.0, 0.0)));
-  vec3 q = ro + rd * t - uSecretDisplay.xyz;
-  vec2 p = vec2(dot(q, side), q.y), size = vec2(uSecretDisplay.w, uSecretDisplayN.w);
-  float px = max(0.03, t * pixAngle), box = max(abs(p.x) - size.x, abs(p.y) - size.y);
-  if (box > 4.0 + px * 3.0) return vec3(0.0);
-  float rim = tube(box, 0.13, px * 1.15);
-  float glass = (1.0 - smoothstep(-px, px, box)) * 0.022;
-  float warm = tube(p.y - size.y + 0.45, 0.20, px) * (1.0 - smoothstep(size.x - 0.4, size.x, abs(p.x)))
-             * (0.35 + 0.65 * pulseAA(p.x * 0.4, 0.46, px * 0.4));
-  float bulb = tube(length(p - vec2(0.0, -0.2)), 0.30, px);
-  float breathe = 0.90 + 0.10 * sin(uTime * 1.8);
-  vec3 col = vec3(1.25, 0.035, 0.023) * (rim * breathe + glass + bulb * 0.7)
-           + vec3(0.85, 0.34, 0.10) * warm * 0.55;
-  return col * (1.0 - smoothstep(145.0, 180.0, distance(ro, uSecretDisplay.xyz)));
+float secretPlate(vec2 p, vec2 halfs, float px) {
+  return bandAA(p.x, halfs.x, px) * bandAA(p.y, halfs.y, px);
+}
+
+float secretSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 edge = b - a;
+  return length(p - a - edge * clamp(dot(p - a, edge) / dot(edge, edge), 0.0, 1.0));
+}
+
+// White warning triangle and exclamation mark, painted over the red banner rather than
+// depending on text or the theme's neon palette. Its shape stays readable at reduced resolution.
+vec3 secretBanner(vec2 p, vec2 size, float px, float phase, float time) {
+  float body = secretPlate(p, size, px), box = max(abs(p.x) - size.x, abs(p.y) - size.y);
+  float cloth = 0.88 + 0.09 * sin(p.x * 1.1 + phase + time * 0.18);
+  vec3 col = vec3(0.76, 0.009, 0.018) * body * cloth;
+  col += vec3(1.5, 0.02, 0.03) * tube(box, 0.11, px) * 0.65;
+  float scale = max(0.35, min(size.x * 0.77, size.y * 0.83));
+  vec2 q = p / scale;
+  vec2 a = vec2(0.0, 0.86), b = vec2(-0.83, -0.66), c = vec2(0.83, -0.66);
+  float edge = min(secretSegment(q, a, b), min(secretSegment(q, b, c), secretSegment(q, c, a))) * scale;
+  float triangle = tube(edge, max(0.065 * scale, px * 0.7), px);
+  float stem = secretPlate(p - vec2(0.0, 0.08 * scale), vec2(max(0.085 * scale, px * 0.55), 0.30 * scale), px);
+  float dotRadius = max(0.105 * scale, px * 0.45);
+  float markDot = 1.0 - smoothstep(dotRadius - px * 0.5, dotRadius + px * 0.5,
+    length(p - vec2(0.0, -0.42 * scale)));
+  float warning = max(triangle, max(stem, markDot));
+  col = mix(col, vec3(2.6), warning * body);
+  return col;
+}
+
+// Rooms on a real wall form a broken red grid. Small horizontal tears and a slow scanning band
+// give it a corrupted-display look; brightness changes smoothly and never strobes the facade.
+vec3 secretWindows(vec2 p, vec2 size, float px, float phase, float time) {
+  float body = secretPlate(p, size, px);
+  vec2 period = vec2(2.65, 3.25), grid = p / period;
+  float row = floor(grid.y + 0.5), rowSeed = hash11(row + phase * 13.1);
+  grid.x += (rowSeed - 0.5) * 0.22 + sin(time * 0.45 + rowSeed * TAU) * 0.035;
+  vec2 room = (fract(grid + 0.5) - 0.5) * period;
+  float pane = secretPlate(room, vec2(0.86, 1.02), px);
+  float tear = pulseAA(grid.y * 4.0 + phase, 0.80, px * 4.0 / period.y);
+  float scan = bandAA(mod(p.y - time * 1.55 + phase * 5.0 + 4.5, 9.0) - 4.5, 0.17, px);
+  float rooms = 0.70 + 0.19 * sin(time * 0.65 + hash12(floor(grid + 0.5)) * TAU + phase);
+  float frame = max(tube(abs(room.x) - 0.92, 0.055, px) * bandAA(room.y, 1.1, px),
+    tube(abs(room.y) - 1.09, 0.055, px) * bandAA(room.x, 0.96, px));
+  vec3 col = vec3(1.9, 0.012, 0.023) * pane * rooms * (0.79 + 0.21 * tear + 0.16 * scan);
+  col += vec3(1.3, 0.015, 0.026) * frame * 0.36;
+  return col * body;
+}
+
+// These panels are attached just outside real facades and respect the city's first hit.
+// Only a purchased-key secret ring can supply their metadata, so the cluster is absent normally.
+vec3 secretWarningsLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
+  vec3 windows = vec3(0.0), banners = vec3(0.0);
+  float bannerCover = 0.0;
+  float time = uTime * uSecretMotionScale;
+  for (int i = 0; i < MAX_WARNINGS; i++) {
+    if (float(i) >= uSecretWarningCount) break;
+    vec4 centre = uSecretWarningC[i], meta = uSecretWarningN[i];
+    vec3 normal = vec3(meta.x, 0.0, meta.y);
+    float range = distance(ro, centre.xyz), den = dot(rd, normal);
+    if (range >= ${WARNING_RANGE}.0 || den >= -${WARNING_FACING}) continue;
+    float t = dot(centre.xyz - ro, normal) / den;
+    if (t <= 0.0 || t >= tMax) continue;
+    vec3 q = ro + rd * t - centre.xyz;
+    vec3 side = vec3(-normal.z, 0.0, normal.x);
+    vec2 p = vec2(dot(q, side), q.y), size = vec2(abs(centre.w), meta.z);
+    float px = max(0.025, t * pixAngle / max(abs(den), 0.2));
+    if (abs(p.x) > size.x + px * 3.0 || abs(p.y) > size.y + px * 3.0) continue;
+    // Keep the promised cue readable all the way to the same 180-unit cutoff used by its proof.
+    float fade = 0.72 + 0.28 * (1.0 - smoothstep(110.0, ${WARNING_RANGE}.0, range));
+    if (centre.w < 0.0) {
+      banners = max(banners, secretBanner(p, size, px, meta.w, time) * fade);
+      bannerCover = max(bannerCover, secretPlate(p, size, px));
+    } else windows = max(windows, secretWindows(p, size, px, meta.w, time) * fade);
+  }
+  // A banner covers a window grid on the same wall; its warning stays white instead of
+  // acquiring extra red emission where the two painted rectangles overlap.
+  return windows * (1.0 - bannerCover) + banners;
 }
 
 // Signed distance to a five-point star, with crisp anti-aliased edges at any render scale.
@@ -10323,7 +10770,7 @@ vec3 courseLight(vec3 ro, vec3 rd, float tMax, float pixAngle) {
     if (uRingN[i].w == RING_FINISH) col += beaconLight(ro, rd, uRingC[i], tMax, pixAngle);
   }
   for (int i = 0; i < 3; i++) col += collectibleLight(ro, rd, uCollectibles[i], uCollectiblePhases[i], uCollectibleSaved[i], tMax, pixAngle);
-  return col + guideLight(ro, rd, tMax, pixAngle) + secretDisplayLight(ro, rd, tMax, pixAngle);
+  return col + guideLight(ro, rd, tMax, pixAngle) + secretWarningsLight(ro, rd, tMax, pixAngle);
 }
 `;
 
@@ -10351,7 +10798,8 @@ function uniforms(rings, guide, stars = []) {
   const ringC = new Float32Array(MAX_RINGS * 4), ringN = new Float32Array(MAX_RINGS * 4), ringF = new Float32Array(MAX_RINGS * 2);
   const path = new Float32Array(PATH_POINTS * 4), pathM = new Float32Array(PATH_POINTS * 2);
   const collectibles = new Float32Array(12), phases = new Float32Array(4), saved = new Float32Array(4);
-  const secretDisplay = new Float32Array(4), secretDisplayN = new Float32Array(4);
+  const warningC = new Float32Array(MAX_WARNINGS * 4), warningN = new Float32Array(MAX_WARNINGS * 4);
+  let warnings = 0;
   if (stars.length > 3) throw new Error('at most three stars per course');
   stars.forEach((s, i) => {
     collectibles.set([s.x, s.y, s.z, s.radius], i * 4); phases[i] = s.phase; saved[i] = s.collected ? 1 : 0;
@@ -10362,10 +10810,17 @@ function uniforms(rings, guide, stars = []) {
     ringC.set([r.x, r.y, r.z, r.radius], i * 4);
     ringN.set([r.n[0], r.n[1], r.n[2], RING_KIND[r.kind]], i * 4);
     ringF.set([r.flare, r.xray], i * 2);
-    if (r.kind === 'secret' && r.landmark) {
-      const m = r.landmark;
-      secretDisplay.set([m.x, m.y, m.z, m.halfWidth]);
-      secretDisplayN.set([...m.n, m.halfHeight]);
+    if (r.kind === 'secret') for (const m of r.warnings || []) {
+      if (warnings >= MAX_WARNINGS) break;
+      const phase = m.phase ?? 0, length = Math.hypot(m.n?.[0], m.n?.[2]);
+      if (!['windows', 'banner'].includes(m.type)
+        || ![m.x, m.y, m.z, m.halfWidth, m.halfHeight, phase, m.n?.[0], m.n?.[1], m.n?.[2]].every(Number.isFinite)
+        || m.halfWidth <= 0 || m.halfHeight <= 0 || !Number.isFinite(length) || length < 1e-6 || Math.abs(m.n[1]) > 1e-5) {
+        throw new Error('secret warning needs finite bounds, a vertical facade normal and windows/banner type');
+      }
+      warningC.set([m.x, m.y, m.z, m.halfWidth * (m.type === 'banner' ? -1 : 1)], warnings * 4);
+      warningN.set([m.n[0] / length, m.n[2] / length, m.halfHeight, phase], warnings * 4);
+      warnings++;
     }
   });
   guide.forEach((p, i) => {
@@ -10374,7 +10829,8 @@ function uniforms(rings, guide, stars = []) {
     pathM.set(p.slice(4), i * 2);
   });
   return { uRingC: ringC, uRingN: ringN, uRingF: ringF, uPath: path, uPathM: pathM, uPathB: chunkBounds(guide), uCollectibles: collectibles, uCollectiblePhases: phases, uCollectibleSaved: saved,
-    uSecretDisplay: secretDisplay, uSecretDisplayN: secretDisplayN };
+    uSecretWarningC: warningC, uSecretWarningN: warningN, uSecretWarningCount: warnings,
+    uSecretMotionScale: warningMotion?.matches ? 0 : 1 };
 }
 
 // The boosters' colour in a city theme (GAME.themes): lime, unless the theme brings its own.
@@ -10382,7 +10838,7 @@ function boosterColour(theme) {
   return theme.booster || LIME;
 }
 
-GAME.overlay = { GLSL, uniforms, boosterColour, MAX_RINGS, PATH_POINTS };
+GAME.overlay = { GLSL, uniforms, boosterColour, MAX_RINGS, PATH_POINTS, MAX_WARNINGS, WARNING_RANGE, WARNING_FACING };
 
 })();
 
@@ -10816,6 +11272,9 @@ uniform vec2 uTanHalf;
 uniform highp sampler2D uBoxA, uBoxB, uStructure, uPropA, uPropB, uBridgeA, uBridgeB, uPads; // shared solid boxes / pads
 uniform highp sampler2D uStreet, uStreetInfo;
 uniform highp sampler2D uCollapseFall;
+uniform highp sampler2D uCollapseMotion, uCollapseMotionMap, uCollapseSolids;
+uniform int uCollapseMoverCount;
+uniform vec4 uCollapseMoverBounds[24];         // matches collapseMotion.MAX_MOVERS
 uniform float uCollapseActive, uCollapseTime;
 uniform vec4 uCollapseHole;                    // shaft centre x/z, radius, bottom
 uniform float uStreetMaxH;
@@ -10846,7 +11305,7 @@ const float FAR = 2800.0;
 const float FLOOR_BANDS = 4.0;                 // floors between neon bands on banded towers
 
 const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4, STREET = 5, SEWER = 6;
-struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; };
+struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; int moving; };
 
 vec3 neon(float h) {
   return h < 0.3 ? uNeon[0] : h < 0.55 ? uNeon[1] : h < 0.8 ? uNeon[2] : uNeon[3];
@@ -10954,6 +11413,39 @@ float capsuleHit(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape, out vec3 n) {
   return hit;
 }
 
+vec3 collapseRotate(vec3 v, vec4 turn, bool inverse) {
+  vec3 axis = vec3(turn.x, 0.0, turn.y);
+  float s = inverse ? -turn.w : turn.w;
+  return v * turn.z + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - turn.z);
+}
+
+vec3 collapseLocalPoint(int moving, vec3 p) {
+  vec4 pivot = texelFetch(uCollapseMotion, ivec2(moving - 1, 0), 0);
+  vec4 turn = texelFetch(uCollapseMotion, ivec2(moving - 1, 1), 0);
+  return collapseRotate(p - pivot.xyz + vec3(0.0, pivot.w, 0.0), turn, true) + pivot.xyz;
+}
+
+vec3 collapseLocalVector(int moving, vec3 v) {
+  return collapseRotate(v, texelFetch(uCollapseMotion, ivec2(moving - 1, 1), 0), true);
+}
+
+vec3 surfaceWorldVector(Hit h, vec3 v) {
+  return h.moving > 0 ? collapseRotate(v, texelFetch(uCollapseMotion, ivec2(h.moving - 1, 1), 0), false) : v;
+}
+
+bool movingStreetPart(vec4 map, int part) {
+  for (int i = 1; i < 4; i++) {
+    int mask = int(map[i]) & 65535;
+    if ((mask & (1 << part)) != 0) return true;
+  }
+  return false;
+}
+
+Hit closerHit(Hit fixedHit, Hit movingHit) {
+  if (movingHit.kind != SKY && movingHit.t < fixedHit.t) return movingHit;
+  return fixedHit;
+}
+
 // ---- Course overlay ----------------------------------------------------------------------------
 ${GAME.overlay.GLSL}
 
@@ -11000,8 +11492,54 @@ vec3 collapseFire(vec3 ro, vec3 rd, vec3 centre, float top, float tMax, float pi
     * smoothstep(0.0, 1.8, uCollapseTime) * (1.0 - smoothstep(320.0, 440.0, t));
 }
 
+Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) {
+  Hit hit; hit.kind = SKY; hit.t = min(limit, FAR); hit.moving = 0;
+  for (int group = 0; group < 24; group++) {
+    if (group >= uCollapseMoverCount) break;
+    vec4 bound = uCollapseMoverBounds[group];
+    vec3 delta = bound.xyz - ro;
+    float along = dot(delta, rd);
+    if (dot(delta, delta) - along * along > bound.w * bound.w || along + bound.w < 0.0 || along - bound.w > hit.t) continue;
+    vec4 pivot = texelFetch(uCollapseMotion, ivec2(group, 0), 0);
+    vec4 turn = texelFetch(uCollapseMotion, ivec2(group, 1), 0);
+    vec4 object = texelFetch(uCollapseMotion, ivec2(group, 2), 0);
+    vec3 localRo = collapseRotate(ro - pivot.xyz + vec3(0.0, pivot.w, 0.0), turn, true) + pivot.xyz;
+    vec3 localRd = collapseRotate(rd, turn, true);
+    vec3 inv = 1.0 / mix(localRd, vec3(1e-6), lessThan(abs(localRd), vec3(1e-6)));
+    for (int part = 0; part < 16; part++) {
+      if (float(part) >= object.w) break;
+      ivec2 at = ivec2(group * 16 + part, 0);
+      vec4 lo = texelFetch(uCollapseSolids, at, 0), hi = texelFetch(uCollapseSolids, at + ivec2(0, 1), 0);
+      vec3 normal;
+      float t = lo.w > 1.5 ? capsuleHit(localRo, localRd, lo.xyz, hi.xyz, lo.w, normal)
+        : lo.w > 0.5 ? ellipsoidHit(localRo, localRd, lo.xyz, hi.xyz, normal)
+          : boxHit(localRo, inv, lo.xyz, hi.xyz, normal);
+      if (t >= hit.t) continue;
+      hit.kind = int(hi.w); hit.t = t; hit.n = collapseRotate(normal, turn, false);
+      hit.cell = ivec2(int(object.x) % int(uN), int(object.x) / int(uN)); hit.moving = group + 1;
+      hit.a = texelFetch(uCollapseSolids, at + ivec2(0, 2), 0);
+      hit.b = texelFetch(uCollapseSolids, at + ivec2(0, 3), 0);
+    }
+  }
+  return hit;
+}
+
+Hit finishTrace(Hit fixedHit, Hit movingHit, vec3 ro, vec3 rd, float pixAngle, inout vec3 glow) {
+  Hit near = closerHit(fixedHit, movingHit);
+  // Moving flames are resolved after the nearest static/moving surface is known, so they
+  // cling to the rotated crown without shining through a nearer intact building.
+  for (int group = 0; group < 24; group++) {
+    if (group >= uCollapseMoverCount) break;
+    vec4 object = texelFetch(uCollapseMotion, ivec2(group, 2), 0);
+    if (object.y < 0.5) continue;
+    vec3 crown = texelFetch(uCollapseMotion, ivec2(group, 3), 0).xyz;
+    glow += collapseFire(ro, rd, crown, crown.y, near.t, pixAngle);
+  }
+  return near;
+}
+
 Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
-  Hit h; h.kind = SKY; h.t = FAR;
+  Hit h; h.kind = SKY; h.t = FAR; h.moving = 0;
   rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
   vec3 inv = 1.0 / rd;
   float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
@@ -11011,6 +11549,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     || (ro.y < 0.0 && length(ro.xz - uCollapseHole.xy) < uCollapseHole.z))) {
     shaft = true; tGround = sewerHit(ro, rd, shaftNormal);
   }
+  Hit moved = traceMoving(ro, rd, tGround, pixAngle, glow);
   vec3 nIgnore;
   vec2 span = slab(ro, inv, vec3(0.0, uCollapseActive > 0.5 ? uCollapseHole.w : -1.0, 0.0), vec3(uSize, uMaxH, uSize), nIgnore);
   if (span.x <= span.y && span.y > 0.0) {
@@ -11023,6 +11562,8 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     for (int i = 0; i < maxCells; i++) {
       float tExit = min(tMax.x, tMax.y);
       vec4 A = texelFetch(uBoxA, cell, 0);
+      vec4 moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
+      if (moveMap.x > 0.5) A = vec4(0.0);
       float fall = collapseFall(cell);
       float tStreet = 1e9;
       vec3 nStreet;
@@ -11033,6 +11574,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         vec4 info = texelFetch(uStreetInfo, cell, 0);
         if (lowY < info.y) for (int part = 0; part < ${GAME.street.MAX_PIECES}; part++) {
           if (float(part) >= info.x) break;
+          if (movingStreetPart(moveMap, part)) continue;
           ivec2 at = cell + ivec2(0, part * 2 * int(uN));
           vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
           vec3 lo = vec3(P.x, Q.x, P.y), hi = vec3(P.z, Q.y, P.w), normal;
@@ -11045,7 +11587,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; }
         }
       }
-      if (uCollapseActive > 0.5 && t < 440.0) {
+      if (uCollapseActive > 0.5 && t < 440.0 && max(moveMap.y, max(moveMap.z, moveMap.w)) < 0.5) {
         vec4 info = texelFetch(uStreetInfo, cell, 0);
         glow += collapseFire(ro, rd, vec3((vec2(cell) + 0.5).x * uCell, 0.0, (vec2(cell) + 0.5).y * uCell),
           info.w, min(tExit, min(tGround, tStreet)), pixAngle);
@@ -11055,6 +11597,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       vec4 bridgeData;
       for (int j = 0; j < 2; j++) {
         vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
+        if (moveMap.x > 0.5) continue;
         C.y -= fall;
         if (abs(C.w) < 0.5) continue;
         vec2 cc = (vec2(cell) + 0.5) * uCell;
@@ -11135,12 +11678,12 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           }
           if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
             h.kind = PROP; h.t = tp; h.n = np; h.cell = cell; h.a = P; h.b = Q;
-            return h;
+            return finishTrace(h, moved, ro, rd, pixAngle, glow);
           }
         }
         if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
           h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB;
-          return h;
+          return finishTrace(h, moved, ro, rd, pixAngle, glow);
         }
       } else {
         // Empty cell: a booster's light column stands wholly inside it, so only the ground can hide it.
@@ -11149,12 +11692,13 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       }
       if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
         h.kind = STREET; h.t = tStreet; h.n = nStreet; h.cell = cell; h.a = streetA; h.b = streetB;
-        return h;
+        return finishTrace(h, moved, ro, rd, pixAngle, glow);
       }
       if (tBridge < tGround && tBridge < 1e8) {
         h.kind = BRIDGE; h.t = tBridge; h.n = nBridge; h.cell = cell; h.a = bridgeData;
-        return h;
+        return finishTrace(h, moved, ro, rd, pixAngle, glow);
       }
+      if (moved.kind != SKY && moved.t <= tExit) return finishTrace(h, moved, ro, rd, pixAngle, glow);
       if (tGround <= tExit) break;
       if (tExit > span.y || tExit > FAR) break;
       t = tExit;
@@ -11164,7 +11708,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     }
   }
   if (tGround >= 0.0 && tGround < FAR) { h.kind = shaft ? SEWER : GROUND; h.t = tGround; h.n = shaft ? shaftNormal : vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); }
-  return h;
+  return finishTrace(h, moved, ro, rd, pixAngle, glow);
 }
 
 // ---- Atmosphere --------------------------------------------------------------------------------
@@ -11413,7 +11957,7 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
     1.0 - pulseAA(p.y / floorH, 0.955, fp.y / floorH));
   vec3 cladding = mix(vec3(0.034, 0.041, 0.052), vec3(0.012, 0.024, 0.036), step(0.42, style2.z));
   cladding = mix(cladding, uRoof * 0.4 + vec3(0.014, 0.018, 0.023), 0.3);
-  float light = 0.6 + 0.4 * max(dot(h.n, uSunSize > 0.0 ? uSunDir : vec3(-0.6, 0.7, -0.38)), 0.0);
+  float light = 0.6 + 0.4 * max(dot(surfaceWorldVector(h, h.n), uSunSize > 0.0 ? uSunDir : vec3(-0.6, 0.7, -0.38)), 0.0);
   float detail = 1.0 - smoothstep(0.3, 1.1, max(fp.x, fp.y));
   float weather = detail > 0.0 ? mix(0.5, tnoise(vec3(u * 0.32, p.y * 0.055, seed * 19.0)), detail) : 0.5;
   col += cladding * light * (0.78 + weather * 0.44) * (1.0 - joints * 0.65) * (1.0 - glass * 0.65);
@@ -11426,7 +11970,7 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   if (!reflection) {
     vec2 tilt = (hash22(floor(vec2(u / 4.0, p.y / (3.0 * floorH))) + seed * 57.0) - 0.5) * 0.14 * saturate(1.0 - 2.0 * max(fp.x, fp.y));
     vec3 nt = normalize(h.n + tang * tilt.x + vec3(0.0, tilt.y, 0.0));
-    col += skyGlow(reflect(rd, nt)) * (0.04 + 0.96 * pow(1.0 - max(abs(dot(nt, rd)), 0.08), 5.0)) * (0.35 + 0.65 * glass);
+    col += skyGlow(surfaceWorldVector(h, reflect(rd, nt))) * (0.04 + 0.96 * pow(1.0 - max(abs(dot(nt, rd)), 0.08), 5.0)) * (0.35 + 0.65 * glass);
   }
 
   if (detail > 0.0) {
@@ -11450,7 +11994,7 @@ vec3 shadeTower(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
   col += tint * (band * 2.0 + corner * 3.0 + rim * 2.4);
   col = themeFacade(col, vec2(u, p.y), top, floorH, seed, fp, glass, tint);
   if (h.b.x < 0.5 && p.y < 6.5) col = storefront(col, vec2(u, p.y), halfU, seed, fp, tint);
-  if (uGrowth > 0.0) col = overgrowth(col, u, p.y, top, seed, fp, h.n);
+  if (uGrowth > 0.0) col = overgrowth(col, u, p.y, top, seed, fp, surfaceWorldVector(h, h.n));
 
   // Giants carry a red aircraft beacon, blinking.
   if (top > 140.0) col += vec3(1.0, 0.05, 0.02) * 10.0 * bandAA(top - p.y - 2.0, 0.6, fp.y) * bandAA(u - halfU, 0.8, fp.x) * step(0.5, fract(uTime * 0.7 + seed));
@@ -11579,7 +12123,8 @@ vec3 shadeGround(vec3 p, float pix) {
     float lane = floor(across / 3.0 + 2.0);
     if (lane >= 0.0 && lane < 4.0) {
       float dir = lane < 2.0 ? 1.0 : -1.0;
-      float s = fract((along * 0.02 + dir * uTime * 0.6) + hash11(lane + float(cell.x * 7 + cell.y)));
+      float trafficTime = uCollapseActive > 0.5 ? 0.0 : uTime;
+      float s = fract((along * 0.02 + dir * trafficTime * 0.6) + hash11(lane + float(cell.x * 7 + cell.y)));
       float car = smoothstep(0.0, 0.02, s) * smoothstep(0.1, 0.02, s) * exp(-abs(fract(across / 3.0) - 0.5) * 8.0);
       col += (dir > 0.0 ? vec3(1.0, 0.9, 0.8) : vec3(1.0, 0.1, 0.05)) * car * 2.5 * (1.0 - uGrowth * 0.9);
     }
@@ -11594,6 +12139,19 @@ vec3 shadeGround(vec3 p, float pix) {
     col += vec3(0.5, 0.025, 0.006) * rim * (0.4 + 0.3 * sin(uAmbientTime * 3.0));
   }
   return col;
+}
+
+// Materials remain attached to the rigid object, while hit normals stay in world space for
+// light, depth and reflections. Every moving shape uses the same original-coordinate shader.
+vec3 shadeObject(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
+  if (h.moving > 0) {
+    p = collapseLocalPoint(h.moving, p);
+    if (h.kind != STREET) { h.n = collapseLocalVector(h.moving, h.n); rd = collapseLocalVector(h.moving, rd); }
+  }
+  if (h.kind == TOWER) return shadeTower(h, p, rd, pix, reflection);
+  if (h.kind == PROP) return shadeProp(h, p, rd, pix);
+  if (h.kind == BRIDGE) return shadeBridge(h, p, rd, pix);
+  return shadeStreet(h, p, rd, pix);
 }
 
 void main() {
@@ -11611,13 +12169,13 @@ void main() {
     vec3 p = ro + rd * h.t;
     float pix = h.t * pixAngle;
     if (h.kind == TOWER) {
-      col = shadeTower(h, p, rd, pix, false);
+      col = shadeObject(h, p, rd, pix, false);
     } else if (h.kind == PROP) {
-      col = shadeProp(h, p, rd, pix);
+      col = shadeObject(h, p, rd, pix, false);
     } else if (h.kind == BRIDGE) {
-      col = shadeBridge(h, p, rd, pix);
+      col = shadeObject(h, p, rd, pix, false);
     } else if (h.kind == STREET) {
-      col = shadeStreet(h, p, rd, pix);
+      col = shadeObject(h, p, rd, pix, false);
       if (uCollapseActive > 0.5 && h.b.z < 2.5) {
         float burning = smoothstep(0.0, 2.0, uCollapseTime);
         float flicker = 0.5 + 0.5 * tnoise(p * 0.65 + vec3(0.0, -uAmbientTime * 3.0, 0.0));
@@ -11644,10 +12202,8 @@ void main() {
       vec3 rr = reflect(rd, n);
       vec3 rglow = vec3(0.0);
       Hit r = trace(p + vec3(0.0, 0.01, 0.0), rr, REFLECT_CELLS, pixAngle, rglow);
-      vec3 refl = r.kind == TOWER ? shadeTower(r, p + rr * r.t, rr, pix + r.t * pixAngle, true)
-        : r.kind == PROP ? shadeProp(r, p + rr * r.t, rr, pix + r.t * pixAngle)
-        : r.kind == BRIDGE ? shadeBridge(r, p + rr * r.t, rr, pix + r.t * pixAngle)
-        : r.kind == STREET ? shadeStreet(r, p + rr * r.t, rr, pix + r.t * pixAngle) : sky(rr, pixAngle);
+      vec3 refl = r.kind == TOWER || r.kind == PROP || r.kind == BRIDGE || r.kind == STREET
+        ? shadeObject(r, p + rr * r.t, rr, pix + r.t * pixAngle, true) : sky(rr, pixAngle);
       refl = applyFog(refl + rglow, p, rr, r.t);
       float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);   // rain: wetter
       col += refl * fres * gloss;
@@ -11726,12 +12282,25 @@ function create(gfx) {
   const prog = program('city', FRAG);
   const weather = weatherMotion();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const emptyMotionBounds = new Float32Array(GAME.collapseMotion.MAX_MOVERS * 4);
   let world = null, theme = null, themed = null, collapseState = null;
+
+  function motionTextures(motion, n) {
+    const blank = () => createTexture(1, 1, { format: 'rgba32f', filter: 'nearest', data: new Float32Array(4) });
+    if (!motion) return { uCollapseMotion: blank(), uCollapseMotionMap: blank(), uCollapseSolids: blank() };
+    return {
+      uCollapseMotion: createTexture(GAME.collapseMotion.MAX_MOVERS, 4, { format: 'rgba32f', filter: 'nearest', data: motion.data }),
+      uCollapseMotionMap: createTexture(n, n, { format: 'rgba32f', filter: 'nearest', data: motion.map }),
+      uCollapseSolids: createTexture(GAME.collapseMotion.MAX_MOVERS * GAME.collapseMotion.MAX_PARTS, 4,
+        { format: 'rgba32f', filter: 'nearest', data: motion.solids }),
+    };
+  }
 
   function setWorld(city, pads) {
     if (world) Object.values(world.textures).forEach(t => gl.deleteTexture(t));
     const n = city.n;
     collapseState = city.collapse || null;
+    const motion = collapseState?.motion ? GAME.collapseMotion.frame(collapseState) : null;
     const tex = data => createTexture(n, n, { format: 'rgba32f', filter: 'nearest', data });
     const padData = new Float32Array(n * n * 4);
     for (const p of pads) {
@@ -11771,7 +12340,7 @@ function create(gfx) {
         streetData.set([b[1], b[4], b[6], b[7]], offset + n * n * 4);
       });
     }
-    world = { city, streetMaxH, textures: {
+    world = { city, streetMaxH, motionTime: collapseState?.time, textures: {
       uBoxA: tex(boundsA), uBoxB: tex(boundsB),
       uStructure: createTexture(n, n * 4, { format: 'rgba32f', filter: 'nearest', data: extra }),
       uPropA: tex(city.propA), uPropB: tex(city.propB),
@@ -11780,6 +12349,7 @@ function create(gfx) {
       uStreet: createTexture(n, n * GAME.street.MAX_PIECES * 2, { format: 'rgba32f', filter: 'nearest', data: streetData }),
       uCollapseFall: collapseState ? tex(collapseState.falls)
         : createTexture(1, 1, { format: 'rgba32f', filter: 'nearest', data: new Float32Array(4) }),
+      ...motionTextures(motion, n),
     } };
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
@@ -11787,6 +12357,13 @@ function create(gfx) {
   function draw(cam, rings, guide, stars = []) {
     if (!theme) throw new Error('draw before setTheme');
     const city = world.city;
+    const motion = collapseState?.motion ? GAME.collapseMotion.frame(collapseState) : null;
+    if (motion && world.motionTime !== collapseState.time) {
+      gl.bindTexture(gl.TEXTURE_2D, world.textures.uCollapseMotion);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GAME.collapseMotion.MAX_MOVERS, 4, gl.RGBA, gl.FLOAT, motion.data);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      world.motionTime = collapseState.time;
+    }
     const now = performance.now() / 1000, snowing = themed.uSnowfall > 0;
     fullscreen(prog, {
       ...world.textures,
@@ -11794,6 +12371,8 @@ function create(gfx) {
       uCell: city.cell, uN: city.n, uMaxH: city.maxHeight + 1, uSize: city.size,
       uStreetMaxH: world.streetMaxH,
       uCollapseActive: collapseState ? 1 : 0, uCollapseTime: collapseState?.time ?? 0,
+      uCollapseMoverCount: motion?.records.length ?? 0,
+      uCollapseMoverBounds: motion?.bounds ?? emptyMotionBounds,
       uCollapseHole: collapseState ? [collapseState.hole.x, collapseState.hole.z, collapseState.hole.radius, collapseState.hole.bottom] : [0, 0, 0, -14],
       uAvenue: [GAME.city.AVENUE_X, GAME.city.AVENUE_Z],
       ...themed,
@@ -11816,9 +12395,12 @@ function create(gfx) {
     collapseState = state;
     if (!world) return;
     gl.deleteTexture(world.textures.uCollapseFall);
+    for (const key of ['uCollapseMotion', 'uCollapseMotionMap', 'uCollapseSolids']) gl.deleteTexture(world.textures[key]);
     world.textures.uCollapseFall = state
       ? createTexture(world.city.n, world.city.n, { format: 'rgba32f', filter: 'nearest', data: state.falls })
       : createTexture(1, 1, { format: 'rgba32f', filter: 'nearest', data: new Float32Array(4) });
+    Object.assign(world.textures, motionTextures(state?.motion ? GAME.collapseMotion.frame(state) : null, world.city.n));
+    world.motionTime = state?.time;
   }
 
   return { program: prog, setWorld, draw, setTheme, setCollapse, get theme() { return theme; } };
@@ -13984,9 +14566,11 @@ function render(now, w, h) {
   const sewerMenu = mode === 'title' && isSewer() && !params.has('freeze');
   const secret = !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger : null;
   const landmark = secret ? course.collapse.landmark : null;
+  const warnings = secret ? course.collapse.warnings ?? [] : [];
+  const nearby = p => Math.hypot(g.x - p.x, g.y - p.y, g.z - p.z);
   if (secret && (Math.hypot(g.x - secret.x, g.y - secret.y, g.z - secret.z) < 125
-      || (landmark && Math.hypot(g.x - landmark.x, g.y - landmark.y, g.z - landmark.z) < 180))) {
-    view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, landmark, kind: 'secret', flare: 0, xray: 0 }];
+      || warnings.some(p => nearby(p) < 180) || (landmark && nearby(landmark) < 180))) {
+    view.rings = [...view.rings.slice(0, GAME.overlay.MAX_RINGS - 1), { ...secret, landmark, warnings, kind: 'secret', flare: 0, xray: 0 }];
   }
   if (sewerMenu) sewerRenderer.draw(now / 1000, w / h);
   else if (isSewer()) sewerFlightRenderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide, []);
@@ -14733,8 +15317,15 @@ async function boot() {
       inflows: city.sewer.inflows.length, shafts: city.sewer.shafts.length,
       waterHeight: GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y),
       inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS) } : null,
-    collapse: collapse ? { time: collapse.time, progress: collapse.progress, hole: { ...collapse.hole }, hazards: collapse.hazards } : null,
+    collapse: collapse ? { time: collapse.time, progress: collapse.progress, hole: { ...collapse.hole }, hazards: collapse.hazards,
+      gateRadii: course.gates.map(g => g.radius),
+      streets: course.escapeGeometry ? { clearedCells: course.escapeGeometry.clearedCells.length,
+        sourceBuildings: course.escapeGeometry.localSourceBuildings, retainedBuildings: course.escapeGeometry.localRetainedBuildings } : null,
+      motions: (collapse.motion?.records ?? []).map(r => ({ cell: r.cell, kind: r.kind, pivot: [...r.pivot],
+        axis: [...r.axis], angle: r.angle, start: r.start, duration: r.duration, cos: r.cos, sin: r.sin, drop: r.drop })) } : null,
     collapseTrigger: !collapse && GAME.shop.state().collapseKey ? course.collapse?.trigger ?? null : null,
+    collapseWarnings: !collapse && GAME.shop.state().collapseKey ? course.collapse?.warnings ?? [] : [],
+    collapseTurnout: !collapse ? course.collapse?.turnout ?? null : null,
     collapseVisibilityTime: !isSewer() ? (surfaceSession?.course ?? course)?.collapse?.visibilityTime ?? null : null,
     fountains: course.fountains ?? [],
     obstacles: city.obstacles?.length ?? course.obstacles ?? 0, routeObstacles: course.obstacles,
@@ -14841,6 +15432,7 @@ function startFrozen() {
   const settle = async () => { const r = rendered; while (rendered < r + 3) await nextFrame(); };
   api.pose = async p => {
     run.glider = Object.assign(GAME.flight.create(p, difficulty), p);
+    if (Number.isFinite(p.time)) run.time = Math.max(0, p.time);
     if (p.next !== undefined) run.next = p.next;
     if (p.s !== undefined) GAME.guide.jumpTo(guide, p.s);
     await settle();

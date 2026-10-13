@@ -10,6 +10,11 @@ the course or starting a new attempt.
 The **Collapse Key** costs **10 stars**. Its mysterious **MM:SS** hint changes with the selected
 Hard/Extreme course and difficulty.
 
+Look for glitching red windows and banners with white warning signs around the entrance
+between buildings. Extreme has a short opening for the departure. Collapse follows crowded
+streets with stopped traffic, sideways-falling buildings and trees, smaller rings and a small
+street manhole leading underground.
+
 Once discovered, **The Sewer** has playable courses through cylindrical collectors, smaller
 connecting tunnels, and winding upward/downward chambers. Dodge round pipes and dirt banks;
 the murky green water causes a crash, like the street above. Every underground crash restarts
