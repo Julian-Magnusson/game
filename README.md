@@ -5,12 +5,19 @@ Play at **https://julian-magnusson.github.io/game/**.
 Windows starts with city and Sewer meshes instead of compiling the large ray-tracing shaders.
 Small separate passes restore neon glow, theme skies/weather, filtered windows/brickwork,
 wet surfaces and warm underground lamps. Bright lighting works in ordinary color buffers.
+Clustered rooms, glass sheen, height fog, animated ring halos and broader glow match the phone
+style. Wet streets reflect buildings through a small geometry pass, and Sewer water reflects
+its lamps. These effects keep bounded shaders, real depth and fallbacks when effects fail.
 Automatic resolution starts at 1080p and adapts; selected resolution settings are honored.
 Real obstacles, course layout and depth occlusion stay intact. Optional effects have a readable
 fallback. Mac and mobile keep the full renderer, with a simpler display fallback
 for optional effect failures. Graphics interruptions stop rendering without automatic reloads;
 the full renderer offers a single **use compatibility graphics** switch. Interruptions are
 remembered so later visits use compatibility rendering. Saved progress and preferences are preserved.
+**Settings → Graphics → Graphics report** provides copyable browser, adapter/backend and shader
+details for troubleshooting; it also remains available after a graphics interruption. No player
+progress or course codes are included, and nothing is sent automatically. Use the ordinary play
+URL so healthy phones/Macs retain their full renderer.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional
 touch stick on mobile. Find stars on harder detours, finish the course to save them, then spend
