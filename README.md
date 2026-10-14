@@ -2,9 +2,12 @@
 
 Play at **https://julian-magnusson.github.io/game/**.
 
-Windows starts with lighter city and Sewer meshes instead of compiling the large ray-tracing
-shaders. This path keeps real obstacles and depth occlusion, using a small geometry shader and
-a 540p pixel budget. Mac and mobile keep the full renderer, with a simpler display fallback
+Windows starts with city and Sewer meshes instead of compiling the large ray-tracing shaders.
+Small separate passes restore neon glow, theme skies/weather, filtered windows/brickwork,
+wet surfaces and warm underground lamps. Bright lighting works in ordinary color buffers.
+Automatic resolution starts at 1080p and adapts; selected resolution settings are honored.
+Real obstacles, course layout and depth occlusion stay intact. Optional effects have a readable
+fallback. Mac and mobile keep the full renderer, with a simpler display fallback
 for optional effect failures. Graphics interruptions stop rendering without automatic reloads;
 the full renderer offers a single **use compatibility graphics** switch. Interruptions are
 remembered so later visits use compatibility rendering. Saved progress and preferences are preserved.

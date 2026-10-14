@@ -9804,7 +9804,7 @@ void main() {
 // It preserves readable HDR colour and chapter fades when a driver's optional effect fails.
 const DISPLAY = `
 uniform sampler2D uScene;
-uniform float uExposure, uFlash, uFade;
+uniform float uExposure, uFlash, uFade, uSceneEncoded;
 uniform vec3 uTint;
 vec3 acesFitted(vec3 v) {
   const mat3 inM = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
@@ -9819,6 +9819,7 @@ void main() {
   source = vec3(source.r >= 0.0 ? min(source.r, 64.0) : 0.0,
                 source.g >= 0.0 ? min(source.g, 64.0) : 0.0,
                 source.b >= 0.0 ? min(source.b, 64.0) : 0.0);
+  if(uSceneEncoded>0.5) source=source/max(vec3(0.025),vec3(1.0)-source);
   vec3 col = source * uExposure * uTint * (1.0 + uFlash * 10.0);
   col += uFlash * uFlash * uFlash * 0.4;
   col = acesFitted(col) * (1.0 - clamp(uFade, 0.0, 1.0));
@@ -9826,21 +9827,24 @@ void main() {
   fragColor = vec4(col, 1.0);
 }`;
 
-let down, up, composite, display, safeMode = false, bloomError = null;
+let down, up, composite, display, safeMode = false, bloomError = null, meshEffects = null;
 let mips = [];
 let bloomFor = null;   // size the mip chain was built for
 
-function init({ safe = false } = {}) {
+function init({ safe = false, enhanced = false } = {}) {
   safeMode = !!safe;
   bloomError = null;
   display = program('post:display', DISPLAY, undefined, { library: false });
-  // A bounded startup retry prepares just the small required display pass.
+  meshEffects?.dispose();
+  meshEffects=safeMode&&enhanced?GAME.meshPost.create():null;
+  // Compatibility effects are separate small optional programs; the full post never starts here.
   down = safeMode ? null : program('post:down', DOWN, undefined, { optional: true, library: false });
   up = safeMode ? null : program('post:up', UP, undefined, { optional: true, library: false });
   composite = safeMode ? null : program('post:composite', COMPOSITE, undefined, { optional: true });
 }
 
 function status() {
+  if(meshEffects)return meshEffects.status();
   const warnings = [down, up, composite].filter(p => p?.error).map(p => p.error.message);
   if (bloomError) warnings.push(bloomError.message);
   return {
@@ -9867,6 +9871,7 @@ function ensureSize(w, h) {
 function present(src, p, t) {
   // Validate the required display first: context loss propagates before any allocations/draws.
   if (!display.check()) return;
+  if(meshEffects) {meshEffects.present(src,p,t,display);return;}
   const full = !!composite?.check();
   const effects = full && !bloomError && down.check() && up.check();
   if (effects) {
@@ -9902,6 +9907,7 @@ function present(src, p, t) {
   pass(full ? composite : display, {
     // Accumulated mip0 holds the sum of all levels; normalising makes uBloomAmt a true mix.
     uScene: src, uBloom: bloom ? mips[0] : src, uBloomNorm: bloom ? 1 / mips.length : 1,
+    uSceneEncoded:safeMode?1:0,
     uBloomAmt: bloom ? p.bloom : 0, uStreak: bloom ? p.streak : 0, uExposure: p.exposure,
     uCA: p.ca, uGrain: p.grain, uVignette: p.vignette, uSaturation: p.saturation, uContrast: p.contrast,
     uFlash: p.flash, uFade: p.fade, uGlitch: p.glitch, uSpeed: p.speed, uTint: p.tint,
@@ -10530,7 +10536,7 @@ const { canvas, timerPoll } = GAME.gfx;
 const PIXEL_BUDGET = {
   auto: matchMedia('(pointer: coarse)').matches ? 1280 * 720 : 2560 * 1440,
   high: 2560 * 1440, balanced: 1920 * 1080, performance: 1280 * 720,
-  compatibility: 960 * 540,
+  compatibility: 1920 * 1080,
 };
 const SCALES = [1, 0.85, 0.72, 0.6, 0.5, 0.42];
 const LATE_DT = 1 / 50;
@@ -13344,7 +13350,8 @@ GAME.sewerFlightRenderer = { create, inflowSheets };
 // Small conventional geometry pipeline. This deliberately has no scene GLSL library, noise
 // textures or ray tracing. Both lightweight environments share this single program.
 const STRIDE = 11;
-const MATERIAL = Object.freeze({ PLAIN: 0, FACADE: 1, BRICK: 2, WATER: 3, LIGHT: 4 });
+const MATERIAL = Object.freeze({ PLAIN: 0, FACADE: 1, BRICK: 2, WATER: 3, LIGHT: 4,
+  STONE: 5, METAL: 6, FOLIAGE: 7, BARK: 8, GLASS: 9, ICE: 10, ASPHALT: 11, SOIL: 12, SPRITE: 13 });
 const vertex = `
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
@@ -13367,29 +13374,154 @@ const fragment = `
 in vec3 vPosition, vNormal;
 in vec4 vColour;
 in float vDepth, vMaterial;
-uniform vec3 uFog, uLight, uTint;
-uniform float uDensity, uAlpha, uUnlit, uTimeLite;
+uniform vec3 uFog, uLight, uTint, uCamPos, uAmbient, uSunColour, uWindowWarm, uWindowCool, uNeon;
+uniform vec3 uTunnelOrigin, uTunnelAxis, uTunnelRight, uTunnelUp;
+uniform vec4 uTunnel, uTheme;
+uniform float uDensity, uAlpha, uUnlit, uTimeLite, uEncoded, uUnderground;
+float rnd(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise2(vec2 p) {
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(rnd(i),rnd(i+vec2(1,0)),f.x),mix(rnd(i+vec2(0,1)),rnd(i+vec2(1)),f.x),f.y);
+}
+float lineAA(float x,float width) { return 1.0-smoothstep(width,width+max(fwidth(x),0.002),abs(x)); }
+float boxAA(vec2 uv,vec2 lo,vec2 hi) {
+  vec2 aa=max(fwidth(uv),vec2(0.008));
+  vec2 a=smoothstep(lo-aa,lo+aa,uv)*(1.0-smoothstep(hi-aa,hi+aa,uv)); return a.x*a.y;
+}
+vec3 lamp(float station,vec3 n,vec3 view,float specular) {
+  if(station<1.0 || station*20.0-uTunnel.w>=uTunnel.z) return vec3(0.0);
+  float side=mod(station,2.0)<1.0?-1.0:1.0;
+  vec3 radial=normalize(uTunnelRight*side*0.93+uTunnelUp*0.37);
+  vec3 position=uTunnelOrigin+uTunnelAxis*(station*20.0-uTunnel.w)+radial*(uTunnel.x-0.30);
+  if(position.y<uTunnel.y+1.0) return vec3(0.0);
+  vec3 d=position-vPosition; float distance2=dot(d,d); vec3 l=d*inversesqrt(max(distance2,0.0001));
+  float falloff=80.0/(distance2+60.0);
+  float diffuse=max(dot(n,l),0.0);
+  float highlight=pow(max(dot(n,normalize(l+view+vec3(0.00001))),0.0),mix(18.0,72.0,specular));
+  return vec3(1.0,0.48,0.16)*falloff*(diffuse+highlight*specular*2.0);
+}
 void main() {
-  vec3 n=normalize(vNormal), col=vColour.rgb;
-  float light=mix(0.64+0.36*max(dot(n,uLight),0.0),1.0,uUnlit);
-  if(vMaterial>0.5 && vMaterial<1.5 && abs(n.y)<0.5) {
+  vec3 n=vMaterial>12.5?vec3(0,1,0):normalize(vNormal), col=vColour.rgb, emission=vec3(0.0);
+  vec3 view=normalize(uCamPos-vPosition);
+  float mat=floor(vMaterial+0.1), shine=0.0, coverage=1.0;
+  float along=dot(vPosition-uTunnelOrigin,uTunnelAxis);
+  vec3 radial=vPosition-uTunnelOrigin-uTunnelAxis*along;
+  vec2 cylindrical=vec2(along,atan(dot(radial,uTunnelRight),dot(radial,uTunnelUp))*uTunnel.x);
+  if(mat==1.0 && abs(n.y)<0.5) {
     vec2 p=vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y);
-    vec2 cell=floor(p/vec2(3.4,4.0)), uv=fract(p/vec2(3.4,4.0));
-    float window=step(0.18,uv.x)*step(uv.x,0.78)*step(0.20,uv.y)*step(uv.y,0.72);
-    float room=step(0.34,fract(sin(dot(cell,vec2(12.93,78.21)))*43758.5));
-    col=mix(col,col*1.3+vec3(0.18,0.20,0.24),window*room*0.62);
-  } else if(vMaterial>1.5 && vMaterial<2.5) {
-    vec2 p=abs(n.y)>0.6?vPosition.xz:vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y);
-    float row=floor(p.y/0.65);
-    vec2 uv=fract(vec2(p.x/1.7+mod(row,2.0)*0.5,p.y/0.65));
-    float mortar=1.0-step(0.055,min(uv.x,uv.y));
-    col*=mix(0.92+0.12*fract(sin(row*7.1+floor(p.x/1.7))*213.1),0.55,mortar);
-  } else if(vMaterial>2.5 && vMaterial<3.5) {
-    float ripple=sin(vPosition.x*0.75+uTimeLite*0.8)*sin(vPosition.z*0.68-uTimeLite*0.6);
-    col*=0.88+ripple*0.10; light=0.92;
-  } else if(vMaterial>3.5) light=1.0;
+    vec2 grid=p/vec2(3.0,3.6), cell=floor(grid), uv=fract(grid);
+    float window=boxAA(uv,vec2(0.20,0.22),vec2(0.80,0.73));
+    float visible=1.0-smoothstep(0.35,1.2,max(fwidth(grid.x),fwidth(grid.y)));
+    float room=step(0.38,rnd(cell+floor(vPosition.xz/32.0))), warm=step(0.4,rnd(cell+9.3));
+    vec3 glass=mix(vec3(0.004,0.011,0.020),uFog*0.35,0.45);
+    col=mix(col,glass,window*visible*0.92); shine=window*0.28;
+    vec3 lit=mix(uWindowCool,uWindowWarm,warm)*2.0;
+    emission=lit*mix(0.17,window*room,visible);
+    float mullion=lineAA(uv.x-0.50,0.012)*window;
+    emission*=1.0-mullion*0.75;
+    col*=0.85+0.15*noise2(p*0.065);
+    if(uTheme.x>0.0) {
+      float ivy=smoothstep(0.52,0.78,noise2(p*0.13)+noise2(p*0.043)*0.30);
+      col=mix(col,vec3(0.018,0.067,0.023),ivy*uTheme.x); emission*=1.0-ivy*uTheme.x*0.78;
+    }
+  } else if(mat==2.0) {
+    vec2 p=uUnderground>0.5?cylindrical:(abs(n.y)>0.6?vPosition.xz:vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y));
+    float row=floor(p.y/0.82); vec2 grid=vec2(p.x/2.1+mod(row,2.0)*0.5,p.y/0.82), uv=fract(grid);
+    float detail=1.0-smoothstep(0.28,0.85,max(fwidth(grid.x),fwidth(grid.y)));
+    float joint=1.0-boxAA(uv,vec2(0.025),vec2(0.975));
+    float shade=mix(0.94,0.80+0.30*rnd(floor(grid)),detail);
+    col*=mix(shade,0.32,joint*detail);
+    float damp=uUnderground>0.5?1.0-smoothstep(uTunnel.y+0.8,uTunnel.y+9.0,vPosition.y):0.0;
+    float moss=noise2(p*0.11)*damp; col=mix(col,vec3(0.018,0.039,0.020),moss*0.55);
+    shine=damp*0.20;
+  } else if(mat==3.0 || mat==10.0) {
+    float waterTime=mat==10.0?0.0:uTimeLite;
+    float wave=sin(vPosition.x*0.23+waterTime*0.8)*sin(vPosition.z*0.31-waterTime*0.65);
+    n=normalize(n+vec3(sin(vPosition.z*0.32+waterTime)*0.065,0,cos(vPosition.x*0.29-waterTime)*0.065));
+    col*=0.93+wave*0.07; shine=mat==10.0?0.8:0.95;
+    if(mat==10.0) col=mix(col,vec3(0.20,0.34,0.43),0.48);
+    else col=mix(col,uFog*0.30,0.25);
+  } else if(mat==4.0) {
+    emission=col*(uEncoded>0.5?2.8:1.0); col=vec3(0.0);
+  } else if(mat==5.0) {
+    vec2 p=abs(n.y)>0.6?vPosition.xz:cylindrical;
+    vec2 uv=fract(p/3.0); float detail=1.0-smoothstep(0.35,1.0,max(fwidth(p.x/3.0),fwidth(p.y/3.0)));
+    col*=mix(0.96,0.74,detail*(1.0-boxAA(uv,vec2(0.015),vec2(0.985)))); shine=0.12;
+  } else if(mat==6.0) {
+    float rust=noise2(vPosition.xz*0.31+vPosition.y*0.08);
+    col=mix(col,vec3(0.12,0.038,0.013),smoothstep(0.60,0.80,rust)*0.5); shine=0.5;
+  } else if(mat==7.0) {
+    col*=0.72+0.40*noise2(vPosition.xz*0.23+vPosition.y*0.11);
+    if(uTheme.y>0.0) col=mix(col,vec3(0.50,0.66,0.80),smoothstep(0.05,0.65,n.y)*uTheme.y*0.85);
+  } else if(mat==8.0) {
+    col*=0.7+0.3*noise2(vec2(vPosition.x+vPosition.z,vPosition.y*0.1)*0.85);
+  } else if(mat==9.0) {
+    col=mix(col,uFog+uNeon*0.025,pow(max(0.0,1.0-abs(dot(n,view))),3.0)*0.7); shine=0.7;
+  } else if(mat==11.0) {
+    col*=0.8+0.25*noise2(vPosition.xz*0.07); shine=uTheme.z*0.55;
+    col+=uNeon*(0.006+uTheme.z*0.020)*(0.5+0.5*sin(vPosition.x*0.09)*sin(vPosition.z*0.08));
+  } else if(mat==12.0) col*=0.7+0.3*noise2(vPosition.xz*0.18);
+  else if(mat==13.0) {
+    coverage=1.0-smoothstep(0.46,0.71,length(vNormal.xy));
+    emission=col;col=vec3(0.0);
+  }
+  if(mat==1.0 && n.y>0.5 && uTheme.y>0.0) col=mix(col,vec3(0.48,0.60,0.75),uTheme.y*0.8);
+  vec3 lighting;
+  if(uUnlit>0.5 || mat==4.0) lighting=vec3(1.0);
+  else if(uUnderground>0.5) {
+    float station=floor((along+uTunnel.w)/20.0);
+    lighting=vec3(0.32,0.30,0.25)+lamp(station,n,view,shine)+lamp(station+1.0,n,view,shine);
+    // Quiet near-field fill keeps lethal pipes/dirt readable between the warm wall fixtures.
+    lighting+=vec3(0.34,0.37,0.34)*max(dot(n,view),0.0)/(1.0+vDepth*vDepth*0.0004);
+  } else {
+    lighting=uAmbient*(0.62+0.38*max(n.y,0.0))+uSunColour*max(dot(n,uLight),0.0);
+    float highlight=pow(max(dot(n,normalize(uLight+view+vec3(0.00001))),0.0),48.0)*shine;
+    lighting+=uSunColour*highlight;
+  }
+  vec3 radiance=col*mix(lighting,vec3(1.0),uUnlit)+emission;
+  if(uUnderground>0.5 && mat==3.0) radiance+=vec3(0.018,0.055,0.035)*pow(max(0.0,1.0-abs(dot(n,view))),4.0);
   float fog=1.0-exp(-max(vDepth-35.0,0.0)*uDensity);
-  fragColor=vec4(mix(col*light*uTint,uFog,fog),vColour.a*uAlpha);
+  radiance=mix(radiance*uTint,uFog,fog);
+  if(uEncoded>0.5) radiance=radiance/(vec3(1.0)+radiance);
+  fragColor=vec4(radiance,vColour.a*uAlpha*coverage);
+}`;
+// A separate, tiny sky pass keeps atmosphere out of the geometry/material shader.
+const skyFragment = `
+uniform vec3 uSkyTop, uSkyHorizon, uSkyGlow, uSkyFwd, uSkyRight, uSkyUp;
+uniform vec3 uSunDir, uSunTop, uSunBottom, uSunHalo;
+uniform vec2 uSkyTan;
+uniform vec4 uSkyDetail, uSunParams;
+uniform float uSkyEncoded, uSkyTime;
+float skyHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float skyNoise(vec2 p) {
+ vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+ return mix(mix(skyHash(i),skyHash(i+vec2(1,0)),f.x),mix(skyHash(i+vec2(0,1)),skyHash(i+vec2(1)),f.x),f.y);
+}
+void main() {
+ vec2 screen=vUv*2.0-1.0;
+ vec3 ray=normalize(uSkyFwd+uSkyRight*screen.x*uSkyTan.x+uSkyUp*screen.y*uSkyTan.y);
+ float height=max(ray.y,0.0);
+ vec3 col=mix(uSkyHorizon,uSkyTop,smoothstep(0.0,0.8,height));
+ col+=uSkyGlow*exp(-abs(ray.y)*12.0);
+ vec2 cloudUV=ray.xz/max(ray.y+0.28,0.12)*2.0+uSkyTime*vec2(0.003,0.001);
+ float clouds=skyNoise(cloudUV)*0.65+skyNoise(cloudUV*2.3)*0.35;
+ col=mix(col,col*0.55+uSkyHorizon*0.14,smoothstep(0.50,0.79,clouds)*uSkyDetail.x*smoothstep(0.0,0.20,ray.y));
+ vec2 stars=vec2(atan(ray.x,ray.z),asin(clamp(ray.y,-1.0,1.0)))*110.0;
+ vec2 cell=floor(stars),local=fract(stars)-0.5;
+ float star=step(0.995,skyHash(cell))*exp(-dot(local,local)*140.0)*smoothstep(0.04,0.3,ray.y)*uSkyDetail.y;
+ col+=vec3(0.50,0.63,0.88)*star;
+ float curtain=sin(ray.x*7.0+sin(ray.z*4.0)+uSkyTime*0.06)*0.5+0.5;
+ float band=(ray.y-0.30)*6.0;
+ col+=vec3(0.015,0.09,0.055)*curtain*exp(-band*band)*uSkyDetail.z;
+ if(uSunParams.x>0.0) {
+   float angular=length(ray-uSunDir), size=uSunParams.x;
+   float disc=1.0-smoothstep(size*(1.0-uSunParams.y),size*(1.0+max(uSunParams.y,0.02)),angular);
+   float stripes=mix(1.0,step(0.36,fract((ray.y-uSunDir.y)/size*7.0)),uSunParams.z);
+   col+=mix(uSunBottom,uSunTop,clamp(0.5+(ray.y-uSunDir.y)/size*0.5,0.0,1.0))*disc*stripes;
+   col+=uSunHalo*exp(-angular/max(size*3.0,0.07))*0.32;
+ }
+ if(uSkyEncoded>0.5) col=col/(vec3(1.0)+col);
+ fragColor=vec4(col,1.0);
 }`;
 const sub=(a,b)=>a.map((v,i)=>v-b[i]);
 const add=(a,b)=>a.map((v,i)=>v+b[i]);
@@ -13496,6 +13628,7 @@ const cache=new WeakMap();
 function create(gfx) {
   if(cache.has(gfx)) return cache.get(gfx);
   const {gl}=gfx, program=gfx.program('geometry-lite',fragment,vertex,{library:false});
+  const skyProgram=gfx.program('sky-lite',skyFragment,undefined,{library:false,optional:true});
   const handles=new Set();
   function guard(operation) {
     if(gfx.contextLost?.()) { const e=new Error(`Graphics context was lost while ${operation}.`); e.code='GFX_CONTEXT_LOST'; throw e; }
@@ -13516,23 +13649,36 @@ function create(gfx) {
   function update(h,data) {
     if(h.disposed)throw new Error('update of disposed mesh');
     if(!(data instanceof Float32Array)||data.length%STRIDE)throw new Error('mesh data must have position, normal, RGBA and material per vertex');
-    guard('updating mesh');gl.bindBuffer(gl.ARRAY_BUFFER,h.buffer);
-    if(data.byteLength>h.capacity||!h.capacity) {
+    guard('updating mesh');
+    if(!data.byteLength) {h.data=data;h.count=0;return h;}
+    gl.bindBuffer(gl.ARRAY_BUFFER,h.buffer);
+    const allocating=data.byteLength>h.capacity||!h.capacity;
+    if(allocating) {
       gl.bufferData(gl.ARRAY_BUFFER,data,h.dynamic?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);h.capacity=data.byteLength;
     } else if(data.byteLength) gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
     guard('updating mesh');
-    const error=gl.getError();
-    guard('checking mesh storage');
-    if(error&&error!==gl.NO_ERROR) {const e=new Error(`Graphics mesh storage failed (0x${Number(error).toString(16)}).`);
-      e.code='GFX_RESOURCE_FAILED';e.details={resource:'mesh buffer',bytes:data.byteLength,glError:error};throw e;}
+    // Query the driver only after storage allocations; ordinary frame updates cannot allocate.
+    if(allocating) {
+      const error=gl.getError();guard('checking mesh storage');
+      if(error&&error!==gl.NO_ERROR) {const e=new Error(`Graphics mesh storage failed (0x${Number(error).toString(16)}).`);
+        e.code='GFX_RESOURCE_FAILED';e.details={resource:'mesh buffer',bytes:data.byteLength,glError:error};throw e;}
+    }
     h.data=data;h.count=data.length/STRIDE;gl.bindBuffer(gl.ARRAY_BUFFER,null);return h;
   }
   function draw(h,cam,{fog=[0.03,0.04,0.06],density=0.002,near=0.25,far=1800,unlit=false,
-    alpha=1,depthTest=true,depthWrite=true,cull=false,colour=[1,1,1],time=0}={}) {
+    alpha=1,depthTest=true,depthWrite=true,cull=false,colour=[1,1,1],time=0,theme=null,sewer=null,encoded=false}={}) {
     guard('drawing mesh');if(!h||!h.count)return;
+    const sun=theme?.sun, ambient=theme?theme.sky.horizon.map((v,i)=>0.18+v*1.5+(theme.growth&&i===1?0.08:0)):[0.50,0.55,0.65];
     program.use().setAll({uCamPos:cam.pos,uCamRight:cam.right,uCamUp:cam.up,uCamFwd:cam.fwd,
       uTanHalf:cam.tanHalf,uClip:[near,far],uFog:fog,uDensity:density,uTint:colour,uAlpha:alpha,
-      uUnlit:unlit?1:0,uLight:unit([-0.4,0.8,-0.25]),uTimeLite:time});
+      uUnlit:unlit?1:0,uLight:unit(sun?.dir||[-0.4,0.8,-0.25]),uTimeLite:time,
+      uEncoded:encoded?1:0,uUnderground:sewer?1:0,uAmbient:ambient,
+      uSunColour:sun?sun.top.map(v=>0.28+Math.min(v,2)*0.18):[0.10,0.12,0.20],
+      uWindowWarm:theme?.windows?.[0]||[1,0.60,0.30],uWindowCool:theme?.windows?.[1]||[0.55,0.78,1],
+      uNeon:theme?.neon?.[0]||[0.10,0.50,0.60],uTheme:[theme?.growth||0,theme?.snow||0,theme?.wetness||0,theme?.soot||0],
+      uTunnelOrigin:sewer?.origin||[0,0,0],uTunnelAxis:sewer?.axis||[0,0,1],
+      uTunnelRight:sewer?.right||[1,0,0],uTunnelUp:sewer?.up||[0,1,0],
+      uTunnel:[sewer?.radius||1,sewer?.water??-1000,sewer?.length||100,sewer?.phase||0]});
     if(depthTest)gl.enable(gl.DEPTH_TEST);else gl.disable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);gl.depthMask(depthWrite);
     if(cull)gl.enable(gl.CULL_FACE);else gl.disable(gl.CULL_FACE);
@@ -13543,9 +13689,42 @@ function create(gfx) {
     guard('clearing geometry target');gl.depthMask(true);gl.clearColor(...colour,1);gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);guard('clearing geometry target');
   }
+  function sky(cam,theme,time=0) {
+    guard('drawing sky');if(!skyProgram.check())return;
+    const sun=theme.sun;
+    gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+    gfx.pass(skyProgram,{uSkyTop:theme.sky.zenith,uSkyHorizon:theme.sky.horizon,uSkyGlow:theme.sky.glow,
+      uSkyFwd:cam.fwd,uSkyRight:cam.right,uSkyUp:cam.up,uSkyTan:cam.tanHalf,uSkyEncoded:1,uSkyTime:time,
+      uSkyDetail:[theme.clouds||0,theme.stars||0,theme.aurora||0,0],uSunDir:unit(sun?.dir||[0,1,0]),
+      uSunTop:sun?.top||[0,0,0],uSunBottom:sun?.bottom||[0,0,0],uSunHalo:sun?.halo||[0,0,0],
+      uSunParams:[sun?.size||0,sun?.soft||0,sun?.stripes||0,0]});
+    gl.depthMask(true);
+  }
+  let weatherHandle=null;
+  function weather(cam,theme,time=0) {
+    if(!theme||(!theme.rain&&!theme.snowfall&&!theme.motes)||!time)return;
+    const b=new Builder(), snow=theme.snowfall||((theme.motes?.kind==='snow')?theme.motes.amount:0), rain=theme.rain||0;
+    const amount=Math.max(snow,rain,theme.motes?.amount||0), count=Math.round(110*amount), normal=mul(cam.fwd,-1);
+    for(let i=0;i<count;i++) {
+      const random=k=>{const s=Math.sin(i*127.1+k*311.7)*43758.5;return s-Math.floor(s);};
+      const depth=8+random(1)*55, width=depth*cam.tanHalf[0]*1.35, height=depth*cam.tanHalf[1]*1.5;
+      const rate=rain?28:snow?3.5:0.65;
+      const phase=(random(3)-time*rate/(height*2))%1;
+      const y=(((phase+1)%1)*2-1)*height, x=(random(2)*2-1)*width+Math.sin(time*0.22+i)*0.45;
+      const p=add(cam.pos,add(mul(cam.fwd,depth),add(mul(cam.right,x),mul(cam.up,y))));
+      const size=rain?0.024:0.055+random(4)*0.11, tall=rain?1.1: size;
+      const right=mul(cam.right,size), up=mul(cam.up,tall), colour=rain?[0.12,0.27,0.38,0.25]
+        :snow?[0.75,0.88,1.0,0.55]:theme.motes?.kind==='ember'?[1.4,0.25,0.03,0.65]:[0.37,0.48,0.18,0.35];
+      // For soft round flakes/motes the normal attribute carries signed sprite coordinates.
+      const q=Math.SQRT1_2, corners=[[-q,-q,0],[q,-q,0],[q,q,0],[-q,q,0]];
+      b.tag(rain?MATERIAL.GLASS:MATERIAL.SPRITE).quad(sub(sub(p,right),up),add(sub(p,up),right),add(add(p,right),up),add(sub(p,right),up),colour,rain?normal:corners);
+    }
+    if(!weatherHandle)weatherHandle=upload(b.build(),{dynamic:true});else update(weatherHandle,b.build());
+    draw(weatherHandle,cam,{theme,fog:theme.fog.low,density:0.004,unlit:true,depthWrite:false,encoded:true,time});
+  }
   function finish() { gl.bindVertexArray(null);gl.depthMask(true);gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.disable(gl.BLEND); }
   function dispose(h) { if(!h||h.disposed)return;gl.deleteBuffer(h.buffer);gl.deleteVertexArray(h.vao);h.disposed=true;handles.delete(h); }
-  const api={program,upload,update,draw,clear,finish,dispose,disposeAll:()=>[...handles].forEach(dispose)};
+  const api={program,skyProgram,upload,update,draw,clear,sky,weather,finish,dispose,disposeAll:()=>[...handles].forEach(dispose)};
   cache.set(gfx,api);return api;
 }
 
@@ -13632,26 +13811,195 @@ GAME.mesh={STRIDE,MATERIAL,Builder,builder:()=>new Builder(),create,markers,basi
 
 ;(function () {
 'use strict';
+// ---- src/render/mesh-post.js ----
+// Compact optional glow/film for conventional meshes. All storage is RGBA8, so this path
+// works without floating-point framebuffer extensions. Scene RGB stores c/(1+c).
+const GLOW = `
+uniform sampler2D uLiteSrc;
+uniform vec2 uLiteStep;
+uniform float uLiteExtract;
+vec3 liteTap(vec2 offset) {
+  vec3 c=texture(uLiteSrc,vUv+offset).rgb;
+  if(uLiteExtract>0.5) {
+    c=c/max(vec3(0.025),vec3(1.0)-c);
+    float peak=max(c.r,max(c.g,c.b));
+    c*=smoothstep(0.40,1.25,peak);
+    c=min(c*0.25,vec3(1.0));
+  }
+  return c;
+}
+void main() {
+  vec3 c=liteTap(vec2(0.0))*0.375;
+  c+=liteTap(uLiteStep*1.5)*0.25+liteTap(-uLiteStep*1.5)*0.25;
+  c+=liteTap(uLiteStep*3.5)*0.0625+liteTap(-uLiteStep*3.5)*0.0625;
+  fragColor=vec4(c,1.0);
+}`;
+const PRESENT = `
+uniform sampler2D uScene, uLiteGlow;
+uniform vec2 uLiteTexel, uOut;
+uniform vec3 uTint;
+uniform float uExposure, uFlash, uFade, uLiteBloom, uVignette, uCA, uGlitch, uGrain;
+float liteHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+vec3 liteDecode(vec3 c) { return c/max(vec3(0.025),vec3(1.0)-c); }
+vec3 liteTone(vec3 x) {
+  const mat3 a=mat3(0.59719,0.07600,0.02840,0.35458,0.90834,0.13383,0.04823,0.01566,0.83777);
+  const mat3 b=mat3(1.60475,-0.10208,-0.00327,-0.53108,1.10813,-0.07276,-0.07367,-0.00605,1.07602);
+  x=a*x;
+  return clamp(b*((x*(x+0.0245786)-0.000090537)/(x*(0.983729*x+0.4329510)+0.238081)),0.0,1.0);
+}
+void main() {
+  vec2 uv=vUv, edge=uv-0.5;
+  if(uGlitch>0.0) {
+    float stripe=floor(uv.y*24.0), t=floor(uTime*20.0);
+    uv.x+=(liteHash(vec2(stripe,t))-0.5)*0.035*uGlitch*step(0.65,liteHash(vec2(stripe+7.0,t)));
+  }
+  vec2 fringe=edge*uCA;
+  vec3 source=vec3(texture(uScene,uv+fringe).r,texture(uScene,uv).g,texture(uScene,uv-fringe).b);
+  vec3 col=liteDecode(source);
+  vec3 glow=texture(uLiteGlow,uv).rgb*0.50;
+  glow+=texture(uLiteGlow,uv+vec2(uLiteTexel.x*2.5,0.0)).rgb*0.25;
+  glow+=texture(uLiteGlow,uv-vec2(uLiteTexel.x*2.5,0.0)).rgb*0.25;
+  col+=glow*(4.0*uLiteBloom);
+  col*=uExposure*uTint*(1.0+uFlash*10.0);
+  col+=uFlash*uFlash*uFlash*0.4;
+  col=liteTone(col);
+  col*=1.0-uVignette*smoothstep(0.35,1.10,length(edge*vec2(uOut.x/uOut.y,1.0)));
+  col*=1.0-clamp(uFade,0.0,1.0);
+  col=mix(col*12.92,1.055*pow(col,vec3(1.0/2.4))-0.055,step(0.0031308,col));
+  // Dither only visible frames; a chapter fade must remain completely black.
+  col+=(liteHash(gl_FragCoord.xy+fract(uTime)*19.0)-0.5)*(0.0015+uGrain*0.15)*(1.0-uFade);
+  fragColor=vec4(col,1.0);
+}`;
+
+function create() {
+  const {gl,program,createTarget,bindTarget,pass,contextLost}=GAME.gfx;
+  const glow=program('post:lite-glow',GLOW,undefined,{library:false,optional:true});
+  const presentProgram=program('post:lite-present',PRESENT,undefined,{library:false,optional:true});
+  let targets=[],size=null,allocationError=null;
+  function reset() { for(const target of targets)target.dispose();targets=[];size=null; }
+  function ensure(w,h) {
+    const width=Math.max(16,Math.ceil(w/4)),height=Math.max(9,Math.ceil(h/4));
+    if(size?.[0]===width&&size?.[1]===height)return;
+    reset();
+    try {
+      targets.push(createTarget(width,height,{format:'rgba8'}));
+      targets.push(createTarget(width,height,{format:'rgba8'}));
+      size=[width,height];
+    } catch(error) {reset();throw error;}
+  }
+  function status() {
+    const warnings=[glow,presentProgram].filter(p=>p.error).map(p=>p.error.message);
+    if(allocationError)warnings.push(allocationError.message);
+    return {mode:presentProgram.error?'safe':'mesh-enhanced',display:presentProgram.error?'simple':'mesh',
+      bloom:!!targets.length&&!allocationError&&!glow.error&&!presentProgram.error,encoded:true,warnings};
+  }
+  function present(src,p,t,fallback) {
+    const enhanced=presentProgram.check();
+    let bloom=enhanced&&!allocationError&&glow.check();
+    if(bloom) {
+      try {ensure(src.w,src.h);}
+      catch(error) {
+        if(error.code!=='GFX_RESOURCE_FAILED'||contextLost())throw error;
+        fallback.check();allocationError=error;bloom=false;reset();
+      }
+    }
+    gl.disable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);
+    if(bloom) {
+      bindTarget(targets[0]);
+      pass(glow,{uLiteSrc:src,uLiteStep:[2/src.w,0],uLiteExtract:1});
+      bindTarget(targets[1]);
+      pass(glow,{uLiteSrc:targets[0],uLiteStep:[0,1/targets[0].h],uLiteExtract:0});
+    }
+    bindTarget(null);
+    pass(enhanced?presentProgram:fallback,{
+      uScene:src,uSceneEncoded:1,uLiteGlow:bloom?targets[1]:src,uLiteTexel:bloom?[1/targets[1].w,1/targets[1].h]:[0,0],
+      uLiteBloom:bloom?Math.min(0.32,0.13+p.bloom*1.2):0,uExposure:p.exposure,uTint:p.tint,
+      uFlash:p.flash,uFade:p.fade,uVignette:p.vignette,uCA:p.ca,uGlitch:p.glitch,uGrain:p.grain,
+      uTime:t,uOut:[gl.drawingBufferWidth,gl.drawingBufferHeight],
+    });
+  }
+  return {present,status,dispose:reset};
+}
+GAME.meshPost={create};
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/city-lite.js ----
 // Compatibility city: tessellated versions of the exact collision solids, drawn with the small
 // shared mesh program. Chunk buffers are built only when visible, keeping startup and memory
 // modest even though the seeded city contains thousands of blocks.
 const CHUNK_CELLS=4, VIEW_DISTANCE=1050, MAX_RESIDENT=112;
 const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
-const material=b=>!b[6]?GAME.mesh.MATERIAL.FACADE:b[6]===GAME.street.MATERIAL.WATER?GAME.mesh.MATERIAL.WATER:GAME.mesh.MATERIAL.PLAIN;
+const hash=(cell,salt=0)=>{let x=Math.imul(cell+1,1597334677)^Math.imul(salt+37,3812015801);x^=x>>>16;return (x>>>0)/4294967296;};
+const mix=(a,b,t)=>a.map((v,i)=>v*(1-t)+b[i]*t);
+const scale=(a,s)=>a.map(v=>v*s);
+const PAINT_OFFSET=0.012;
+// Reuse the small unit meshes instead of redoing trigonometry, triangle winding and temporary
+// vectors for every crown/branch in a chunk. The resulting vertices still use the exact source
+// radii/endpoints, and the few template combinations are bounded by the two distance levels.
+const templates=new Map();
+function template(shape,segments,rings) {
+  const key=`${shape}:${segments}:${rings}`;
+  if(!templates.has(key)) {
+    const b=GAME.mesh.builder();
+    if(shape==='ellipse')b.ellipsoid([0,0,0],[1,1,1],[1,1,1],segments,rings);
+    else b.capsule([0,0,0],[0,1,0],1,[1,1,1],segments,rings);
+    templates.set(key,b.values);
+  }
+  return templates.get(key);
+}
+function appendEllipsoid(builder,centre,radii,colour,segments,rings) {
+  const model=template('ellipse',segments,rings),out=builder.values,S=GAME.mesh.STRIDE,
+    [cx,cy,cz]=centre,[rx,ry,rz]=radii,alpha=colour[3]??1,tag=builder.material;
+  let j=out.length;
+  for(let i=0;i<model.length;i+=S) {
+    const x=model[i],y=model[i+1],z=model[i+2],nx=x/rx,ny=y/ry,nz=z/rz,inv=1/Math.hypot(nx,ny,nz);
+    out[j++]=cx+x*rx;out[j++]=cy+y*ry;out[j++]=cz+z*rz;
+    out[j++]=nx*inv;out[j++]=ny*inv;out[j++]=nz*inv;
+    out[j++]=colour[0];out[j++]=colour[1];out[j++]=colour[2];out[j++]=alpha;out[j++]=tag;
+  }
+}
+function appendCapsule(builder,a,b,radius,colour,segments,rings) {
+  const delta=b.map((v,i)=>v-a[i]),length=Math.hypot(...delta);
+  if(length<1e-8) {appendEllipsoid(builder,a,[radius,radius,radius],colour,segments,rings*2);return;}
+  const model=template('capsule',segments,rings),out=builder.values,S=GAME.mesh.STRIDE,
+    {n,u,v}=GAME.mesh.basis(delta),alpha=colour[3]??1,tag=builder.material;
+  let j=out.length;
+  for(let i=0;i<model.length;i+=S) {
+    const x=-model[i]*radius,z=model[i+2]*radius,t=model[i+1],y=t<0?t*radius:t>1?length+(t-1)*radius:t*length,
+      nx=-model[i+3],ny=model[i+4],nz=model[i+5];
+    out[j++]=a[0]+u[0]*x+v[0]*z+n[0]*y;out[j++]=a[1]+u[1]*x+v[1]*z+n[1]*y;out[j++]=a[2]+u[2]*x+v[2]*z+n[2]*y;
+    out[j++]=u[0]*nx+v[0]*nz+n[0]*ny;out[j++]=u[1]*nx+v[1]*nz+n[1]*ny;out[j++]=u[2]*nx+v[2]*nz+n[2]*ny;
+    out[j++]=colour[0];out[j++]=colour[1];out[j++]=colour[2];out[j++]=alpha;out[j++]=tag;
+  }
+}
+function material(b,role='building') {
+  const M=GAME.mesh.MATERIAL,S=GAME.street.MATERIAL;
+  if(!b[6])return role==='building'?M.FACADE:(M.METAL??M.PLAIN);
+  if(b[6]===S.WATER)return M.WATER;
+  if(b[6]===S.LEAVES)return M.FOLIAGE??M.PLAIN;
+  if(b[6]===S.BARK)return M.BARK??M.PLAIN;
+  if(b[6]===S.METAL||b[6]===S.BRONZE)return M.METAL??M.PLAIN;
+  if(b[6]===S.GLASS)return M.GLASS??M.PLAIN;
+  if(b[6]===S.STONE)return M.STONE??M.PLAIN;
+  if(b[6]===S.SIGN)return M.LIGHT;
+  return M.PLAIN;
+}
 
-function appendSolid(builder,b,colour,{segments=12,rings=8,capRings=4}={}) {
-  builder.tag(material(b));
+function appendSolid(builder,b,colour,{segments=12,rings=8,capRings=4,role='building',materialTag=null}={}) {
+  builder.tag(materialTag??material(b,role));
   if(b[7]===GAME.street.SHAPE.ELLIPSOID) {
     const centre=[0,1,2].map(i=>(b[i]+b[i+3])/2), radii=[0,1,2].map(i=>(b[i+3]-b[i])/2);
-    builder.ellipsoid(centre,radii,colour,segments,rings);
+    appendEllipsoid(builder,centre,radii,colour,segments,rings);
   } else if(b[7]>=GAME.street.SHAPE.BRANCH_X) {
-    const limb=GAME.street.capsuleData(b);builder.capsule(limb.a,limb.b,limb.radius,colour,segments,capRings);
+    const limb=GAME.street.capsuleData(b);appendCapsule(builder,limb.a,limb.b,limb.radius,colour,segments,capRings);
   } else builder.box(b,colour);
 }
 
-function solidMesh(bounds,colour=[0.15,0.18,0.2],{record=null,fall=0}={}) {
-  const builder=GAME.mesh.builder();appendSolid(builder,bounds,colour);
+function solidMesh(bounds,colour=[0.15,0.18,0.2],{record=null,fall=0,role='building',materialTag=null}={}) {
+  const builder=GAME.mesh.builder();appendSolid(builder,bounds,colour,{role,materialTag});
   const data=builder.build(), stride=GAME.mesh.STRIDE;
   if(record) for(let i=0;i<data.length;i+=stride) {
     data.set(GAME.collapseMotion.worldPoint(record,Array.from(data.subarray(i,i+3))),i);
@@ -13660,18 +14008,175 @@ function solidMesh(bounds,colour=[0.15,0.18,0.2],{record=null,fall=0}={}) {
   return data;
 }
 
-function solidColour(b,theme,cell=0) {
-  const snow=theme?.snow||0, growth=theme?.growth||0, roof=theme?.roof||[0.02,0.025,0.035], fog=theme?.fog?.low||[0.03,0.04,0.06];
-  if(!b[6]) return roof.map((v,i)=>0.055+v*0.34+fog[i]*0.55+(growth&&i===1?0.03:0)+(cell%5)*0.002);
+function solidColour(b,theme,cell=0,role='building') {
+  const snow=theme?.snow||0,growth=theme?.growth||0,variant=hash(cell,b[8]||0),wall=theme?.wall||[0,0,0];
+  if(!b[6]) {
+    if(role!=='building')return role==='rack'?[0.075,0.050,0.11]:role==='pipe'||role==='bridge'?[0.068,0.13,0.15]:[0.15,0.20,0.24];
+    const palettes=[[0.038,0.050,0.078],[0.072,0.048,0.073],[0.062,0.072,0.071],[0.043,0.068,0.081],[0.076,0.059,0.045]];
+    let colour=palettes[Math.floor(variant*palettes.length)].map((v,i)=>v+wall[i]*0.6);
+    if(theme?.id==='rain')colour=mix(colour,[0.035,0.057,0.078],0.4);
+    if(growth)colour=mix(colour,[0.054,0.076,0.046],0.42);
+    if(theme?.dust)colour=mix(colour,[0.092,0.065,0.036],theme.dust*0.55);
+    if(theme?.soot)colour=mix(colour,[0.042,0.035,0.033],theme.soot*0.55);
+    return mix(colour,[0.075,0.095,0.13],snow*0.24);
+  }
   const M=GAME.street.MATERIAL;
   const colours={
-    [M.BARK]:[0.13,0.065,0.035], [M.LEAVES]:growth?[0.075,0.19,0.062]:[0.04,0.12,0.07],
-    [M.WOOD]:[0.18,0.085,0.035], [M.METAL]:[0.17,0.21,0.25], [M.GLASS]:[0.10,0.24,0.28],
+    [M.BARK]:[0.10+variant*0.08,0.047+variant*0.045,0.021+variant*0.028],
+    [M.LEAVES]:mix([0.024,0.072,0.045],growth?[0.11,0.24,0.055]:[0.075,0.18,0.11],variant),
+    [M.WOOD]:[0.18,0.085,0.035], [M.METAL]:[0.13,0.19,0.23], [M.GLASS]:[0.06,0.19,0.24],
     [M.STONE]:[0.24,0.26,0.28], [M.BRONZE]:[0.34,0.22,0.075],
     [M.SIGN]:theme?.neon?.[cell%4]||[0.4,0.2,0.5], [M.WATER]:snow?[0.30,0.50,0.66]:[0.06,0.16,0.19],
   };
   const colour=colours[b[6]]||[0.15,0.17,0.2];
-  return b[6]===M.LEAVES&&snow?colour.map((v,i)=>v*(1-snow)+[0.58,0.69,0.79][i]*snow):colour;
+  return b[6]===M.LEAVES&&snow?mix(colour,[0.58,0.69,0.79],snow*0.78):colour;
+}
+
+// Keep facade paint attached to the shared solid. No awning, cornice, fan or roof hatch adds
+// a new volume outside collision; the 0.012-unit offset only prevents coplanar depth flicker.
+function facePaint(builder,b,face,u0,y0,u1,y1,colour,tag=GAME.mesh.MATERIAL.PLAIN) {
+  const axis=face<2?0:2,across=axis===0?2:0,sign=face%2?1:-1,edge=b[axis+(sign>0?3:0)]+sign*PAINT_OFFSET;
+  const p=(u,y)=>{const q=[0,y,0];q[axis]=edge;q[across]=u;return q;};
+  const normal=axis===0?[sign,0,0]:[0,0,sign];
+  builder.tag(tag).quad(p(u0,y0),p(u1,y0),p(u1,y1),p(u0,y1),colour,normal);
+}
+function faceSpan(b,face) {const a=face<2?2:0;return [b[a],b[a+3]];}
+function roofColour(theme,cell) {
+  const base=mix([0.030,0.043,0.058],theme.roof,0.52);
+  if(theme.snow)return mix(base,[0.32,0.42,0.53],theme.snow*0.74);
+  if(theme.growth)return mix(base,[0.056,0.098,0.035],0.60+hash(cell,4)*0.18);
+  if(theme.dust)return mix(base,[0.12,0.071,0.030],theme.dust*0.65);
+  return base;
+}
+function buildingPaint(builder,part,theme,close) {
+  const b=part.bounds,cell=part.cell,w=b[3]-b[0],d=b[5]-b[2],h=b[4]-b[1],seed=hash(cell,part.ordinal),
+    style=Math.floor(hash(cell,9)*4), neon=scale(theme.neon[Math.floor(hash(cell,7)*4)],theme.growth?0.44:0.80),
+    metal=GAME.mesh.MATERIAL.METAL??GAME.mesh.MATERIAL.PLAIN;
+  if(w<1.5||d<1.5||h<1.2)return;
+  horizontal(builder.tag(GAME.mesh.MATERIAL.ROOF??GAME.mesh.MATERIAL.PLAIN),b[0],b[2],b[3],b[5],b[4]+PAINT_OFFSET,roofColour(theme,cell));
+  for(let face=0;face<4;face++) {
+    const [lo,hi]=faceSpan(b,face),span=hi-lo;
+    facePaint(builder,b,face,lo,b[4]-0.38,hi,b[4]-0.22,neon,GAME.mesh.MATERIAL.LIGHT);
+    if(close&&(style===1||style===3))facePaint(builder,b,face,lo+0.14,b[1]+0.3,lo+0.30,b[4]-0.4,scale(neon,0.65),GAME.mesh.MATERIAL.LIGHT);
+    if(close&&style===0&&h>24)for(let y=b[1]+16;y<b[4]-4&&y<b[1]+104;y+=16)
+      facePaint(builder,b,face,lo,y-0.09,hi,y+0.09,scale(neon,0.62),GAME.mesh.MATERIAL.LIGHT);
+    if(close&&style===2&&span>7)for(const x of [lo+span*0.27,lo+span*0.73])
+      facePaint(builder,b,face,x-0.08,b[1]+0.3,x+0.08,b[4]-0.5,[0.12,0.16,0.19],metal);
+    if(close&&b[1]<0.1&&h>6&&span>6&&(face===style||face===(style+2)%4))storefrontPaint(builder,b,face,theme,cell,seed);
+    if(close&&theme.growth&&span>8)for(let j=0;j<2;j++) {
+      const x=lo+span*(0.2+j*0.53),drop=Math.min(h*0.6,5+hash(cell,face+j)*15);
+      facePaint(builder,b,face,x-0.20,b[4]-drop,x+0.25,b[4]-0.4,[0.055,0.15,0.044]);
+      for(let y=b[4]-drop+0.7;y<b[4]-0.5;y+=1.8)
+        facePaint(builder,b,face,x-0.5,y,x+0.6,y+0.36,[0.070,0.19,0.050]);
+    }
+  }
+  if(close&&w>5&&d>5) {
+    const x=(b[0]+b[3])/2,z=(b[2]+b[5])/2,hx=Math.min(2.2,w*0.23),hz=Math.min(1.6,d*0.18),y=b[4]+PAINT_OFFSET*2;
+    horizontal(builder.tag(metal),x-hx,z-hz,x+hx,z+hz,y,[0.11,0.15,0.17]);
+    for(let j=0;j<5;j++)horizontal(builder,x-hx+0.16,z-hz+0.18+j*hz*0.33,x+hx-0.16,z-hz+0.25+j*hz*0.33,y+0.006,[0.025,0.039,0.049]);
+    if(theme.snow)horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),b[0]+0.3,b[2]+0.2,b[3]-0.5,b[2]+0.8,y,[0.48,0.60,0.70]);
+  }
+}
+function storefrontPaint(builder,b,face,theme,cell,seed) {
+  const [lo,hi]=faceSpan(b,face),mid=(lo+hi)/2,width=hi-lo,kind=Math.floor(hash(cell,face+17)*3),
+    neon=theme.neon[Math.floor(seed*4)],warm=mix(theme.windows[0],[0.27,0.16,0.070],0.50),glass=[0.025,0.070,0.090];
+  facePaint(builder,b,face,lo+0.18,0.10,hi-0.18,4.5,[0.018,0.025,0.034]);
+  for(const [left,right] of [[lo+0.45,mid-0.80],[mid+0.80,hi-0.45]]) {
+    if(right-left<0.5)continue;
+    facePaint(builder,b,face,left,0.45,right,3.28,mix(glass,warm,0.24));
+    facePaint(builder,b,face,left,2.62,right,2.70,scale(warm,0.78),GAME.mesh.MATERIAL.LIGHT);
+    facePaint(builder,b,face,(left+right)/2-0.05,0.45,(left+right)/2+0.05,3.28,[0.18,0.21,0.22]);
+  }
+  facePaint(builder,b,face,mid-0.61,0.1,mid+0.61,3.25,[0.08,0.115,0.13]);
+  facePaint(builder,b,face,mid-0.49,0.43,mid+0.49,2.95,mix(glass,warm,0.17));
+  facePaint(builder,b,face,mid+0.33,1.42,mid+0.38,1.80,[0.35,0.30,0.17]);
+  facePaint(builder,b,face,lo+0.24,3.42,hi-0.24,4.28,scale(neon,kind===1?0.30:0.60),GAME.mesh.MATERIAL.LIGHT);
+  if(kind===1) {
+    // Painted cafe cup and handle; no floating labels or extra facade extrusion.
+    const icon=Math.min(0.30,width*0.035),x=mid-0.15,y=3.78,c=[0.90,0.77,0.50];
+    facePaint(builder,b,face,x-icon,y-0.21,x+icon,y+0.20,c,GAME.mesh.MATERIAL.LIGHT);
+    facePaint(builder,b,face,x+icon,y-0.13,x+icon+0.15,y+0.15,c,GAME.mesh.MATERIAL.LIGHT);
+    facePaint(builder,b,face,x-icon-0.10,y-0.28,x+icon+0.11,y-0.23,c,GAME.mesh.MATERIAL.LIGHT);
+  } else {
+    const rows=kind===0?4:6,step=(width-1.1)/rows;
+    for(let j=0;j<rows;j++)facePaint(builder,b,face,lo+0.55+j*step,3.69,lo+0.55+j*step+step*0.63,3.93,
+      kind===0?[0.90,0.87,0.68]:scale(theme.windows[1],0.65),GAME.mesh.MATERIAL.LIGHT);
+  }
+}
+function equipmentPaint(builder,part,theme) {
+  const b=part.bounds,h=b[4]-b[1],acrossZ=b[5]-b[2]>b[3]-b[0],faces=acrossZ?[0,1]:[2,3],
+    accent=part.role==='rack'?scale(theme.neon[part.cell%4],0.7):[0.12,0.42,0.48];
+  for(const face of faces) {
+    const [lo,hi]=faceSpan(b,face),span=hi-lo,mid=(lo+hi)/2;
+    if(span<0.35||h<0.12)continue;
+    if(part.role==='pipe'||part.role==='bridge') {
+      facePaint(builder,b,face,lo,b[1]+h*0.43,hi,b[1]+h*0.61,accent,GAME.mesh.MATERIAL.LIGHT);
+      const collar=Math.min(0.12,span*0.10);
+      for(const x of [lo+span*0.14,hi-span*0.14])facePaint(builder,b,face,x-collar,b[1],x+collar,b[4],[0.26,0.15,0.065]);
+    } else {
+      facePaint(builder,b,face,lo+0.10,b[1]+0.10,hi-0.10,b[4]-0.10,[0.032,0.060,0.076]);
+      for(let j=0;j<5;j++)facePaint(builder,b,face,lo+0.20,b[1]+h*(0.18+j*0.14),hi-0.20,b[1]+h*(0.20+j*0.14),[0.17,0.25,0.28]);
+      facePaint(builder,b,face,lo+0.08,b[4]-0.17,hi-0.08,b[4]-0.06,accent,GAME.mesh.MATERIAL.LIGHT);
+      if(part.role==='ac'&&span>1.5&&h>1.1) {
+        const axis=face<2?0:2,sign=face%2?1:-1,c=[mid,(b[1]+b[4])/2,mid],n=axis===0?[sign,0,0]:[0,0,sign];
+        c[axis]=b[axis+(sign>0?3:0)]+sign*PAINT_OFFSET;
+        const across=axis===0?2:0,r=Math.min(span,h)*0.28,point=(a,R)=>{const p=[...c];p[across]+=Math.cos(a)*R;p[1]+=Math.sin(a)*R;return p;};
+        for(let j=0;j<16;j++) {
+          const a=j*Math.PI/8,q=(j+1)*Math.PI/8;
+          builder.tag(GAME.mesh.MATERIAL.PLAIN).quad(point(a,r),point(q,r),point(q,r*0.84),point(a,r*0.84),[0.18,0.29,0.32],n);
+          builder.triangle(c,point(a,r*0.84),point(q,r*0.84),j%3?[0.025,0.045,0.050]:[0.095,0.16,0.18],n);
+        }
+      }
+    }
+  }
+}
+function appendDecoration(builder,part,theme,close=true) {
+  if(part.role==='building')buildingPaint(builder,part,theme,close);
+  else if(!part.bounds[6]&&close)equipmentPaint(builder,part,theme);
+}
+function decorationMesh(part,theme,close=true) {
+  const b=GAME.mesh.builder();appendDecoration(b,part,theme,close);return b.build();
+}
+
+function cellParts(city,cell) {
+  const boundsList=city.boxes(cell),streetCount=city.streetBoxes[cell]?.length||0,a=cell*4,
+    propCount=city.propA[a+2]>0?city.propB[a+2]===GAME.city.PROP.PIPE?4:1:0,
+    bridgeCount=(city.bridgeA[a+3]?1:0)+(city.bridgeB[a+3]?1:0),buildingCount=boundsList.length-streetCount-propCount-bridgeCount;
+  return boundsList.map((bounds,ordinal)=>({cell,bounds,ordinal,role:bounds[6]?'street':ordinal<buildingCount?'building'
+    :ordinal<buildingCount+streetCount+propCount?({[GAME.city.PROP.AC]:'ac',[GAME.city.PROP.RACK]:'rack',[GAME.city.PROP.PIPE]:'pipe'}[city.propB[a+2]]||'equipment'):'bridge'}));
+}
+function partMaterial(part,theme) {
+  return part.bounds[6]===GAME.street.MATERIAL.WATER&&theme.snow?(GAME.mesh.MATERIAL.ICE??GAME.mesh.MATERIAL.WATER):material(part.bounds,part.role);
+}
+function groundPaint(builder,city,cell,theme,hole,close) {
+  const [x,z]=city.cellCenter(cell),pitch=city.cell,ix=cell%city.n,iz=Math.floor(cell/city.n),seed=hash(cell,city.seed),
+    nearHole=hole&&Math.hypot(x-hole.x,z-hole.z)<hole.radius+pitch,
+    stone=GAME.mesh.MATERIAL.STONE??GAME.mesh.MATERIAL.PLAIN;
+  if(nearHole)return;
+  if(city.park[cell]) {
+    const grass=theme.snow?[0.28,0.38,0.47]:mix([0.028,0.073,0.039],theme.growth?[0.09,0.16,0.044]:[0.066,0.12,0.060],seed);
+    horizontal(builder.tag(theme.snow?stone:(GAME.mesh.MATERIAL.SOIL??GAME.mesh.MATERIAL.PLAIN)),x-15,z-15,x+15,z+15,0.006,grass);
+    const path=theme.snow?[0.14,0.20,0.26]:[0.11,0.11,0.080];
+    horizontal(builder.tag(stone),x-15,z-0.80,x+15,z+0.80,0.017,path);
+    horizontal(builder,x-0.80,z-15,x+0.80,z+15,0.017,path);
+    if(close)for(let j=0;j<4;j++)horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),x-13+j*6.5,z-13,x-10.2+j*6.5,z-1.0,0.013,scale(grass,1.14));
+  } else if(city.kind?city.kind[cell]===GAME.city.KIND.TOWER||city.kind[cell]===GAME.city.KIND.OBSTACLE:city.buildingBoxes(cell).length) {
+    const pavement=theme.snow?[0.17,0.23,0.29]:theme.growth?[0.050,0.069,0.056]:[0.086,0.095,0.105];
+    // Perimeter slabs and joints distinguish pavement from the dark central street.
+    for(const [x0,z0,x1,z1] of [[x-15,z-15,x+15,z-12],[x-15,z+12,x+15,z+15],
+      [x-15,z-12,x-12,z+12],[x+12,z-12,x+15,z+12]])horizontal(builder.tag(stone),x0,z0,x1,z1,0.006,pavement);
+    if(close)for(let j=-12;j<=12;j+=6) {
+      horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),x+j-0.025,z-15,x+j+0.025,z-12,0.014,[0.027,0.039,0.044]);
+      horizontal(builder,x+j-0.025,z+12,x+j+0.025,z+15,0.014,[0.027,0.039,0.044]);
+    }
+  }
+  if(ix%GAME.city.AVENUE_X===0||iz%GAME.city.AVENUE_Z===0) {
+    const alongZ=ix%GAME.city.AVENUE_X===0;
+    for(const step of [-10,2])horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),alongZ?x-0.10:x+step,alongZ?z+step:z-0.10,
+      alongZ?x+0.10:x+step+6,alongZ?z+step+6:z+0.10,0.012,[0.20,0.20,0.17]);
+    if(close&&ix%GAME.city.AVENUE_X===0&&iz%GAME.city.AVENUE_Z===0)for(let j=0;j<5;j++)
+      horizontal(builder,x-6+j*2.4,z-10.4,x-4.7+j*2.4,z-7.0,0.018,[0.26,0.28,0.27]);
+  }
 }
 
 function horizontal(builder,x0,z0,x1,z1,y,colour) {
@@ -13682,7 +14187,7 @@ function horizontal(builder,x0,z0,x1,z1,y,colour) {
 // The street really has a circular opening. No triangle crosses the shaft's open disk;
 // cylinder walls and the floor use the exact same radius/bottom as collision.
 function terrainMesh(size,hole,colour) {
-  const b=GAME.mesh.builder();
+  const b=GAME.mesh.builder().tag(GAME.mesh.MATERIAL.ASPHALT??GAME.mesh.MATERIAL.PLAIN);
   if(!hole) horizontal(b,0,0,size,size,0,colour);
   else {
     const {x,z,radius:r,bottom}=hole, x0=x-r,x1=x+r,z0=z-r,z1=z+r;
@@ -13719,55 +14224,59 @@ function create(gfx) {
   }
   function invalidate() {
     if(!scene)return;
-    for(const c of scene.chunks) {if(c.handle)mesh.dispose(c.handle);c.handle=null;c.parts=[];c.detail=0;}
+    for(const c of scene.chunks) {if(c.handle)mesh.dispose(c.handle);c.handle=null;c.parts=[];c.decorationParts=[];c.detail=0;}
     mesh.dispose(scene.ground);scene.ground=null;
-    mesh.dispose(scene.pads);scene.pads=null;scene.motionTime=null;
+    mesh.dispose(scene.pads);scene.pads=null;scene.motionTime=null;scene.movingLayout=null;
   }
   function setWorld(city,pads=[]) {
     disposeScene();collapseState=city.collapse||null;
     const width=Math.ceil(city.n/CHUNK_CELLS), chunks=Array.from({length:width*width},(_,index)=>{
       const x=(index%width)*CHUNK_CELLS*city.cell,z=Math.floor(index/width)*CHUNK_CELLS*city.cell;
-      return {index,x,z,solids:[],parts:[],handle:null,used:0,top:0,detail:0,
+      return {index,x,z,solids:[],parts:[],decorationParts:[],handle:null,used:0,top:0,detail:0,
         centre:[x+CHUNK_CELLS*city.cell/2,0,z+CHUNK_CELLS*city.cell/2],radius:0};
     });
+    const byCell=Array(city.n*city.n);
     for(let cell=0;cell<city.n*city.n;cell++) {
       const ix=cell%city.n,iz=Math.floor(cell/city.n), chunk=chunks[Math.floor(iz/CHUNK_CELLS)*width+Math.floor(ix/CHUNK_CELLS)];
-      for(const bounds of city.boxes(cell)) {chunk.solids.push({cell,bounds});chunk.top=Math.max(chunk.top,bounds[4]);}
+      byCell[cell]=cellParts(city,cell);
+      for(const part of byCell[cell]) {chunk.solids.push(part);chunk.top=Math.max(chunk.top,part.bounds[4]);}
     }
     for(const c of chunks) {c.centre[1]=c.top/2;c.radius=Math.hypot(CHUNK_CELLS*city.cell/Math.SQRT2,c.top/2);}
-    scene={city,chunks,padData:pads,ground:null,pads:null,moving:mesh.upload(new Float32Array(),{dynamic:true}),
-      movingParts:[],markerParts:[],motionTime:null};
+    scene={city,chunks,byCell,padData:pads,ground:null,pads:null,moving:mesh.upload(new Float32Array(),{dynamic:true}),
+      movingParts:[],movingDecorationParts:[],markerParts:[],motionTime:null,movingLayout:null};
   }
   function setTheme(value) {
     if(!value||!GAME.themes.list.includes(value))throw new Error('setTheme needs a theme from GAME.themes');
     if(theme!==value) {theme=value;invalidate();}
   }
   function setCollapse(state) {if(collapseState!==state) {collapseState=state;invalidate();}}
-  function buildChunk(c,motion,cam) {
-    const b=GAME.mesh.builder(), city=scene.city, cellSize=city.cell;
+  function* buildChunkSteps(c,motion,cam) {
+    const b=GAME.mesh.builder(),paints=[],city=scene.city,cellSize=city.cell;
     const close=Math.hypot(c.centre[0]-cam.pos[0],c.centre[2]-cam.pos[2])<260;
     const detail=close?{segments:12,rings:8,capRings:4}:{segments:8,rings:4,capRings:2};
-    if(c.handle)mesh.dispose(c.handle);
+    if(c.handle)mesh.dispose(c.handle);c.handle=null;
     for(const part of c.solids) {
       if(motion&&GAME.collapseMotion.movingBox(motion,part.cell,part.bounds))continue;
       if(!part.bounds[6]&&collapseState?.falls[part.cell*4+3])continue;
-      b.part({...part,shape:part.bounds[7]||0,object:part.bounds[8]},q=>appendSolid(q,part.bounds,solidColour(part.bounds,theme,part.cell),detail));
+      b.part({...part,shape:part.bounds[7]||0,object:part.bounds[8]},q=>appendSolid(q,part.bounds,
+        solidColour(part.bounds,theme,part.cell,part.role),{...detail,role:part.role,materialTag:partMaterial(part,theme)}));
+      const start=b.count;appendDecoration(b,part,theme,close);
+      if(b.count>start)paints.push({...part,kind:'surface-paint',start,count:b.count-start});
+      yield;
     }
     // Flat parks and street markings are decorative; all physical ground remains y=0.
     for(let iz=Math.floor(c.z/cellSize);iz<Math.min(city.n,c.z/cellSize+CHUNK_CELLS);iz++)
       for(let ix=Math.floor(c.x/cellSize);ix<Math.min(city.n,c.x/cellSize+CHUNK_CELLS);ix++) {
-        const cell=iz*city.n+ix, x=(ix+0.5)*cellSize,z=(iz+0.5)*cellSize, hole=collapseState?.hole;
-        const nearHole=hole&&Math.hypot(x-hole.x,z-hole.z)<hole.radius+cellSize;
-        b.tag(GAME.mesh.MATERIAL.PLAIN);
-        if(city.park[cell]&&!nearHole) horizontal(b,x-15,z-15,x+15,z+15,0.006,
-          theme.snow?[0.30,0.39,0.48]:theme.growth?[0.06,0.105,0.047]:[0.04,0.07,0.047]);
-        if(!nearHole&&(ix%GAME.city.AVENUE_X===0||iz%GAME.city.AVENUE_Z===0)) {
-          const alongZ=ix%GAME.city.AVENUE_X===0;
-          for(const step of [-10,2]) horizontal(b,alongZ?x-0.10:x+step,alongZ?z+step:z-0.10,
-            alongZ?x+0.10:x+step+6,alongZ?z+step+6:z+0.10,0.012,[0.20,0.21,0.22]);
-        }
+        const cell=iz*city.n+ix;
+        const start=b.count;groundPaint(b,city,cell,theme,collapseState?.hole,close);
+        if(b.count>start)paints.push({cell,kind:'ground-paint',start,count:b.count-start});
+        yield;
       }
-    c.parts=b.parts;c.detail=close?2:1;c.handle=mesh.upload(b.build());return c.handle;
+    c.parts=b.parts;c.decorationParts=paints;c.detail=close?2:1;c.handle=mesh.upload(b.build());
+  }
+  function buildChunk(c,motion,cam) {
+    for(const unused of buildChunkSteps(c,motion,cam)) { /* complete a newly visible chunk */ }
+    return c.handle;
   }
   function visible(c,cam) {
     const delta=c.centre.map((v,i)=>v-cam.pos[i]), distance=Math.hypot(...delta), depth=dot(delta,cam.fwd);
@@ -13777,33 +14286,60 @@ function create(gfx) {
   }
   function updateMoving(motion) {
     if(scene.motionTime===collapseState?.time)return;
-    const data=[], parts=[];
-    for(const record of motion?.records||[]) for(const bounds of record.boxes) {
-      const start=data.length/GAME.mesh.STRIDE, solid=solidMesh(bounds,solidColour(bounds,theme,record.cell),{record});
-      for(const v of solid)data.push(v);
-      parts.push({cell:record.cell,bounds,record,start,count:solid.length/GAME.mesh.STRIDE});
-    }
-    if(collapseState)for(const c of scene.chunks)for(const {cell,bounds} of c.solids)
-      if(!bounds[6]&&collapseState.falls[cell*4+3]&&!(motion&&GAME.collapseMotion.movingBox(motion,cell,bounds))) {
-        const start=data.length/GAME.mesh.STRIDE, fall=GAME.collapse.fallOffset(collapseState,cell),
-          solid=solidMesh(bounds,solidColour(bounds,theme,cell),{fall});
-        for(const v of solid)data.push(v);parts.push({cell,bounds,fall,start,count:solid.length/GAME.mesh.STRIDE});
+    if(!scene.movingLayout||scene.layoutMotion!==motion) {
+      const layout=[],parts=[],paintParts=[];let count=0;
+      const add=(part,record)=>{
+        const solid=solidMesh(part.bounds,solidColour(part.bounds,theme,part.cell,part.role),{role:part.role,materialTag:partMaterial(part,theme)}),
+          paint=decorationMesh(part,theme,true),start=count;
+        layout.push({part,record,local:solid,start});count+=solid.length/GAME.mesh.STRIDE;
+        parts.push({...part,record,start,count:solid.length/GAME.mesh.STRIDE});
+        if(paint.length) {layout.push({part,record,local:paint,start:count});paintParts.push({...part,record,start:count,count:paint.length/GAME.mesh.STRIDE});count+=paint.length/GAME.mesh.STRIDE;}
+      };
+      for(const record of motion?.records||[])for(const bounds of record.boxes) {
+        const part=scene.byCell[record.cell].find(p=>p.bounds===bounds||p.bounds.every((v,i)=>v===bounds[i]));
+        add(part||{cell:record.cell,bounds,role:record.kind==='tree'?'street':'building',ordinal:0},record);
       }
-    mesh.update(scene.moving,new Float32Array(data));scene.movingParts=parts;scene.motionTime=collapseState?.time;
+      if(collapseState)for(const c of scene.chunks)for(const part of c.solids)
+        if(!part.bounds[6]&&collapseState.falls[part.cell*4+3]&&!(motion&&GAME.collapseMotion.movingBox(motion,part.cell,part.bounds)))add(part,null);
+      scene.movingLayout=layout;scene.layoutMotion=motion;scene.movingData=new Float32Array(count*GAME.mesh.STRIDE);
+      scene.movingParts=parts;scene.movingDecorationParts=paintParts;
+    }
+    const data=scene.movingData,stride=GAME.mesh.STRIDE;
+    for(const {part,record,local,start} of scene.movingLayout) {
+      const base=start*stride;data.set(local,base);
+      const fall=record?record.offset:GAME.collapse.fallOffset(collapseState,part.cell);
+      if(!record) {for(let i=1;i<local.length;i+=stride)data[base+i]-=fall;continue;}
+      // The same Rodrigues order as collapseMotion.worldPoint/worldVector, without allocating
+      // temporary arrays for every vertex of every moving crown on each animation frame.
+      const [px,py,pz]=record.pivot,ax=record.axis[0],az=record.axis[2],c=record.cos,s=record.sin,k=1-c;
+      for(let i=0;i<local.length;i+=stride) {
+        const x=local[i]-px,y=local[i+1]-py,z=local[i+2]-pz,d=x*ax+z*az;
+        data[base+i]=x*c-az*y*s+ax*d*k+px;
+        data[base+i+1]=y*c+(az*x-ax*z)*s+py-fall;
+        data[base+i+2]=z*c+ax*y*s+az*d*k+pz;
+        const nx=local[i+3],ny=local[i+4],nz=local[i+5],nd=nx*ax+nz*az;
+        data[base+i+3]=nx*c-az*ny*s+ax*nd*k;
+        data[base+i+4]=ny*c+(az*nx-ax*nz)*s;
+        data[base+i+5]=nz*c+ax*ny*s+az*nd*k;
+      }
+    }
+    mesh.update(scene.moving,data);scene.motionTime=collapseState?.time;
   }
-  function buildPads() {
+  function* buildPadSteps() {
     const b=GAME.mesh.builder().tag(GAME.mesh.MATERIAL.LIGHT), city=scene.city, colour=theme.booster||[0.35,1,0.22];
     for(const p of scene.padData) {
       const [x,z]=city.cellCenter(p.cell);b.ring([x,0.15,z],[0,1,0],p.radius,0.25,colour,32);
-      for(let y=8;y<p.height;y+=16)b.ring([x,y,z],[0,1,0],p.radius,0.12,[...colour,0.15],24,4);
+      yield;
+      for(let y=8;y<p.height;y+=16) {b.ring([x,y,z],[0,1,0],p.radius,0.12,[...colour,0.15],24,4);yield;}
     }
     scene.pads=mesh.upload(b.build());
   }
+  function buildPads() {for(const unused of buildPadSteps()) { /* lazy fallback after a scene change */ }}
   function draw(cam,rings=[],guide=[],stars=[]) {
     if(!theme||!scene)throw new Error('city draw before world/theme');
     const now=reduced?.matches?0:performance.now()/1000, sky=theme.sky.horizon, fog=theme.fog.low,
-      options={fog,density:0.0016*theme.fog.density,time:now,far:1600};
-    mesh.clear(sky);tick++;
+      options={fog,density:0.0016*theme.fog.density,time:now,far:1600,theme,encoded:true};
+    mesh.clear(sky);mesh.sky?.(cam,theme,now);tick++;
     const motion=collapseState?.motion?GAME.collapseMotion.frame(collapseState):null;
     if(!scene.ground) scene.ground=mesh.upload(terrainMesh(scene.city.size,collapseState?.hole,
       theme.snow?[0.12,0.15,0.19]:[0.031,0.039,0.05]));
@@ -13816,7 +14352,7 @@ function create(gfx) {
     }
     const resident=scene.chunks.filter(c=>c.handle);
     if(resident.length>MAX_RESIDENT)for(const c of resident.filter(c=>c.used!==tick).sort((a,b)=>a.used-b.used).slice(0,resident.length-MAX_RESIDENT)) {
-      mesh.dispose(c.handle);c.handle=null;c.parts=[];
+      mesh.dispose(c.handle);c.handle=null;c.parts=[];c.decorationParts=[];
     }
     updateMoving(motion);mesh.draw(scene.moving,cam,options);
     if(!scene.pads)buildPads();mesh.draw(scene.pads,cam,{...options,unlit:true,depthWrite:false});
@@ -13831,6 +14367,7 @@ function create(gfx) {
       if(!scene.fire)scene.fire=mesh.upload(fire.build(),{dynamic:true});else mesh.update(scene.fire,fire.build());
       mesh.draw(scene.fire,cam,{...options,unlit:true,depthWrite:false});
     }
+    mesh.weather?.(cam,theme,now);
     const markers=GAME.mesh.markers(rings,guide,stars,{theme,time:now,cam});scene.markerParts=markers.parts;
     for(const name of ['opaque','transparent','xray'])mesh.update(markerHandles[name],markers[name]);
     mesh.draw(markerHandles.opaque,cam,{...options,unlit:true,density:options.density*0.4});
@@ -13846,7 +14383,14 @@ function create(gfx) {
     let batch=performance.now();
     for(const c of current.chunks.filter(c=>visible(c,cam))) {
       if(current!==scene||state!==collapseState)return;
-      if(!c.handle)buildChunk(c,motion,cam);
+      if(!c.handle) {
+        const steps=buildChunkSteps(c,motion,cam);
+        while(true) {
+          if(current!==scene||state!==collapseState) {steps.return();return;}
+          if(steps.next().done)break;
+          if(performance.now()-batch>budgetMs) {await new Promise(resolve=>setTimeout(resolve,0));batch=performance.now();}
+        }
+      }
       if(performance.now()-batch>budgetMs) {await new Promise(resolve=>setTimeout(resolve,0));batch=performance.now();}
     }
     if(current!==scene||state!==collapseState)return;
@@ -13854,13 +14398,21 @@ function create(gfx) {
       theme.snow?[0.12,0.15,0.19]:[0.031,0.039,0.05]));
     if(performance.now()-batch>budgetMs)await new Promise(resolve=>setTimeout(resolve,0));
     if(current!==scene||state!==collapseState)return;
-    if(!scene.pads)buildPads();updateMoving(motion);
+    if(!scene.pads) {
+      const steps=buildPadSteps();
+      while(true) {
+        if(current!==scene||state!==collapseState) {steps.return();return;}
+        if(steps.next().done)break;
+        if(performance.now()-batch>budgetMs) {await new Promise(resolve=>setTimeout(resolve,0));batch=performance.now();}
+      }
+    }
+    updateMoving(motion);
   }
   return {program:mesh.program,setWorld,setTheme,setCollapse,draw,prepare,get theme(){return theme;},
     get scene(){return scene;},dispose:()=>{disposeScene();for(const h of Object.values(markerHandles))mesh.dispose(h);}};
 }
 
-GAME.cityLite={create,solidMesh,appendSolid,solidColour,terrainMesh,CHUNK_CELLS,VIEW_DISTANCE,MAX_RESIDENT};
+GAME.cityLite={create,solidMesh,appendSolid,solidColour,terrainMesh,cellParts,decorationMesh,groundPaint,CHUNK_CELLS,VIEW_DISTANCE,MAX_RESIDENT};
 GAME.cityLiteRenderer=GAME.cityLite;
 
 })();
@@ -13968,13 +14520,34 @@ function wallColour(tube, p) {
   const along = dot(sub(p, tube.a), tube.axis), phase = tube.index * 13.71;
   const rib = Math.abs((along + phase + 10) % 20 - 10) < 0.75;
   const damp = tube.water === null ? 0 : 1 - clamp((p[1] - tube.water - 2) / 12, 0, 1);
-  const base = rib ? [0.20, 0.23, 0.21] : [0.24, 0.13, 0.074];
-  return { colour: base.map((v, i) => v * (1 - damp * 0.65) + [0.012, 0.043, 0.021][i] * damp), material: rib ? 0 : 2 };
+  const base = rib ? [0.18, 0.20, 0.18] : [0.21, 0.105, 0.062];
+  const style = { colour: base.map((v, i) => v * (1 - damp * 0.58) + [0.014, 0.056, 0.031][i] * damp), material: rib ? 0 : 2 };
+  if (Math.abs(tube.axis[1]) < 0.15) {
+    const radial = sub(p, axisPoint(tube, p)), height = dot(radial, tube.v);
+    const serviceHeight = (tube.water ?? tube.a[1] - tube.radius * 0.65) - tube.a[1] + 5;
+    const angle = Math.atan2(dot(radial, tube.v), dot(radial, tube.u));
+    const overhead = Math.min(Math.abs(angle - 2.22) * tube.radius - 0.27, Math.abs(angle - 2.08) * tube.radius - 0.14);
+    // Embedded iron follows the wall itself; it never adds an invisible collision obstacle.
+    if (Math.abs(height - serviceHeight) < 0.28 || overhead < 0) return { colour: [0.11, 0.15, 0.14], material: 6 };
+    if (Math.abs(height - serviceHeight + 0.43) < 0.085) return { colour: [0.024, 0.038, 0.032], material: 0 };
+  }
+  return style;
 }
 
 function shellMesh(builder, tube) {
   const segments = tube.radius > 45 ? 64 : 32, hemi = tube.radius > 45 ? 20 : 8;
-  const radial = k => add(scale(tube.u, Math.cos(k * Math.PI * 2 / segments)), scale(tube.v, Math.sin(k * Math.PI * 2 / segments)));
+  const angles = Array.from({ length: segments }, (_, k) => k * Math.PI * 2 / segments);
+  if (Math.abs(tube.axis[1]) < 0.15) {
+    const serviceHeight = (tube.water ?? tube.a[1] - tube.radius * 0.65) - tube.a[1] + 5;
+    for (const height of [serviceHeight - 0.28, serviceHeight + 0.28, serviceHeight - 0.515, serviceHeight - 0.345]) {
+      if (Math.abs(height) >= tube.radius) continue;
+      const a = Math.asin(height / tube.radius);
+      angles.push((a + Math.PI * 2) % (Math.PI * 2), (Math.PI - a + Math.PI * 2) % (Math.PI * 2));
+    }
+    for (const [angle, radius] of [[2.22, 0.27], [2.08, 0.14]]) angles.push(angle - radius / tube.radius, angle + radius / tube.radius);
+  }
+  angles.push(Math.PI * 2); angles.sort((a, b) => a - b);
+  const radial = k => add(scale(tube.u, Math.cos(angles[k])), scale(tube.v, Math.sin(angles[k])));
   const emit = tri => {
     const c = centroid(tri), style = wallColour(tube, c);
     builder.triangle(...tri, style.colour, tri.map(p => unit(sub(axisPoint(tube, p), p))), style.material);
@@ -13984,7 +14557,7 @@ function shellMesh(builder, tube) {
   for (let s = -(tube.index * 13.71 % 20); s < tube.length; s += 20)
     for (const edge of [s - 0.75, s + 0.75]) if (edge > 0 && edge < tube.length) rows.push(edge);
   rows.sort((a, b) => a - b);
-  for (let j = 0; j < rows.length - 1; j++) for (let k = 0; k < segments; k++) {
+  for (let j = 0; j < rows.length - 1; j++) for (let k = 0; k < angles.length - 1; k++) {
     const a = add(tube.a, scale(tube.axis, rows[j])), b = add(tube.a, scale(tube.axis, rows[j + 1]));
     const r = scale(radial(k), tube.radius), s = scale(radial(k + 1), tube.radius);
     const points = [add(a, r), add(b, r), add(b, s), add(a, s)];
@@ -13996,7 +14569,7 @@ function shellMesh(builder, tube) {
       const angle = j * Math.PI / (2 * hemi);
       return add(centre, add(scale(tube.axis, sign * Math.cos(angle) * tube.radius), scale(radial(k), Math.sin(angle) * tube.radius)));
     };
-    for (let j = 0; j < hemi; j++) for (let k = 0; k < segments; k++) {
+    for (let j = 0; j < hemi; j++) for (let k = 0; k < angles.length - 1; k++) {
       const p = [point(j, k), point(j + 1, k), point(j + 1, k + 1), point(j, k + 1)];
       ownWater([p[0], p[1], p[2]], tube, emit); ownWater([p[0], p[2], p[3]], tube, emit);
     }
@@ -14011,7 +14584,7 @@ function waterMesh(builder, tube) {
     if (horizontal > 0.1 && tube.kind !== 'inlet') {
       const side = [-tube.delta[2] / horizontal, 0, tube.delta[0] / horizontal];
       const section = Math.sqrt(Math.max(0, tube.radius ** 2 - (c[1] - axisPoint(tube, c)[1]) ** 2));
-      if (Math.abs(dot(sub(c, axisPoint(tube, c)), side)) > section * 0.64) { colour = [0.14, 0.17, 0.15]; material = 2; }
+      if (Math.abs(dot(sub(c, axisPoint(tube, c)), side)) > section * 0.64) { colour = [0.12, 0.15, 0.135]; material = 5; }
     }
     builder.triangle(...tri, colour, [0, 1, 0], material);
   };
@@ -14072,14 +14645,17 @@ function lampMesh(builder, tube) {
   const spacing = 20, phase = tube.index * 13.71 % spacing;
   for (let s = spacing - phase; s < tube.length; s += spacing) {
     const centre = add(tube.a, scale(tube.axis, s)), sign = Math.floor((s + phase) / spacing) % 2 ? 1 : -1;
-    const radial = unit(add(scale(tube.u, sign * 0.93), scale(tube.v, 0.37))), p = add(centre, scale(radial, tube.radius - 0.025));
+    const radial = unit(add(scale(tube.u, sign * 0.93), scale(tube.v, 0.37))), p = add(centre, scale(radial, tube.radius - 0.30));
     if (tube.water !== null && p[1] < tube.water + 1 || tube.neighbours.some(n => dryDistance(n, p) < -0.1)) continue;
     const tangent = unit(cross(tube.axis, radial)), normal = scale(radial, -1);
     const point = (x, y) => add(p, add(scale(tube.axis, x), scale(tangent, y)));
-    builder.quad(point(-0.55, -0.90), point(0.55, -0.90), point(0.55, 0.90), point(-0.55, 0.90), [1.8, 0.78, 0.18], normal, 4);
-    for (let y = -0.75; y < 0.9; y += 0.3) {
-      const offset = scale(normal, 0.005);
-      builder.quad(add(point(-0.55, y), offset), add(point(0.55, y), offset), add(point(0.55, y + 0.035), offset), add(point(-0.55, y + 0.035), offset), [0.04, 0.045, 0.03], normal, 0);
+    // Flush metal surrounds/cages sit on the already-solid wall, around a warm glass pane.
+    builder.quad(point(-0.78, -1.24), point(0.78, -1.24), point(0.78, 1.24), point(-0.78, 1.24), [0.050, 0.075, 0.064], normal, 6);
+    const lightOffset = scale(normal, 0.005);
+    builder.quad(add(point(-0.66, -1.10), lightOffset), add(point(0.66, -1.10), lightOffset), add(point(0.66, 1.10), lightOffset), add(point(-0.66, 1.10), lightOffset), [2.8, 1.25, 0.35], normal, 4);
+    for (let y = -0.9; y < 1.1; y += 0.3) {
+      const offset = scale(normal, 0.011);
+      builder.quad(add(point(-0.66, y), offset), add(point(0.66, y), offset), add(point(0.66, y + 0.045), offset), add(point(-0.66, y + 0.045), offset), [0.04, 0.050, 0.036], normal, 0);
     }
   }
 }
@@ -14089,8 +14665,8 @@ function buildWorld(world, { indices = null, props = true, flows = true } = {}) 
   const opaque = GAME.mesh.builder(), water = GAME.mesh.builder(), flow = GAME.mesh.builder(), lamps = GAME.mesh.builder();
   for (const tube of selected) { shellMesh(opaque, tube); waterMesh(water, tube); lampMesh(lamps, tube); }
   if (props) {
-    for (const pipe of world.pipes || []) opaque.tag(0).capsule(pipe.a, pipe.b, pipe.radius, [0.23, 0.17, 0.10], 20, 6);
-    for (const pile of world.dirt || []) opaque.tag(0).ellipsoid(pile.centre, pile.radii, [0.19, 0.14, 0.052], 20, 12);
+    for (const pipe of world.pipes || []) opaque.tag(6).capsule(pipe.a, pipe.b, pipe.radius, [0.13, 0.17, 0.15], 20, 6);
+    for (const pile of world.dirt || []) opaque.tag(12).ellipsoid(pile.centre, pile.radii, [0.19, 0.14, 0.052], 20, 12);
   }
   if (flows) for (const sheet of inflowSheets(world)) flowMesh(flow, sheet);
   return { opaque: opaque.build(), water: water.build(), flow: flow.build(), lamps: lamps.build(),
@@ -14127,11 +14703,29 @@ function create(gfx) {
     const key = `${kind}:${index}`;
     if (!propCache.has(key)) {
       const b = GAME.mesh.builder();
-      if (kind === 'pipe') b.capsule(value.a, value.b, value.radius, [0.23, 0.17, 0.10], 20, 6);
-      else b.ellipsoid(value.centre, value.radii, [0.19, 0.14, 0.052], 20, 12);
+      if (kind === 'pipe') b.tag(6).capsule(value.a, value.b, value.radius, [0.13, 0.17, 0.15], 20, 6);
+      else b.tag(12).ellipsoid(value.centre, value.radii, [0.19, 0.14, 0.052], 20, 12);
       propCache.set(key, { opaque: mesh.upload(b.build()) });
     }
     return propCache.get(key).opaque;
+  }
+  function surface(tube) {
+    return { origin: tube.a, axis: tube.axis, right: tube.u, up: tube.v, length: tube.length,
+      radius: tube.radius, water: tube.water ?? Math.min(tube.a[1], tube.b[1]) - tube.radius,
+      phase: tube.index * 13.71 % 20 };
+  }
+  function nearestTube(p) {
+    let found = null, best = Infinity;
+    for (const tube of tubes) if (dryDistance(tube, p) <= 0) {
+      const distance = distance2(axisPoint(tube, p), p);
+      if (distance < best) { best = distance; found = tube; }
+    }
+    if (found) return found;
+    for (const tube of tubes) {
+      const distance = distance2(axisPoint(tube, p), p);
+      if (distance < best) { best = distance; found = tube; }
+    }
+    return found;
   }
   function nearbyProps(cam) {
     const result = [];
@@ -14172,15 +14766,20 @@ function create(gfx) {
   }
   function draw(cam, rings = [], guide = [], stars = []) {
     if (!world) throw new Error('sewer-lite draw before setWorld');
-    const time = reducedMotion.matches ? 0 : performance.now() / 1000, opts = { fog, density: 0.012, far: 1000, time };
+    const time = reducedMotion.matches ? 0 : performance.now() / 1000, opts = { fog, density: 0.0105, far: 1000, time, encoded: true };
     mesh.clear(fog);
     const selected = tubes.filter(tube => shellDistance(tube, cam.pos) < RANGE);
     for (const tube of selected) {
-      const handles = tunnelHandle(tube.index); mesh.draw(handles.opaque, cam, opts); mesh.draw(handles.water, cam, opts); mesh.draw(handles.lamps, cam, { ...opts, unlit: true });
+      const handles = tunnelHandle(tube.index), tunnelOpts = { ...opts, sewer: surface(tube) };
+      mesh.draw(handles.opaque, cam, tunnelOpts); mesh.draw(handles.water, cam, tunnelOpts); mesh.draw(handles.lamps, cam, { ...tunnelOpts, unlit: true });
     }
     const props = nearbyProps(cam), flows = nearFlows(cam);
-    for (const p of props) mesh.draw(propHandle(p.value, p.kind, p.index), cam, opts);
-    for (const { sheet, index } of flows) mesh.draw(flowHandle(sheet, index), cam, { ...opts, depthWrite: false, unlit: true });
+    for (const p of props) {
+      const centre = p.kind === 'pipe' ? middle(p.value.a, p.value.b) : p.value.centre;
+      mesh.draw(propHandle(p.value, p.kind, p.index), cam, { ...opts, sewer: surface(nearestTube(centre)) });
+    }
+    for (const { sheet, index } of flows) mesh.draw(flowHandle(sheet, index), cam,
+      { ...opts, sewer: surface(tubes[sheet.source]), depthWrite: false });
     const frame = GAME.mesh.markers(rings, guide, stars, { time, cam });
     for (const kind of ['opaque', 'transparent', 'xray']) {
       mesh.update(markers[kind], frame[kind]);
@@ -16086,6 +16685,7 @@ function applyTheme(id) {
   const theme = GAME.themes.theme(id);
   renderer.setTheme(theme);
   stage.style.setProperty('--star', `rgb(${theme.collectibleStar.map(v => Math.round(v ** (1 / 2.2) * 255)).join(', ')})`);
+  if (course && graphics.compatibility && !isSewer()) prepareCourseGraphics().catch(fail);
 }
 
 // Settings the game applies itself; the camera and the input read theirs every frame.
@@ -16093,7 +16693,7 @@ function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
   else if (key === 'musicTrack') GAME.sound.setSong(value);
   else if (key === 'theme') applyTheme(value);
-  else if (key === 'quality') resolution.setBudget(graphics.compatibility ? 'compatibility' : value);
+  else if (key === 'quality') resolution.setBudget(graphics.compatibility && value === 'auto' ? 'compatibility' : value);
   else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
   else if (key === 'invertY' && mode === 'paused' && !settingsPanel.isOpen) showPause();
 }
@@ -16647,15 +17247,17 @@ async function boot() {
   // Music renders while the shaders compile; it starts playing at the first press once ready.
   GAME.sound.load(GAME.settings.get('musicTrack'));
   if (menuEnvironment === 'sewer') GAME.sound.setEnvironment('sewer');
-  // Compatibility creates only the display and shared mesh program. The full renderer prepares
-  // its display passes and two scenes in sequence instead of linking them concurrently.
+  // Compatibility prepares small display/glow and geometry/sky programs. The full renderer
+  // prepares its display passes and two scenes in sequence.
   const graphicsStarted = performance.now();
-  GAME.post.init({ safe: graphics.compatibility });
+  GAME.post.init({ safe: graphics.compatibility, enhanced: graphics.compatibility });
   await prepareGraphics();
   renderer = (graphics.compatibility ? GAME.cityLiteRenderer : GAME.cityRenderer).create(GAME.gfx);
   await prepareGraphics();
   sewerFlightRenderer = (graphics.compatibility ? GAME.sewerLiteRenderer : GAME.sewerFlightRenderer).create(GAME.gfx);
   await prepareGraphics();
+  api.graphicsReadyMs = performance.now() - graphicsStarted;
+  console.log(`[gfx] ${GAME.gfx.programs.length} programs ready in ${(api.graphicsReadyMs / 1000).toFixed(2)}s`);
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
   shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH, collapseHint: () => {
     const selected = surfaceSession?.course ?? course;
@@ -16675,14 +17277,13 @@ async function boot() {
     }
   });
   refreshShopButtons();
-  resolution.setBudget(graphics.compatibility ? 'compatibility' : GAME.settings.get('quality'));
+  resolution.setBudget(graphics.compatibility && GAME.settings.get('quality') === 'auto' ? 'compatibility' : GAME.settings.get('quality'));
   applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
   GAME.settings.onChange(applySetting);
   refreshInfo();
   await loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
   requireGraphics();
   showTitle();
-  console.log(`[gfx] ${GAME.gfx.programs.length} programs ready in ${((performance.now() - graphicsStarted) / 1000).toFixed(2)}s`);
 
   if (params.has('freeze')) return startFrozen();
   startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('title-shop').disabled = $('course-load').disabled = false;
@@ -16803,6 +17404,7 @@ function startFrozen() {
   let rendered = 0;
   const frozen = now => {
     if (graphics.recovering || GAME.gfx.contextLost()) return;
+    if (graphicsPreparation) { requestAnimationFrame(frozen); return; }
     resolution.fitCanvas();
     const [w, h] = graphics.compatibility ? resolution.renderSize() : [canvas.width, canvas.height];
     hudFrame(render(now, w, h));
