@@ -2,9 +2,12 @@
 
 Play at **https://julian-magnusson.github.io/game/**.
 
-Graphics startup can fall back to simpler effects if a desktop driver rejects bloom or film
-shaders. A graphics reset gets one automatic startup retry; a repeated interruption offers
-**Retry graphics**. Saved progress and settings are preserved.
+Windows starts with lighter city and Sewer meshes instead of compiling the large ray-tracing
+shaders. This path keeps real obstacles and depth occlusion, using a small geometry shader and
+a 540p pixel budget. Mac and mobile keep the full renderer, with a simpler display fallback
+for optional effect failures. Graphics interruptions stop rendering without automatic reloads;
+the full renderer offers a single **use compatibility graphics** switch. Interruptions are
+remembered so later visits use compatibility rendering. Saved progress and preferences are preserved.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional
 touch stick on mobile. Find stars on harder detours, finish the course to save them, then spend

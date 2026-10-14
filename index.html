@@ -548,7 +548,7 @@
   <p id="sewer-note" hidden></p>
   <button id="environment-switch" class="btn" type="button" hidden><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><ellipse cx="16" cy="12" rx="12" ry="6" stroke="currentColor"/><path d="M4 12v5c0 8 24 8 24 0v-5M8 10l16 4M8 14l16-4M16 6v12" stroke="currentColor"/></svg><span>The Sewer</span></button>
   <div id="status" role="status" aria-live="polite"></div>
-  <button id="graphics-retry" class="btn" type="button" hidden>retry graphics</button>
+  <button id="graphics-retry" class="btn" type="button" hidden>use compatibility graphics</button>
 </div>
 <div id="course-dialog" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="course-dialog-title">
   <div class="course-sheet">
@@ -9250,6 +9250,32 @@ GAME.glsl = { fragmentPrelude, vertexPrelude, UNIFORMS, LIB };
 
 ;(function () {
 'use strict';
+// ---- src/engine/graphics-profile.js ----
+// Choose the renderer before any scene shader is created. Windows uses conventional meshes;
+// a remembered interruption also avoids retrying the same expensive ray-tracing program.
+const KEY = 'neonflight.graphics.compat.v1';
+
+function select({ platform = '', userAgentPlatform = '', userAgent = '', requested = '', remembered = false } = {}) {
+  const windows = /^win/i.test(platform) || /^windows$/i.test(userAgentPlatform) || /Windows NT/i.test(userAgent);
+  const reason = windows ? 'windows' : requested === 'safe' ? 'requested' : remembered ? 'remembered' : 'standard';
+  return { compatibility: reason !== 'standard', renderer: reason === 'standard' ? 'raytrace' : 'mesh', reason };
+}
+
+let remembered = false;
+try { remembered = localStorage.getItem(KEY) === '1'; } catch { /* the explicit URL still works */ }
+const profile = select({ platform: navigator.platform, userAgentPlatform: navigator.userAgentData?.platform,
+  userAgent: navigator.userAgent, requested: new URLSearchParams(location.search).get('graphics'), remembered });
+
+function rememberCompatibility() {
+  try { localStorage.setItem(KEY, '1'); } catch { /* keep recovery explicit when storage is refused */ }
+}
+
+GAME.graphicsProfile = { ...profile, key: KEY, select, rememberCompatibility };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/engine/gl.js ----
 // WebGL2 core: context, programs (with the shared GLSL prelude), render targets and drawing.
 // Renderers receive this as `gfx`; they never create their own context or touch the canvas.
@@ -9257,7 +9283,7 @@ GAME.glsl = { fragmentPrelude, vertexPrelude, UNIFORMS, LIB };
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl2', {
   antialias: false, alpha: false, depth: false, stencil: false,
-  premultipliedAlpha: false, powerPreference: 'high-performance',
+  premultipliedAlpha: false, powerPreference: GAME.graphicsProfile?.compatibility ? 'default' : 'high-performance',
 });
 function gfxError(code, message, details = {}) {
   const error = new Error(message);
@@ -9279,7 +9305,8 @@ function createHandle(create, resource) {
 }
 if (!gl) throw gfxError('GFX_UNAVAILABLE', 'WebGL2 is not available in this browser.');
 requireContext('initializing WebGL');
-if (!gl.getExtension('EXT_color_buffer_float')) {
+const hasFloatColour = !!gl.getExtension('EXT_color_buffer_float');
+if (!hasFloatColour && !GAME.graphicsProfile?.compatibility) {
   requireContext('checking HDR support');
   throw gfxError('GFX_UNSUPPORTED', 'EXT_color_buffer_float is required (HDR rendering).');
 }
@@ -10503,6 +10530,7 @@ const { canvas, timerPoll } = GAME.gfx;
 const PIXEL_BUDGET = {
   auto: matchMedia('(pointer: coarse)').matches ? 1280 * 720 : 2560 * 1440,
   high: 2560 * 1440, balanced: 1920 * 1080, performance: 1280 * 720,
+  compatibility: 960 * 540,
 };
 const SCALES = [1, 0.85, 0.72, 0.6, 0.5, 0.42];
 const LATE_DT = 1 / 50;
@@ -13312,6 +13340,870 @@ GAME.sewerFlightRenderer = { create, inflowSheets };
 
 ;(function () {
 'use strict';
+// ---- src/render/mesh.js ----
+// Small conventional geometry pipeline. This deliberately has no scene GLSL library, noise
+// textures or ray tracing. Both lightweight environments share this single program.
+const STRIDE = 11;
+const MATERIAL = Object.freeze({ PLAIN: 0, FACADE: 1, BRICK: 2, WATER: 3, LIGHT: 4 });
+const vertex = `
+layout(location=0) in vec3 aPosition;
+layout(location=1) in vec3 aNormal;
+layout(location=2) in vec4 aColour;
+layout(location=3) in float aMaterial;
+uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
+uniform vec2 uTanHalf, uClip;
+out vec3 vPosition, vNormal;
+out vec4 vColour;
+out float vDepth, vMaterial;
+void main() {
+  vec3 p = aPosition - uCamPos;
+  float z = dot(p, uCamFwd);
+  float q = (uClip.y + uClip.x) / (uClip.y - uClip.x);
+  gl_Position = vec4(dot(p,uCamRight)/uTanHalf.x, dot(p,uCamUp)/uTanHalf.y,
+    q*z-2.0*uClip.y*uClip.x/(uClip.y-uClip.x), z);
+  vPosition=aPosition; vNormal=aNormal; vColour=aColour; vDepth=z; vMaterial=aMaterial;
+}`;
+const fragment = `
+in vec3 vPosition, vNormal;
+in vec4 vColour;
+in float vDepth, vMaterial;
+uniform vec3 uFog, uLight, uTint;
+uniform float uDensity, uAlpha, uUnlit, uTimeLite;
+void main() {
+  vec3 n=normalize(vNormal), col=vColour.rgb;
+  float light=mix(0.64+0.36*max(dot(n,uLight),0.0),1.0,uUnlit);
+  if(vMaterial>0.5 && vMaterial<1.5 && abs(n.y)<0.5) {
+    vec2 p=vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y);
+    vec2 cell=floor(p/vec2(3.4,4.0)), uv=fract(p/vec2(3.4,4.0));
+    float window=step(0.18,uv.x)*step(uv.x,0.78)*step(0.20,uv.y)*step(uv.y,0.72);
+    float room=step(0.34,fract(sin(dot(cell,vec2(12.93,78.21)))*43758.5));
+    col=mix(col,col*1.3+vec3(0.18,0.20,0.24),window*room*0.62);
+  } else if(vMaterial>1.5 && vMaterial<2.5) {
+    vec2 p=abs(n.y)>0.6?vPosition.xz:vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y);
+    float row=floor(p.y/0.65);
+    vec2 uv=fract(vec2(p.x/1.7+mod(row,2.0)*0.5,p.y/0.65));
+    float mortar=1.0-step(0.055,min(uv.x,uv.y));
+    col*=mix(0.92+0.12*fract(sin(row*7.1+floor(p.x/1.7))*213.1),0.55,mortar);
+  } else if(vMaterial>2.5 && vMaterial<3.5) {
+    float ripple=sin(vPosition.x*0.75+uTimeLite*0.8)*sin(vPosition.z*0.68-uTimeLite*0.6);
+    col*=0.88+ripple*0.10; light=0.92;
+  } else if(vMaterial>3.5) light=1.0;
+  float fog=1.0-exp(-max(vDepth-35.0,0.0)*uDensity);
+  fragColor=vec4(mix(col*light*uTint,uFog,fog),vColour.a*uAlpha);
+}`;
+const sub=(a,b)=>a.map((v,i)=>v-b[i]);
+const add=(a,b)=>a.map((v,i)=>v+b[i]);
+const mul=(a,s)=>a.map(v=>v*s);
+const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const unit=a=>{ const l=Math.hypot(...a); return l>1e-12?mul(a,1/l):[0,1,0]; };
+function basis(normal) {
+  const n=unit(normal), u=unit(cross(Math.abs(n[1])<0.9?[0,1,0]:[0,0,1],n));
+  return {n,u,v:cross(n,u)};
+}
+
+class Builder {
+  constructor() { this.values=[]; this.parts=[]; this.material=0; }
+  get count() { return this.values.length/STRIDE; }
+  tag(value) { this.material=value; return this; }
+  append(data) {
+    if(data.length%STRIDE)throw new Error('appended mesh data has an incomplete vertex');
+    const start=this.values.length;
+    for(let i=0;i<data.length;i++)this.values[start+i]=data[i];
+    return this;
+  }
+  triangle(a,b,c,colour,normal=null,material=this.material) {
+    let normals=normal && Array.isArray(normal[0])?normal:[normal||unit(cross(sub(b,a),sub(c,a)))];
+    if(normals.length===1) normals=[normals[0],normals[0],normals[0]];
+    const sum=add(add(normals[0],normals[1]),normals[2]);
+    if(dot(cross(sub(b,a),sub(c,a)),sum)<0) { [b,c]=[c,b]; [normals[1],normals[2]]=[normals[2],normals[1]]; }
+    const alpha=colour[3]??1;
+    for(const [i,p] of [a,b,c].entries()) this.values.push(...p,...normals[i],colour[0],colour[1],colour[2],alpha,material);
+    return this;
+  }
+  quad(a,b,c,d,colour,normal,material=this.material) {
+    const ns=normal && Array.isArray(normal[0])?normal:null;
+    this.triangle(a,b,c,colour,ns?[ns[0],ns[1],ns[2]]:normal,material);
+    this.triangle(a,c,d,colour,ns?[ns[0],ns[2],ns[3]]:normal,material); return this;
+  }
+  part(meta,fn) { const start=this.count; fn(this); this.parts.push({...meta,start,count:this.count-start}); return this; }
+  box(b,colour) {
+    const [x,y,z,X,Y,Z]=b, p=[[x,y,z],[X,y,z],[X,Y,z],[x,Y,z],[x,y,Z],[X,y,Z],[X,Y,Z],[x,Y,Z]];
+    for(const [ids,n] of [[[0,3,2,1],[0,0,-1]],[[4,5,6,7],[0,0,1]],[[0,4,7,3],[-1,0,0]],
+      [[1,2,6,5],[1,0,0]],[[0,1,5,4],[0,-1,0]],[[3,7,6,2],[0,1,0]]])
+      this.quad(...ids.map(i=>p[i]),colour,n);
+    return this;
+  }
+  ellipsoid(centre,radii,colour,segments=12,rings=8) {
+    const point=(j,k)=>{
+      const a=j*Math.PI/rings, t=k*Math.PI*2/segments, d=[Math.sin(a)*Math.cos(t),Math.cos(a),Math.sin(a)*Math.sin(t)];
+      return {p:d.map((v,i)=>centre[i]+v*radii[i]),n:unit(d.map((v,i)=>v/radii[i]))};
+    };
+    for(let j=0;j<rings;j++) for(let k=0;k<segments;k++) {
+      const q=[point(j,k),point(j+1,k),point(j+1,k+1),point(j,k+1)];
+      this.quad(...q.map(v=>v.p),colour,q.map(v=>v.n));
+    }
+    return this;
+  }
+  tube(a,b,radius,colour,segments=12,{inside=false,caps=false}={}) {
+    const frame=basis(sub(b,a)), sign=inside?-1:1;
+    const radial=k=>add(mul(frame.u,Math.cos(k*Math.PI*2/segments)),mul(frame.v,Math.sin(k*Math.PI*2/segments)));
+    for(let k=0;k<segments;k++) {
+      const r=radial(k), s=radial(k+1), pa=add(a,mul(r,radius)), pb=add(b,mul(r,radius)),
+        pc=add(b,mul(s,radius)), pd=add(a,mul(s,radius));
+      this.quad(pa,pb,pc,pd,colour,[mul(r,sign),mul(r,sign),mul(s,sign),mul(s,sign)]);
+      if(caps) { this.triangle(a,pd,pa,colour,mul(frame.n,-sign)); this.triangle(b,pb,pc,colour,mul(frame.n,sign)); }
+    }
+    return this;
+  }
+  capsule(a,b,radius,colour,segments=12,rings=4) {
+    if(Math.hypot(...sub(a,b))<1e-8) return this.ellipsoid(a,[radius,radius,radius],colour,segments,rings*2);
+    this.tube(a,b,radius,colour,segments);
+    const frame=basis(sub(b,a));
+    for(const [centre,sign] of [[a,-1],[b,1]]) {
+      const point=(j,k)=>{
+        const theta=j*Math.PI/(2*rings), angle=k*Math.PI*2/segments;
+        const radial=add(mul(frame.u,Math.cos(angle)),mul(frame.v,Math.sin(angle)));
+        const n=add(mul(frame.n,sign*Math.cos(theta)),mul(radial,Math.sin(theta)));
+        return {p:add(centre,mul(n,radius)),n};
+      };
+      for(let j=0;j<rings;j++) for(let k=0;k<segments;k++) {
+        const q=[point(j,k),point(j+1,k),point(j+1,k+1),point(j,k+1)];
+        this.quad(...q.map(v=>v.p),colour,q.map(v=>v.n));
+      }
+    }
+    return this;
+  }
+  ring(centre,normal,radius,thickness,colour,segments=48,sides=6) {
+    const frame=basis(normal);
+    const point=(j,k)=>{
+      const a=j*Math.PI*2/segments, b=k*Math.PI*2/sides;
+      const radial=add(mul(frame.u,Math.cos(a)),mul(frame.v,Math.sin(a)));
+      const n=add(mul(radial,Math.cos(b)),mul(frame.n,Math.sin(b)));
+      return {p:add(centre,add(mul(radial,radius),mul(n,thickness))),n};
+    };
+    for(let j=0;j<segments;j++) for(let k=0;k<sides;k++) {
+      const q=[point(j,k),point(j+1,k),point(j+1,k+1),point(j,k+1)];
+      this.quad(...q.map(v=>v.p),colour,q.map(v=>v.n));
+    }
+    return this;
+  }
+  build() { return new Float32Array(this.values); }
+  finish() { return this.build(); }
+}
+
+const cache=new WeakMap();
+function create(gfx) {
+  if(cache.has(gfx)) return cache.get(gfx);
+  const {gl}=gfx, program=gfx.program('geometry-lite',fragment,vertex,{library:false});
+  const handles=new Set();
+  function guard(operation) {
+    if(gfx.contextLost?.()) { const e=new Error(`Graphics context was lost while ${operation}.`); e.code='GFX_CONTEXT_LOST'; throw e; }
+  }
+  function upload(data,{dynamic=false}={}) {
+    guard('uploading mesh');
+    const vao=gl.createVertexArray(), buffer=gl.createBuffer();
+    if(!vao||!buffer) { if(vao)gl.deleteVertexArray(vao); if(buffer)gl.deleteBuffer(buffer); guard('allocating mesh');
+      const e=new Error('Graphics mesh allocation failed.');e.code='GFX_RESOURCE_FAILED';throw e; }
+    const h={vao,buffer,count:0,capacity:0,data:null,dynamic,disposed:false};
+    gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    for(const [index,size,offset] of [[0,3,0],[1,3,3],[2,4,6],[3,1,10]]) {
+      gl.enableVertexAttribArray(index);gl.vertexAttribPointer(index,size,gl.FLOAT,false,STRIDE*4,offset*4);
+    }
+    gl.bindVertexArray(null);handles.add(h);
+    try { update(h,data); return h; } catch(error) { dispose(h);throw error; }
+  }
+  function update(h,data) {
+    if(h.disposed)throw new Error('update of disposed mesh');
+    if(!(data instanceof Float32Array)||data.length%STRIDE)throw new Error('mesh data must have position, normal, RGBA and material per vertex');
+    guard('updating mesh');gl.bindBuffer(gl.ARRAY_BUFFER,h.buffer);
+    if(data.byteLength>h.capacity||!h.capacity) {
+      gl.bufferData(gl.ARRAY_BUFFER,data,h.dynamic?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);h.capacity=data.byteLength;
+    } else if(data.byteLength) gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+    guard('updating mesh');
+    const error=gl.getError();
+    guard('checking mesh storage');
+    if(error&&error!==gl.NO_ERROR) {const e=new Error(`Graphics mesh storage failed (0x${Number(error).toString(16)}).`);
+      e.code='GFX_RESOURCE_FAILED';e.details={resource:'mesh buffer',bytes:data.byteLength,glError:error};throw e;}
+    h.data=data;h.count=data.length/STRIDE;gl.bindBuffer(gl.ARRAY_BUFFER,null);return h;
+  }
+  function draw(h,cam,{fog=[0.03,0.04,0.06],density=0.002,near=0.25,far=1800,unlit=false,
+    alpha=1,depthTest=true,depthWrite=true,cull=false,colour=[1,1,1],time=0}={}) {
+    guard('drawing mesh');if(!h||!h.count)return;
+    program.use().setAll({uCamPos:cam.pos,uCamRight:cam.right,uCamUp:cam.up,uCamFwd:cam.fwd,
+      uTanHalf:cam.tanHalf,uClip:[near,far],uFog:fog,uDensity:density,uTint:colour,uAlpha:alpha,
+      uUnlit:unlit?1:0,uLight:unit([-0.4,0.8,-0.25]),uTimeLite:time});
+    if(depthTest)gl.enable(gl.DEPTH_TEST);else gl.disable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);gl.depthMask(depthWrite);
+    if(cull)gl.enable(gl.CULL_FACE);else gl.disable(gl.CULL_FACE);
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(h.vao);gl.drawArrays(gl.TRIANGLES,0,h.count);guard('drawing mesh');
+  }
+  function clear(colour=[0.01,0.02,0.04]) {
+    guard('clearing geometry target');gl.depthMask(true);gl.clearColor(...colour,1);gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);guard('clearing geometry target');
+  }
+  function finish() { gl.bindVertexArray(null);gl.depthMask(true);gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.disable(gl.BLEND); }
+  function dispose(h) { if(!h||h.disposed)return;gl.deleteBuffer(h.buffer);gl.deleteVertexArray(h.vao);h.disposed=true;handles.delete(h); }
+  const api={program,upload,update,draw,clear,finish,dispose,disposeAll:()=>[...handles].forEach(dispose)};
+  cache.set(gfx,api);return api;
+}
+
+// Actual course meshes, shared by the two lightweight worlds. Markers use world depth;
+// only the game's existing next-gate/guide x-ray hint gets a separate dim pass.
+const markerRingCache=new Map(), MAX_CACHED_RINGS=96;
+function markerRing(builder,centre,normal,radius,thickness,colour,cacheable) {
+  if(!cacheable) {builder.ring(centre,normal,radius,thickness,colour);return;}
+  const key=[...centre,...normal,radius,thickness,...colour].join(',');
+  let data=markerRingCache.get(key);
+  if(!data) {
+    data=new Builder().tag(MATERIAL.LIGHT).ring(centre,normal,radius,thickness,colour).build();
+    if(markerRingCache.size>=MAX_CACHED_RINGS)markerRingCache.delete(markerRingCache.keys().next().value);
+  } else markerRingCache.delete(key);
+  markerRingCache.set(key,data);builder.append(data);
+}
+function markers(rings=[],guide=[],stars=[],{theme=null,time=0,cam=null}={}) {
+  const opaque=new Builder().tag(MATERIAL.LIGHT), transparent=new Builder().tag(MATERIAL.LIGHT),
+    xray=new Builder().tag(MATERIAL.LIGHT), parts=[];
+  const boost=theme?.booster||[0.35,1,0.22], starColour=theme?.collectibleStar||[1,0.65,0.12];
+  const pos=p=>[p.x,p.y,p.z], distance=p=>cam?Math.hypot(...sub(pos(p),cam.pos)):0;
+  for(const r of rings) {
+    if(r.kind==='secret'&&distance(r)>=125) { /* facade warnings can still be visible below */ }
+    else {
+      const colour=r.kind==='finish'?[1,0.72,0.22]:r.kind==='boost'?boost:r.kind==='later'?[0.12,0.62,1]
+        :r.kind==='secret'?[0.65,0.008,0.014,0.48]:[1,0.10,0.5];
+      const thickness=r.kind==='secret'?0.15:Math.max(0.20,Math.min(0.45,r.radius*0.03));
+      const target=r.kind==='secret'||r.kind==='flare'?transparent:opaque;
+      target.part({kind:'ring',ring:r,centre:pos(r),radius:r.radius,thickness},
+        b=>markerRing(b,pos(r),r.n,r.radius,thickness,colour,r.kind!=='flare'));
+      if(r.xray>0&&r.kind!=='secret') markerRing(xray,pos(r),r.n,r.radius,thickness*0.55,
+        [...colour.slice(0,3),r.xray*0.20],r.kind!=='flare');
+      if(r.kind==='finish') opaque.tube([r.x,r.y+r.radius+1,r.z],[r.x,r.y+r.radius+100,r.z],0.28,[1,0.72,0.22],6);
+    }
+    if(r.kind==='secret') for(const w of r.warnings||[]) {
+      const centre=pos(w), delta=cam?sub(centre,cam.pos):null;
+      if(delta&&(Math.hypot(...delta)>=180||dot(unit(delta),w.n)>=-0.04))continue;
+      const frame=basis(w.n), point=(x,y,offset=0)=>add(centre,add(mul(frame.u,x),add([0,y,0],mul(frame.n,offset))));
+      const panel=(x,y,hx,hy,colour,offset=0)=>opaque.quad(point(x-hx,y-hy,offset),point(x+hx,y-hy,offset),
+        point(x+hx,y+hy,offset),point(x-hx,y+hy,offset),colour,frame.n);
+      const start=opaque.count;
+      if(w.type==='windows') {
+        const cols=Math.max(1,Math.floor(w.halfWidth*2/2.1)), rows=Math.max(1,Math.floor(w.halfHeight*2/2.5));
+        for(let j=0;j<rows;j++)for(let i=0;i<cols;i++) {
+          const sx=w.halfWidth*2/cols, sy=w.halfHeight*2/rows;
+          const flicker=0.72+0.28*Math.sin(time*2.4+w.phase+i*0.43+j*1.31);
+          panel(-w.halfWidth+(i+0.5)*sx,-w.halfHeight+(j+0.5)*sy,sx*0.35,sy*0.33,[1.05*flicker,0.012,0.018]);
+        }
+      } else {
+        panel(0,0,w.halfWidth,w.halfHeight,[0.80,0.008,0.015]);
+        const s=Math.max(0.35,Math.min(w.halfWidth*0.77,w.halfHeight*0.83));
+        const a=point(0,s*0.86,0.02), b=point(-s*0.83,-s*0.66,0.02), c=point(s*0.83,-s*0.66,0.02);
+        for(const [p,q] of [[a,b],[b,c],[c,a]])opaque.tube(p,q,s*0.055,[1.7,1.7,1.7],4);
+        panel(0,s*0.08,s*0.085,s*0.30,[1.7,1.7,1.7],0.02);
+        panel(0,-s*0.46,s*0.09,s*0.09,[1.7,1.7,1.7],0.02);
+      }
+      parts.push({kind:'warning',warning:w,start,count:opaque.count-start});
+    }
+  }
+  for(let i=0;i<guide.length-1;i++) {
+    const a=guide[i],b=guide[i+1], colour=[1,0.20,0.62,Math.min(a[3],b[3])*0.85];
+    transparent.tube(a.slice(0,3),b.slice(0,3),0.13,colour,4);
+    if(a[5]>0&&b[5]>0)xray.tube(a.slice(0,3),b.slice(0,3),0.085,[1,0.20,0.62,Math.min(a[5],b[5])*0.12],4);
+  }
+  for(const s of stars) {
+    if(distance(s)>550)continue;
+    const centre=pos(s), angle=time*1.2+(s.phase||0), forward=[Math.sin(angle),0,Math.cos(angle)], side=[Math.cos(angle),0,-Math.sin(angle)],
+      normal=forward, target=s.collected?transparent:opaque, colour=[...starColour,s.collected?0.12:1], points=[];
+    for(let k=0;k<10;k++) {
+      const a=Math.PI/2+k*Math.PI/5, radius=s.radius*(k%2?0.46:1);
+      points.push(add(centre,add(mul(side,Math.cos(a)*radius),[0,Math.sin(a)*radius,0])));
+    }
+    target.part({kind:'star',star:s,centre,radius:s.radius},b=>{
+      const top=add(centre,mul(normal,s.radius*0.22)), bottom=sub(centre,mul(normal,s.radius*0.22));
+      for(let k=0;k<10;k++) { b.triangle(top,points[k],points[(k+1)%10],colour);b.triangle(bottom,points[(k+1)%10],points[k],colour); }
+    });
+  }
+  return {opaque:opaque.build(),transparent:transparent.build(),xray:xray.build(),parts:[...opaque.parts,...transparent.parts,...parts]};
+}
+
+GAME.mesh={STRIDE,MATERIAL,Builder,builder:()=>new Builder(),create,markers,basis,vertex,fragment};
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/render/city-lite.js ----
+// Compatibility city: tessellated versions of the exact collision solids, drawn with the small
+// shared mesh program. Chunk buffers are built only when visible, keeping startup and memory
+// modest even though the seeded city contains thousands of blocks.
+const CHUNK_CELLS=4, VIEW_DISTANCE=1050, MAX_RESIDENT=112;
+const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+const material=b=>!b[6]?GAME.mesh.MATERIAL.FACADE:b[6]===GAME.street.MATERIAL.WATER?GAME.mesh.MATERIAL.WATER:GAME.mesh.MATERIAL.PLAIN;
+
+function appendSolid(builder,b,colour,{segments=12,rings=8,capRings=4}={}) {
+  builder.tag(material(b));
+  if(b[7]===GAME.street.SHAPE.ELLIPSOID) {
+    const centre=[0,1,2].map(i=>(b[i]+b[i+3])/2), radii=[0,1,2].map(i=>(b[i+3]-b[i])/2);
+    builder.ellipsoid(centre,radii,colour,segments,rings);
+  } else if(b[7]>=GAME.street.SHAPE.BRANCH_X) {
+    const limb=GAME.street.capsuleData(b);builder.capsule(limb.a,limb.b,limb.radius,colour,segments,capRings);
+  } else builder.box(b,colour);
+}
+
+function solidMesh(bounds,colour=[0.15,0.18,0.2],{record=null,fall=0}={}) {
+  const builder=GAME.mesh.builder();appendSolid(builder,bounds,colour);
+  const data=builder.build(), stride=GAME.mesh.STRIDE;
+  if(record) for(let i=0;i<data.length;i+=stride) {
+    data.set(GAME.collapseMotion.worldPoint(record,Array.from(data.subarray(i,i+3))),i);
+    data.set(GAME.collapseMotion.worldVector(record,Array.from(data.subarray(i+3,i+6))),i+3);
+  } else if(fall) for(let i=1;i<data.length;i+=stride)data[i]-=fall;
+  return data;
+}
+
+function solidColour(b,theme,cell=0) {
+  const snow=theme?.snow||0, growth=theme?.growth||0, roof=theme?.roof||[0.02,0.025,0.035], fog=theme?.fog?.low||[0.03,0.04,0.06];
+  if(!b[6]) return roof.map((v,i)=>0.055+v*0.34+fog[i]*0.55+(growth&&i===1?0.03:0)+(cell%5)*0.002);
+  const M=GAME.street.MATERIAL;
+  const colours={
+    [M.BARK]:[0.13,0.065,0.035], [M.LEAVES]:growth?[0.075,0.19,0.062]:[0.04,0.12,0.07],
+    [M.WOOD]:[0.18,0.085,0.035], [M.METAL]:[0.17,0.21,0.25], [M.GLASS]:[0.10,0.24,0.28],
+    [M.STONE]:[0.24,0.26,0.28], [M.BRONZE]:[0.34,0.22,0.075],
+    [M.SIGN]:theme?.neon?.[cell%4]||[0.4,0.2,0.5], [M.WATER]:snow?[0.30,0.50,0.66]:[0.06,0.16,0.19],
+  };
+  const colour=colours[b[6]]||[0.15,0.17,0.2];
+  return b[6]===M.LEAVES&&snow?colour.map((v,i)=>v*(1-snow)+[0.58,0.69,0.79][i]*snow):colour;
+}
+
+function horizontal(builder,x0,z0,x1,z1,y,colour) {
+  if(x1<=x0||z1<=z0)return;
+  builder.quad([x0,y,z0],[x1,y,z0],[x1,y,z1],[x0,y,z1],colour,[0,1,0]);
+}
+
+// The street really has a circular opening. No triangle crosses the shaft's open disk;
+// cylinder walls and the floor use the exact same radius/bottom as collision.
+function terrainMesh(size,hole,colour) {
+  const b=GAME.mesh.builder();
+  if(!hole) horizontal(b,0,0,size,size,0,colour);
+  else {
+    const {x,z,radius:r,bottom}=hole, x0=x-r,x1=x+r,z0=z-r,z1=z+r;
+    horizontal(b,0,0,x0,size,0,colour);horizontal(b,x1,0,size,size,0,colour);
+    horizontal(b,x0,0,x1,z0,0,colour);horizontal(b,x0,z1,x1,size,0,colour);
+    for(let i=0;i<64;i++) {
+      const points=[];
+      for(const a of [i*Math.PI/32,(i+1)*Math.PI/32]) {
+        const dx=Math.cos(a),dz=Math.sin(a), square=r/Math.max(Math.abs(dx),Math.abs(dz));
+        points.push([x+dx*r,0,z+dz*r],[x+dx*square,0,z+dz*square]);
+      }
+      b.quad(points[0],points[1],points[3],points[2],colour,[0,1,0]);
+    }
+    b.tag(GAME.mesh.MATERIAL.BRICK).tube([x,bottom,z],[x,0,z],r,[0.055,0.065,0.048],64,{inside:true});
+    for(let i=0;i<64;i++) {
+      const a=i*Math.PI/32,c=(i+1)*Math.PI/32;
+      b.triangle([x,bottom,z],[x+Math.cos(a)*r,bottom,z+Math.sin(a)*r],
+        [x+Math.cos(c)*r,bottom,z+Math.sin(c)*r],[0.015,0.025,0.018],[0,1,0]);
+    }
+    b.tag(GAME.mesh.MATERIAL.PLAIN).ring([x,0.04,z],[0,1,0],r+0.16,0.16,[0.20,0.24,0.27],64);
+  }
+  return b.build();
+}
+
+function create(gfx) {
+  const mesh=GAME.mesh.create(gfx), reduced=typeof matchMedia==='function'?matchMedia('(prefers-reduced-motion: reduce)'):null;
+  let scene=null, theme=null, collapseState=null, tick=0;
+  const markerHandles={opaque:mesh.upload(new Float32Array(),{dynamic:true}),
+    transparent:mesh.upload(new Float32Array(),{dynamic:true}),xray:mesh.upload(new Float32Array(),{dynamic:true})};
+  function disposeScene() {
+    if(!scene)return;
+    for(const c of scene.chunks)if(c.handle)mesh.dispose(c.handle);
+    mesh.dispose(scene.ground);mesh.dispose(scene.moving);mesh.dispose(scene.pads);mesh.dispose(scene.fire);
+  }
+  function invalidate() {
+    if(!scene)return;
+    for(const c of scene.chunks) {if(c.handle)mesh.dispose(c.handle);c.handle=null;c.parts=[];c.detail=0;}
+    mesh.dispose(scene.ground);scene.ground=null;
+    mesh.dispose(scene.pads);scene.pads=null;scene.motionTime=null;
+  }
+  function setWorld(city,pads=[]) {
+    disposeScene();collapseState=city.collapse||null;
+    const width=Math.ceil(city.n/CHUNK_CELLS), chunks=Array.from({length:width*width},(_,index)=>{
+      const x=(index%width)*CHUNK_CELLS*city.cell,z=Math.floor(index/width)*CHUNK_CELLS*city.cell;
+      return {index,x,z,solids:[],parts:[],handle:null,used:0,top:0,detail:0,
+        centre:[x+CHUNK_CELLS*city.cell/2,0,z+CHUNK_CELLS*city.cell/2],radius:0};
+    });
+    for(let cell=0;cell<city.n*city.n;cell++) {
+      const ix=cell%city.n,iz=Math.floor(cell/city.n), chunk=chunks[Math.floor(iz/CHUNK_CELLS)*width+Math.floor(ix/CHUNK_CELLS)];
+      for(const bounds of city.boxes(cell)) {chunk.solids.push({cell,bounds});chunk.top=Math.max(chunk.top,bounds[4]);}
+    }
+    for(const c of chunks) {c.centre[1]=c.top/2;c.radius=Math.hypot(CHUNK_CELLS*city.cell/Math.SQRT2,c.top/2);}
+    scene={city,chunks,padData:pads,ground:null,pads:null,moving:mesh.upload(new Float32Array(),{dynamic:true}),
+      movingParts:[],markerParts:[],motionTime:null};
+  }
+  function setTheme(value) {
+    if(!value||!GAME.themes.list.includes(value))throw new Error('setTheme needs a theme from GAME.themes');
+    if(theme!==value) {theme=value;invalidate();}
+  }
+  function setCollapse(state) {if(collapseState!==state) {collapseState=state;invalidate();}}
+  function buildChunk(c,motion,cam) {
+    const b=GAME.mesh.builder(), city=scene.city, cellSize=city.cell;
+    const close=Math.hypot(c.centre[0]-cam.pos[0],c.centre[2]-cam.pos[2])<260;
+    const detail=close?{segments:12,rings:8,capRings:4}:{segments:8,rings:4,capRings:2};
+    if(c.handle)mesh.dispose(c.handle);
+    for(const part of c.solids) {
+      if(motion&&GAME.collapseMotion.movingBox(motion,part.cell,part.bounds))continue;
+      if(!part.bounds[6]&&collapseState?.falls[part.cell*4+3])continue;
+      b.part({...part,shape:part.bounds[7]||0,object:part.bounds[8]},q=>appendSolid(q,part.bounds,solidColour(part.bounds,theme,part.cell),detail));
+    }
+    // Flat parks and street markings are decorative; all physical ground remains y=0.
+    for(let iz=Math.floor(c.z/cellSize);iz<Math.min(city.n,c.z/cellSize+CHUNK_CELLS);iz++)
+      for(let ix=Math.floor(c.x/cellSize);ix<Math.min(city.n,c.x/cellSize+CHUNK_CELLS);ix++) {
+        const cell=iz*city.n+ix, x=(ix+0.5)*cellSize,z=(iz+0.5)*cellSize, hole=collapseState?.hole;
+        const nearHole=hole&&Math.hypot(x-hole.x,z-hole.z)<hole.radius+cellSize;
+        b.tag(GAME.mesh.MATERIAL.PLAIN);
+        if(city.park[cell]&&!nearHole) horizontal(b,x-15,z-15,x+15,z+15,0.006,
+          theme.snow?[0.30,0.39,0.48]:theme.growth?[0.06,0.105,0.047]:[0.04,0.07,0.047]);
+        if(!nearHole&&(ix%GAME.city.AVENUE_X===0||iz%GAME.city.AVENUE_Z===0)) {
+          const alongZ=ix%GAME.city.AVENUE_X===0;
+          for(const step of [-10,2]) horizontal(b,alongZ?x-0.10:x+step,alongZ?z+step:z-0.10,
+            alongZ?x+0.10:x+step+6,alongZ?z+step+6:z+0.10,0.012,[0.20,0.21,0.22]);
+        }
+      }
+    c.parts=b.parts;c.detail=close?2:1;c.handle=mesh.upload(b.build());return c.handle;
+  }
+  function visible(c,cam) {
+    const delta=c.centre.map((v,i)=>v-cam.pos[i]), distance=Math.hypot(...delta), depth=dot(delta,cam.fwd);
+    if(distance-c.radius>VIEW_DISTANCE||depth+c.radius<0)return false;
+    return Math.abs(dot(delta,cam.right))<=Math.max(0,depth)*cam.tanHalf[0]+c.radius*1.7
+      &&Math.abs(dot(delta,cam.up))<=Math.max(0,depth)*cam.tanHalf[1]+c.radius*1.7;
+  }
+  function updateMoving(motion) {
+    if(scene.motionTime===collapseState?.time)return;
+    const data=[], parts=[];
+    for(const record of motion?.records||[]) for(const bounds of record.boxes) {
+      const start=data.length/GAME.mesh.STRIDE, solid=solidMesh(bounds,solidColour(bounds,theme,record.cell),{record});
+      for(const v of solid)data.push(v);
+      parts.push({cell:record.cell,bounds,record,start,count:solid.length/GAME.mesh.STRIDE});
+    }
+    if(collapseState)for(const c of scene.chunks)for(const {cell,bounds} of c.solids)
+      if(!bounds[6]&&collapseState.falls[cell*4+3]&&!(motion&&GAME.collapseMotion.movingBox(motion,cell,bounds))) {
+        const start=data.length/GAME.mesh.STRIDE, fall=GAME.collapse.fallOffset(collapseState,cell),
+          solid=solidMesh(bounds,solidColour(bounds,theme,cell),{fall});
+        for(const v of solid)data.push(v);parts.push({cell,bounds,fall,start,count:solid.length/GAME.mesh.STRIDE});
+      }
+    mesh.update(scene.moving,new Float32Array(data));scene.movingParts=parts;scene.motionTime=collapseState?.time;
+  }
+  function buildPads() {
+    const b=GAME.mesh.builder().tag(GAME.mesh.MATERIAL.LIGHT), city=scene.city, colour=theme.booster||[0.35,1,0.22];
+    for(const p of scene.padData) {
+      const [x,z]=city.cellCenter(p.cell);b.ring([x,0.15,z],[0,1,0],p.radius,0.25,colour,32);
+      for(let y=8;y<p.height;y+=16)b.ring([x,y,z],[0,1,0],p.radius,0.12,[...colour,0.15],24,4);
+    }
+    scene.pads=mesh.upload(b.build());
+  }
+  function draw(cam,rings=[],guide=[],stars=[]) {
+    if(!theme||!scene)throw new Error('city draw before world/theme');
+    const now=reduced?.matches?0:performance.now()/1000, sky=theme.sky.horizon, fog=theme.fog.low,
+      options={fog,density:0.0016*theme.fog.density,time:now,far:1600};
+    mesh.clear(sky);tick++;
+    const motion=collapseState?.motion?GAME.collapseMotion.frame(collapseState):null;
+    if(!scene.ground) scene.ground=mesh.upload(terrainMesh(scene.city.size,collapseState?.hole,
+      theme.snow?[0.12,0.15,0.19]:[0.031,0.039,0.05]));
+    mesh.draw(scene.ground,cam,options);
+    const visibleChunks=scene.chunks.filter(c=>visible(c,cam));
+    for(const c of visibleChunks) {
+      c.used=tick;
+      if(!c.handle||(c.detail<2&&Math.hypot(c.centre[0]-cam.pos[0],c.centre[2]-cam.pos[2])<210))buildChunk(c,motion,cam);
+      mesh.draw(c.handle,cam,options);
+    }
+    const resident=scene.chunks.filter(c=>c.handle);
+    if(resident.length>MAX_RESIDENT)for(const c of resident.filter(c=>c.used!==tick).sort((a,b)=>a.used-b.used).slice(0,resident.length-MAX_RESIDENT)) {
+      mesh.dispose(c.handle);c.handle=null;c.parts=[];
+    }
+    updateMoving(motion);mesh.draw(scene.moving,cam,options);
+    if(!scene.pads)buildPads();mesh.draw(scene.pads,cam,{...options,unlit:true,depthWrite:false});
+    // Small flames around the real transformed vegetation; no particles or expensive passes.
+    if(motion&&collapseState.time>0.5) {
+      const fire=GAME.mesh.builder().tag(GAME.mesh.MATERIAL.LIGHT);
+      for(const r of motion.records)if(r.kind==='tree') {
+        const p=GAME.collapseMotion.worldPoint(r,r.firePoint), rise=2.4+Math.sin(now*4+r.cell)*0.5;
+        fire.triangle([p[0]-1.5,p[1],p[2]],[p[0]+1.5,p[1],p[2]],[p[0],p[1]+rise,p[2]],[1.5,0.24,0.025,0.85]);
+        fire.triangle([p[0],p[1],p[2]-1.5],[p[0],p[1],p[2]+1.5],[p[0],p[1]+rise,p[2]],[1.5,0.36,0.025,0.85]);
+      }
+      if(!scene.fire)scene.fire=mesh.upload(fire.build(),{dynamic:true});else mesh.update(scene.fire,fire.build());
+      mesh.draw(scene.fire,cam,{...options,unlit:true,depthWrite:false});
+    }
+    const markers=GAME.mesh.markers(rings,guide,stars,{theme,time:now,cam});scene.markerParts=markers.parts;
+    for(const name of ['opaque','transparent','xray'])mesh.update(markerHandles[name],markers[name]);
+    mesh.draw(markerHandles.opaque,cam,{...options,unlit:true,density:options.density*0.4});
+    mesh.draw(markerHandles.transparent,cam,{...options,unlit:true,depthWrite:false,density:options.density*0.4});
+    mesh.draw(markerHandles.xray,cam,{...options,unlit:true,depthTest:false,depthWrite:false,density:options.density*0.4});
+    mesh.finish();
+  }
+  // Startup/course loading can build this first view in short batches while the loading UI
+  // keeps repainting. Later frames reuse these buffers and lazily add newly visible chunks.
+  async function prepare(cam,{budgetMs=24}={}) {
+    if(!theme||!scene)return;
+    const current=scene, state=collapseState, motion=state?.motion?GAME.collapseMotion.frame(state):null;
+    let batch=performance.now();
+    for(const c of current.chunks.filter(c=>visible(c,cam))) {
+      if(current!==scene||state!==collapseState)return;
+      if(!c.handle)buildChunk(c,motion,cam);
+      if(performance.now()-batch>budgetMs) {await new Promise(resolve=>setTimeout(resolve,0));batch=performance.now();}
+    }
+    if(current!==scene||state!==collapseState)return;
+    if(!scene.ground)scene.ground=mesh.upload(terrainMesh(scene.city.size,collapseState?.hole,
+      theme.snow?[0.12,0.15,0.19]:[0.031,0.039,0.05]));
+    if(performance.now()-batch>budgetMs)await new Promise(resolve=>setTimeout(resolve,0));
+    if(current!==scene||state!==collapseState)return;
+    if(!scene.pads)buildPads();updateMoving(motion);
+  }
+  return {program:mesh.program,setWorld,setTheme,setCollapse,draw,prepare,get theme(){return theme;},
+    get scene(){return scene;},dispose:()=>{disposeScene();for(const h of Object.values(markerHandles))mesh.dispose(h);}};
+}
+
+GAME.cityLite={create,solidMesh,appendSolid,solidColour,terrainMesh,CHUNK_CELLS,VIEW_DISTANCE,MAX_RESIDENT};
+GAME.cityLiteRenderer=GAME.cityLite;
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/render/sewer-lite.js ----
+// Compatibility Sewer: ordinary depth-tested triangles, never a tunnel/overlay ray shader.
+// The visible shell is the boundary of the same water-clipped capsule union as collision.
+const STRIDE = 11, RANGE = 300, EPS = 0.002;
+const MAX_TUNNELS = 40, MAX_PROPS = 32, MAX_FLOWS = 8;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const sub = (a, b) => a.map((v, i) => v - b[i]);
+const add = (a, b) => a.map((v, i) => v + b[i]);
+const scale = (p, s) => p.map(v => v * s);
+const dot = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = p => scale(p, 1 / Math.max(1e-9, Math.hypot(...p)));
+const middle = (a, b) => a.map((v, i) => (v + b[i]) * 0.5);
+const centroid = t => t[0].map((v, i) => (v + t[1][i] + t[2][i]) / 3);
+const distance2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+const prepared = new WeakMap();
+
+function prepare(world) {
+  if (prepared.has(world)) return prepared.get(world);
+  const tubes = world.tunnels.map((tube, index) => {
+    const delta = sub(tube.b, tube.a), length = Math.hypot(...delta), axis = unit(delta);
+    const u = unit(cross(Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [0, 0, 1], axis));
+    const bounds = tube.a.map((v, i) => Math.min(v, tube.b[i]) - tube.radius)
+      .concat(tube.a.map((v, i) => Math.max(v, tube.b[i]) + tube.radius));
+    return { ...tube, index, delta, length, length2: Math.max(length * length, 1e-9), axis, u,
+      v: cross(axis, u), bounds, neighbours: [] };
+  });
+  for (const a of tubes) for (const b of tubes) if (a.index !== b.index
+    && a.bounds.every((v, i) => i >= 3 || v <= b.bounds[i + 3] && a.bounds[i + 3] >= b.bounds[i])) a.neighbours.push(b);
+  prepared.set(world, tubes); return tubes;
+}
+
+function axisPoint(tube, p) {
+  const t = clamp(dot(sub(p, tube.a), tube.delta) / tube.length2, 0, 1);
+  return add(tube.a, scale(tube.delta, t));
+}
+function shellDistance(tube, p) {
+  const x = p[0] - tube.a[0], y = p[1] - tube.a[1], z = p[2] - tube.a[2];
+  const t = clamp((x * tube.delta[0] + y * tube.delta[1] + z * tube.delta[2]) / tube.length2, 0, 1);
+  return Math.hypot(x - tube.delta[0] * t, y - tube.delta[1] * t, z - tube.delta[2] * t) - tube.radius;
+}
+function dryDistance(tube, p) {
+  return Math.max(shellDistance(tube, p), tube.water === null || tube.water === undefined ? -Infinity : tube.water - p[1]);
+}
+function insideDry(world, p, skipIndex = -1, margin = 0) {
+  return prepare(world).some(tube => tube.index !== skipIndex && dryDistance(tube, p) < -margin);
+}
+
+function clipPolygon(poly, signed) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], fa = signed(a), fb = signed(b);
+    const inA = fa >= -EPS, inB = fb >= -EPS;
+    if (inA) out.push(a);
+    if (inA !== inB) {
+      let lo = 0, hi = 1;
+      for (let k = 0; k < 16; k++) {
+        const f = (lo + hi) * 0.5, p = a.map((v, j) => v + (b[j] - v) * f);
+        if ((signed(p) >= -EPS) === inA) lo = f; else hi = f;
+      }
+      out.push(a.map((v, j) => v + (b[j] - v) * (lo + hi) * 0.5));
+    }
+  }
+  return out;
+}
+
+// Curved intersections are subdivided before clipping. In particular, testing edge midpoints
+// and the centre catches a branch piercing a triangle whose three corners are outside it.
+function subtractNeighbours(tri, neighbours, emit, start = 0, depth = 0) {
+  for (let k = start; k < neighbours.length; k++) {
+    const tube = neighbours[k], values = tri.map(p => dryDistance(tube, p));
+    if (values.every(v => v < -EPS)) return;
+    const allOut = values.every(v => v >= -EPS), centre = centroid(tri);
+    const edge = Math.sqrt(Math.max(distance2(tri[0], tri[1]), distance2(tri[1], tri[2]), distance2(tri[2], tri[0])));
+    let crossing = !allOut;
+    if (allOut) crossing = [centre, middle(tri[0], tri[1]), middle(tri[1], tri[2]), middle(tri[2], tri[0])]
+      .some(p => dryDistance(tube, p) < -EPS);
+    if (!crossing) continue;
+    if (depth < 6 && edge > 2.0) {
+      const ab = middle(tri[0], tri[1]), bc = middle(tri[1], tri[2]), ca = middle(tri[2], tri[0]);
+      for (const piece of [[tri[0], ab, ca], [ab, tri[1], bc], [ca, bc, tri[2]], [ab, bc, ca]])
+        subtractNeighbours(piece, neighbours, emit, k, depth + 1);
+      return;
+    }
+    if (allOut) return; // Tiny enclosed cuts are removed, never capped across a real opening.
+    const poly = clipPolygon(tri, p => dryDistance(tube, p));
+    for (let i = 1; i < poly.length - 1; i++) subtractNeighbours([poly[0], poly[i], poly[i + 1]], neighbours, emit, k + 1, depth);
+    return;
+  }
+  if (Math.hypot(...cross(sub(tri[1], tri[0]), sub(tri[2], tri[0]))) > 1e-7) emit(tri);
+}
+
+function ownWater(tri, tube, emit) {
+  const poly = tube.water === null || tube.water === undefined ? tri : clipPolygon(tri, p => p[1] - tube.water);
+  for (let i = 1; i < poly.length - 1; i++) subtractNeighbours([poly[0], poly[i], poly[i + 1]], tube.neighbours, emit);
+}
+
+function wallColour(tube, p) {
+  const along = dot(sub(p, tube.a), tube.axis), phase = tube.index * 13.71;
+  const rib = Math.abs((along + phase + 10) % 20 - 10) < 0.75;
+  const damp = tube.water === null ? 0 : 1 - clamp((p[1] - tube.water - 2) / 12, 0, 1);
+  const base = rib ? [0.20, 0.23, 0.21] : [0.24, 0.13, 0.074];
+  return { colour: base.map((v, i) => v * (1 - damp * 0.65) + [0.012, 0.043, 0.021][i] * damp), material: rib ? 0 : 2 };
+}
+
+function shellMesh(builder, tube) {
+  const segments = tube.radius > 45 ? 64 : 32, hemi = tube.radius > 45 ? 20 : 8;
+  const radial = k => add(scale(tube.u, Math.cos(k * Math.PI * 2 / segments)), scale(tube.v, Math.sin(k * Math.PI * 2 / segments)));
+  const emit = tri => {
+    const c = centroid(tri), style = wallColour(tube, c);
+    builder.triangle(...tri, style.colour, tri.map(p => unit(sub(axisPoint(tube, p), p))), style.material);
+  };
+  const rows = [0, tube.length];
+  for (let s = 8; s < tube.length; s += 8) rows.push(s);
+  for (let s = -(tube.index * 13.71 % 20); s < tube.length; s += 20)
+    for (const edge of [s - 0.75, s + 0.75]) if (edge > 0 && edge < tube.length) rows.push(edge);
+  rows.sort((a, b) => a - b);
+  for (let j = 0; j < rows.length - 1; j++) for (let k = 0; k < segments; k++) {
+    const a = add(tube.a, scale(tube.axis, rows[j])), b = add(tube.a, scale(tube.axis, rows[j + 1]));
+    const r = scale(radial(k), tube.radius), s = scale(radial(k + 1), tube.radius);
+    const points = [add(a, r), add(b, r), add(b, s), add(a, s)];
+    ownWater([points[0], points[1], points[2]], tube, emit); ownWater([points[0], points[2], points[3]], tube, emit);
+  }
+  // Rounded ends are part of collision; there are deliberately no planar tunnel endcaps.
+  for (const [centre, sign] of [[tube.a, -1], [tube.b, 1]]) {
+    const point = (j, k) => {
+      const angle = j * Math.PI / (2 * hemi);
+      return add(centre, add(scale(tube.axis, sign * Math.cos(angle) * tube.radius), scale(radial(k), Math.sin(angle) * tube.radius)));
+    };
+    for (let j = 0; j < hemi; j++) for (let k = 0; k < segments; k++) {
+      const p = [point(j, k), point(j + 1, k), point(j + 1, k + 1), point(j, k + 1)];
+      ownWater([p[0], p[1], p[2]], tube, emit); ownWater([p[0], p[2], p[3]], tube, emit);
+    }
+  }
+}
+
+function waterMesh(builder, tube) {
+  if (tube.water === null || tube.water === undefined) return;
+  const emit = tri => {
+    const c = centroid(tri), horizontal = Math.hypot(tube.delta[0], tube.delta[2]);
+    let colour = [0.013, 0.052, 0.022], material = 3;
+    if (horizontal > 0.1 && tube.kind !== 'inlet') {
+      const side = [-tube.delta[2] / horizontal, 0, tube.delta[0] / horizontal];
+      const section = Math.sqrt(Math.max(0, tube.radius ** 2 - (c[1] - axisPoint(tube, c)[1]) ** 2));
+      if (Math.abs(dot(sub(c, axisPoint(tube, c)), side)) > section * 0.64) { colour = [0.14, 0.17, 0.15]; material = 2; }
+    }
+    builder.triangle(...tri, colour, [0, 1, 0], material);
+  };
+  const clip = tri => subtractNeighbours(tri, tube.neighbours, emit);
+  const horizontal = Math.hypot(tube.delta[0], tube.delta[2]);
+  if (horizontal < 0.001) {
+    const centre = [tube.a[0], tube.water, tube.a[2]], r = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - Math.min(tube.a[1], tube.b[1])) ** 2));
+    for (let i = 0; i < 80; i++) {
+      const point = k => [centre[0] + Math.cos(k * Math.PI * 2 / 80) * r, centre[1], centre[2] + Math.sin(k * Math.PI * 2 / 80) * r];
+      // Radial strips keep junction clipping local instead of spanning an entire chamber floor.
+      for (let band = 0; band < 12; band++) {
+        const inner = band / 12, outer = (band + 1) / 12;
+        const p = [add(centre, scale(sub(point(i), centre), inner)), add(centre, scale(sub(point(i), centre), outer)),
+          add(centre, scale(sub(point(i + 1), centre), outer)), add(centre, scale(sub(point(i + 1), centre), inner))];
+        clip([p[0], p[1], p[2]]); clip([p[0], p[2], p[3]]);
+      }
+    }
+    return;
+  }
+  const direction = [tube.delta[0] / horizontal, 0, tube.delta[2] / horizontal], side = [-direction[2], 0, direction[0]];
+  const tail = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2));
+  const head = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.b[1]) ** 2));
+  const rows = Math.ceil((horizontal + tail + head) / 5), span = horizontal + tail + head;
+  const point = (row, across) => {
+    const s = -tail + row / rows * span, p = [tube.a[0] + direction[0] * s, tube.water, tube.a[2] + direction[2] * s];
+    const d = shellDistance(tube, p) + tube.radius, width = Math.sqrt(Math.max(0, tube.radius ** 2 - d * d));
+    return add(p, scale(side, width * across));
+  };
+  const lanes = [-1, -0.82, -0.64, -0.3, 0, 0.3, 0.64, 0.82, 1];
+  for (let j = 0; j < rows; j++) for (let k = 0; k < lanes.length - 1; k++) {
+    const p = [point(j, lanes[k]), point(j + 1, lanes[k]), point(j + 1, lanes[k + 1]), point(j, lanes[k + 1])];
+    clip([p[0], p[1], p[2]]); clip([p[0], p[2], p[3]]);
+  }
+}
+
+function inflowSheets(world) {
+  const inlets = world.tunnels.map((tube, index) => ({ tube, index })).filter(({ tube }) => tube.kind === 'inlet');
+  return (world.inflows || []).flatMap(flow => {
+    const source = inlets.find(({ tube }) => tube.a.every((v, i) => Math.abs(v - flow.a[i]) < 1e-5));
+    if (!source || !Number.isFinite(source.tube.water)) return [];
+    const { tube, index } = source, dx = tube.b[0] - tube.a[0], dz = tube.b[2] - tube.a[2], length = Math.hypot(dx, dz);
+    if (length < 1e-5) return [];
+    const a = [tube.a[0], tube.water, tube.a[2]], axis = [-dx / length, 0, -dz / length];
+    return [{ a, b: add(a, scale(axis, 7)), axis, side: [-axis[2], 0, axis[0]],
+      radius: Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2)), receivingWater: flow.b[1] - 0.6, source: index }];
+  });
+}
+
+function flowMesh(builder, sheet) {
+  const a = add(sheet.a, scale(sheet.side, -sheet.radius)), b = add(sheet.a, scale(sheet.side, sheet.radius));
+  const c = add(sheet.b, scale(sheet.side, sheet.radius)), d = add(sheet.b, scale(sheet.side, -sheet.radius));
+  builder.quad(a, b, c, d, [0.026, 0.11, 0.055, 0.80], [0, 1, 0], 3);
+  const floorC = [c[0], sheet.receivingWater, c[2]], floorD = [d[0], sheet.receivingWater, d[2]];
+  builder.quad(d, c, floorC, floorD, [0.035, 0.15, 0.085, 0.65], scale(sheet.axis, -1), 3);
+}
+
+function lampMesh(builder, tube) {
+  const spacing = 20, phase = tube.index * 13.71 % spacing;
+  for (let s = spacing - phase; s < tube.length; s += spacing) {
+    const centre = add(tube.a, scale(tube.axis, s)), sign = Math.floor((s + phase) / spacing) % 2 ? 1 : -1;
+    const radial = unit(add(scale(tube.u, sign * 0.93), scale(tube.v, 0.37))), p = add(centre, scale(radial, tube.radius - 0.025));
+    if (tube.water !== null && p[1] < tube.water + 1 || tube.neighbours.some(n => dryDistance(n, p) < -0.1)) continue;
+    const tangent = unit(cross(tube.axis, radial)), normal = scale(radial, -1);
+    const point = (x, y) => add(p, add(scale(tube.axis, x), scale(tangent, y)));
+    builder.quad(point(-0.55, -0.90), point(0.55, -0.90), point(0.55, 0.90), point(-0.55, 0.90), [1.8, 0.78, 0.18], normal, 4);
+    for (let y = -0.75; y < 0.9; y += 0.3) {
+      const offset = scale(normal, 0.005);
+      builder.quad(add(point(-0.55, y), offset), add(point(0.55, y), offset), add(point(0.55, y + 0.035), offset), add(point(-0.55, y + 0.035), offset), [0.04, 0.045, 0.03], normal, 0);
+    }
+  }
+}
+
+function buildWorld(world, { indices = null, props = true, flows = true } = {}) {
+  const tubes = prepare(world), selected = indices === null ? tubes : indices.map(i => tubes[i]).filter(Boolean);
+  const opaque = GAME.mesh.builder(), water = GAME.mesh.builder(), flow = GAME.mesh.builder(), lamps = GAME.mesh.builder();
+  for (const tube of selected) { shellMesh(opaque, tube); waterMesh(water, tube); lampMesh(lamps, tube); }
+  if (props) {
+    for (const pipe of world.pipes || []) opaque.tag(0).capsule(pipe.a, pipe.b, pipe.radius, [0.23, 0.17, 0.10], 20, 6);
+    for (const pile of world.dirt || []) opaque.tag(0).ellipsoid(pile.centre, pile.radii, [0.19, 0.14, 0.052], 20, 12);
+  }
+  if (flows) for (const sheet of inflowSheets(world)) flowMesh(flow, sheet);
+  return { opaque: opaque.build(), water: water.build(), flow: flow.build(), lamps: lamps.build(),
+    stats: { tunnels: selected.length, pipes: props ? (world.pipes || []).length : 0, dirt: props ? (world.dirt || []).length : 0 } };
+}
+
+function create(gfx) {
+  const mesh = GAME.mesh.create(gfx), fog = [0.012, 0.030, 0.031];
+  const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  let world, tubes = [], sheets = [], cache = new Map(), propCache = new Map(), flowCache = new Map(), lastVisible = {};
+  const markers = { opaque: mesh.upload(new Float32Array(0), { dynamic: true }), transparent: mesh.upload(new Float32Array(0), { dynamic: true }), xray: mesh.upload(new Float32Array(0), { dynamic: true }) };
+  const release = map => { for (const value of map.values()) for (const handle of Object.values(value)) if (handle?.vao) mesh.dispose(handle); map.clear(); };
+  function evict(map, limit, keep) {
+    for (const [key, value] of map) {
+      if (map.size <= limit) break;
+      if (keep.has(key)) continue;
+      for (const handle of Object.values(value)) if (handle?.vao) mesh.dispose(handle);
+      map.delete(key);
+    }
+  }
+  function setWorld(city) {
+    if (!city?.sewer?.tunnels?.length) throw new Error('sewer-lite needs a connected sewer map');
+    release(cache); release(propCache); release(flowCache);
+    world = city.sewer; tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
+  }
+  function tunnelHandle(index) {
+    if (!cache.has(index)) {
+      const data = buildWorld(world, { indices: [index], props: false, flows: false });
+      cache.set(index, { opaque: mesh.upload(data.opaque), water: mesh.upload(data.water), lamps: mesh.upload(data.lamps) });
+    }
+    return cache.get(index);
+  }
+  function propHandle(value, kind, index) {
+    const key = `${kind}:${index}`;
+    if (!propCache.has(key)) {
+      const b = GAME.mesh.builder();
+      if (kind === 'pipe') b.capsule(value.a, value.b, value.radius, [0.23, 0.17, 0.10], 20, 6);
+      else b.ellipsoid(value.centre, value.radii, [0.19, 0.14, 0.052], 20, 12);
+      propCache.set(key, { opaque: mesh.upload(b.build()) });
+    }
+    return propCache.get(key).opaque;
+  }
+  function nearbyProps(cam) {
+    const result = [];
+    for (const [index, pipe] of (world.pipes || []).entries()) {
+      const meta = { ...pipe, delta: sub(pipe.b, pipe.a), length2: Math.max(distance2(pipe.a, pipe.b), 1e-9) };
+      if (shellDistance(meta, cam.pos) < RANGE) result.push({ value: pipe, kind: 'pipe', index });
+    }
+    for (const [index, pile] of (world.dirt || []).entries()) if (Math.hypot(...sub(cam.pos, pile.centre)) - Math.max(...pile.radii) < RANGE)
+      result.push({ value: pile, kind: 'dirt', index });
+    return result;
+  }
+  function nearFlows(cam) { return sheets.map((sheet, index) => ({ sheet, index })).filter(({ sheet }) => Math.hypot(...sub(cam.pos, sheet.a)) < RANGE); }
+  function flowHandle(sheet, index) {
+    if (!flowCache.has(index)) { const b = GAME.mesh.builder(); flowMesh(b, sheet); flowCache.set(index, { flow: mesh.upload(b.build()) }); }
+    return flowCache.get(index).flow;
+  }
+  async function warmup(cam, { budgetMs = 24 } = {}) {
+    if (!world) return;
+    const current = world, selected = tubes.filter(tube => shellDistance(tube, cam.pos) < RANGE);
+    let batch = performance.now();
+    for (const tube of selected) {
+      if (current !== world) return;
+      tunnelHandle(tube.index);
+      if (performance.now() - batch > budgetMs) { await new Promise(resolve => setTimeout(resolve, 0)); batch = performance.now(); }
+    }
+    if (current !== world) return;
+    const props = nearbyProps(cam), flows = nearFlows(cam);
+    for (const p of props) {
+      if (current !== world) return;
+      propHandle(p.value, p.kind, p.index);
+      if (performance.now() - batch > budgetMs) { await new Promise(resolve => setTimeout(resolve, 0)); batch = performance.now(); }
+    }
+    if (current !== world) return;
+    for (const { sheet, index } of flows) flowHandle(sheet, index);
+    evict(cache, MAX_TUNNELS, new Set(selected.map(t => t.index)));
+    evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
+    evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
+  }
+  function draw(cam, rings = [], guide = [], stars = []) {
+    if (!world) throw new Error('sewer-lite draw before setWorld');
+    const time = reducedMotion.matches ? 0 : performance.now() / 1000, opts = { fog, density: 0.012, far: 1000, time };
+    mesh.clear(fog);
+    const selected = tubes.filter(tube => shellDistance(tube, cam.pos) < RANGE);
+    for (const tube of selected) {
+      const handles = tunnelHandle(tube.index); mesh.draw(handles.opaque, cam, opts); mesh.draw(handles.water, cam, opts); mesh.draw(handles.lamps, cam, { ...opts, unlit: true });
+    }
+    const props = nearbyProps(cam), flows = nearFlows(cam);
+    for (const p of props) mesh.draw(propHandle(p.value, p.kind, p.index), cam, opts);
+    for (const { sheet, index } of flows) mesh.draw(flowHandle(sheet, index), cam, { ...opts, depthWrite: false, unlit: true });
+    const frame = GAME.mesh.markers(rings, guide, stars, { time, cam });
+    for (const kind of ['opaque', 'transparent', 'xray']) {
+      mesh.update(markers[kind], frame[kind]);
+      mesh.draw(markers[kind], cam, { ...opts, unlit: true, depthWrite: kind === 'opaque', depthTest: kind !== 'xray', alpha: kind === 'xray' ? 0.18 : 1 });
+    }
+    mesh.finish();
+    evict(cache, MAX_TUNNELS, new Set(selected.map(t => t.index)));
+    evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
+    evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
+    lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length,
+      dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, clipped: tubes.length - selected.length,
+      resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true };
+  }
+  return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
+    dispose: () => { release(cache); release(propCache); release(flowCache); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
+}
+
+GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, stride: STRIDE };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/game/guide.js ----
 // What the player is shown of the course each frame: which rings to draw, the glowing guide line
 // ahead, and where the next gate is (for the off-screen arrow). Pure; the renderer draws it.
@@ -14476,13 +15368,15 @@ document.body.classList.toggle('native-app', !!window.Capacitor?.isNativePlatfor
 
 const api = window.__game = { ready: false, errors: [], frames: 0 };
 const graphics = api.graphics = {
-  compatibility: new URLSearchParams(location.search).get('graphics') === 'safe',
+  compatibility: GAME.graphicsProfile.compatibility,
+  renderer: GAME.graphicsProfile.renderer,
+  reason: GAME.graphicsProfile.reason,
   recovering: false, automaticRetry: false,
 };
-let graphicsRetryTimer = null;
 
 function retryGraphics() {
-  clearTimeout(graphicsRetryTimer);
+  if (graphics.compatibility) return;
+  GAME.graphicsProfile.rememberCompatibility();
   const url = new URL(location.href);
   url.searchParams.set('graphics', 'safe');
   if (url.href === location.href) location.reload();
@@ -14494,7 +15388,7 @@ function recoverGraphics(err) {
   graphics.recovering = true;
   flowVersion++;
   graphics.lastError = err?.message || 'The graphics connection was interrupted.';
-  graphics.automaticRetry = !api.ready && !graphics.compatibility;
+  GAME.graphicsProfile.rememberCompatibility();
   api.ready = false;
   GAME.courseLoader.cancel();
   hud?.show(false);
@@ -14509,12 +15403,12 @@ function recoverGraphics(err) {
   overlay.classList.add('error');
   for (const button of overlay.querySelectorAll('button')) button.disabled = true;
   const retry = $('graphics-retry');
-  retry.hidden = false; retry.disabled = false;
-  statusEl.textContent = graphics.automaticRetry ? 'Graphics interrupted. Retrying with simpler effects…'
-    : 'Graphics interrupted. Retry to reconnect.';
-  retry.focus();
+  retry.hidden = graphics.compatibility; retry.disabled = graphics.compatibility;
+  retry.textContent = 'use compatibility graphics';
+  statusEl.textContent = graphics.compatibility ? 'Graphics unavailable. Rendering has stopped.'
+    : 'Graphics interrupted. Switch to compatibility graphics.';
+  if (!graphics.compatibility) retry.focus();
   console.warn(`[gfx] ${graphics.lastError}`);
-  if (graphics.automaticRetry) graphicsRetryTimer = setTimeout(retryGraphics, 3000);
 }
 
 function requireGraphics() {
@@ -14541,12 +15435,11 @@ canvas.addEventListener('webglcontextlost', e => {
   e.preventDefault();
   recoverGraphics(new Error('The graphics context was lost.'));
 });
-canvas.addEventListener('webglcontextrestored', () => {
-  if (graphics.recovering && graphics.automaticRetry) retryGraphics();
-});
 
 function fail(err) {
-  if (err?.code === 'GFX_CONTEXT_LOST' || err?.code === 'GFX_STARTUP_TIMEOUT' || GAME.gfx.contextLost()) {
+  if (graphics.recovering) return;
+  if (err?.code === 'GFX_CONTEXT_LOST' || err?.code === 'GFX_STARTUP_TIMEOUT'
+      || err?.code === 'GFX_RESOURCE_FAILED' || GAME.gfx.contextLost()) {
     recoverGraphics(err); return;
   }
   const msg = String((err && err.stack) || err);
@@ -14600,7 +15493,7 @@ function grantExtreme(code) {
 
 // Generation runs off-thread. Keep the old world and its URL intact until its replacement is
 // fully ready, so cancelling or failing a load leaves a playable course.
-let courseLoading = false, flowVersion = 0, flightStarting = false;
+let courseLoading = false, flowVersion = 0, flightStarting = false, graphicsPreparation = null;
 function commitCourse(world, seed, selectedDifficulty, environment, lockedExtreme = false) {
   requireGraphics();
   leaveCollapse();
@@ -14615,6 +15508,25 @@ function commitCourse(world, seed, selectedDifficulty, environment, lockedExtrem
   history.replaceState(null, '', `#seed=${seedCode}&difficulty=${difficulty}${isSewer() ? '&environment=sewer' : ''}${AUTOPILOT ? '&autopilot' : ''}`);
   if (GAME.access.environment() !== environment) GAME.access.setEnvironment(environment);
   newRun();
+}
+
+// Build the first compatibility view in short batches while the loading screen remains visible.
+// Preserve the previous canvas image until the new buffers are ready instead of rebuilding them
+// all in the next animation frame, which would defeat the renderer's main-thread yields.
+async function prepareCourseGraphics() {
+  if (!graphics.compatibility || graphics.recovering) return;
+  const active = isSewer() ? sewerFlightRenderer : renderer;
+  if (!active.prepare) return;
+  const request = {};
+  graphicsPreparation = request;
+  try {
+    resolution.fitCanvas();
+    const [w, h] = resolution.renderSize();
+    await active.prepare(GAME.camera.fromFlight(run.glider, w / h));
+    requireGraphics();
+  } finally {
+    if (graphicsPreparation === request) graphicsPreparation = null;
+  }
 }
 
 async function loadCourse(seed, selectedDifficulty = difficulty, environment = course ? isSewer() ? 'sewer' : 'surface' : menuEnvironment) {
@@ -14647,10 +15559,11 @@ async function loadCourse(seed, selectedDifficulty = difficulty, environment = c
   try {
     const world = await GAME.courseLoader.load(seed, nextDifficulty, options);
     commitCourse(world, seed, nextDifficulty, environment, lockedExtreme);
+    await prepareCourseGraphics();
     console.log(`[game] ${environment} course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms`);
     return true;
   } catch (error) {
-    if (error.code === 'GFX_CONTEXT_LOST' || GAME.gfx.contextLost()) throw error;
+    if (error.code?.startsWith('GFX_') || graphics.recovering || GAME.gfx.contextLost()) throw error;
     if (error.name === 'AbortError') return false;
     if (!course) throw error;
     console.warn(`[game] course load failed: ${error.message}`);
@@ -14775,6 +15688,8 @@ async function arriveInSewer() {
     if (mode !== 'sewer-reveal' || sewerArrival !== arrival) return;
     if (result.error) throw result.error;
     commitCourse(result.world, arrival.seed, arrival.difficulty, 'sewer', arrival.lockedExtreme);
+    await prepareCourseGraphics();
+    if (graphics.recovering || mode !== 'sewer-reveal' || sewerArrival !== arrival) return;
     showMenu();
     $('sewer-reveal').classList.add('hidden');
     GAME.sound.setSceneMuted(false);
@@ -14782,6 +15697,9 @@ async function arriveInSewer() {
     sewerArrival = null;
   } catch (error) {
     sewerArrival = null;
+    if (error.code?.startsWith('GFX_') || graphics.recovering || GAME.gfx.contextLost()) {
+      fail(error); return;
+    }
     $('sewer-reveal').classList.add('hidden');
     showMenu(); GAME.sound.setSceneMuted(false);
     showControlFailure(new Error('Could not connect The Sewer. Try the Sewer button again.'));
@@ -14988,7 +15906,8 @@ function showResults() {
 let drawn = null;              // what the last frame was rendered with (for the tools)
 function render(now, w, h) {
   requireGraphics();
-  if (!target) target = createTarget(w, h); else target.resize(w, h);
+  if (!target) target = createTarget(w, h, graphics.compatibility ? { depth: true, format: 'rgba8' } : {});
+  else target.resize(w, h);
   const g = shownGlider();
   const cam = GAME.camera.fromFlight(g, w / h);
   const view = GAME.guide.frame(guide, run, run.time);
@@ -15026,7 +15945,8 @@ function render(now, w, h) {
   }
   if (sewerMenu) { post.ca = 0.0006; post.vignette = 0.34; post.speed = post.flash = post.glitch = 0; }
   GAME.post.present(target, post, now / 1000);
-  drawn = { at: now, width: w, height: h, mode, scene: isSewer() ? 'sewer-flight' : 'city',
+  drawn = { at: now, width: w, height: h, mode,
+    scene: graphics.compatibility ? isSewer() ? 'sewer-lite' : 'city-lite' : isSewer() ? 'sewer-flight' : 'city',
     fov: 2 * Math.atan(cam.tanHalf[1]) * 180 / Math.PI, pos: cam.pos };
   return { cam, next: view.next };
 }
@@ -15064,8 +15984,9 @@ function hudFrame({ cam, next }) {
 function loop(now) {
   if (graphics.recovering || GAME.gfx.contextLost()) {
     if (!graphics.recovering) recoverGraphics(new Error('The graphics context was lost.'));
-    requestAnimationFrame(loop); return;
+    return;
   }
+  if (graphicsPreparation) { lastNow = now; requestAnimationFrame(loop); return; }
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
   // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
@@ -15172,7 +16093,7 @@ function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
   else if (key === 'musicTrack') GAME.sound.setSong(value);
   else if (key === 'theme') applyTheme(value);
-  else if (key === 'quality') resolution.setBudget(value);
+  else if (key === 'quality') resolution.setBudget(graphics.compatibility ? 'compatibility' : value);
   else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
   else if (key === 'invertY' && mode === 'paused' && !settingsPanel.isOpen) showPause();
 }
@@ -15726,14 +16647,14 @@ async function boot() {
   // Music renders while the shaders compile; it starts playing at the first press once ready.
   GAME.sound.load(GAME.settings.get('musicTrack'));
   if (menuEnvironment === 'sewer') GAME.sound.setEnvironment('sewer');
-  // Compile the small display passes before the two large scene programs, giving desktop
-  // drivers one scene at a time instead of linking every renderer concurrently.
+  // Compatibility creates only the display and shared mesh program. The full renderer prepares
+  // its display passes and two scenes in sequence instead of linking them concurrently.
   const graphicsStarted = performance.now();
   GAME.post.init({ safe: graphics.compatibility });
   await prepareGraphics();
-  renderer = GAME.cityRenderer.create(GAME.gfx);
+  renderer = (graphics.compatibility ? GAME.cityLiteRenderer : GAME.cityRenderer).create(GAME.gfx);
   await prepareGraphics();
-  sewerFlightRenderer = GAME.sewerFlightRenderer.create(GAME.gfx);
+  sewerFlightRenderer = (graphics.compatibility ? GAME.sewerLiteRenderer : GAME.sewerFlightRenderer).create(GAME.gfx);
   await prepareGraphics();
   settingsPanel = GAME.settingsPanel.create(settingsScreen, TOUCH ? 'touch' : 'mouse');
   shopPanel = GAME.shopPanel.create(shopScreen, { touch: TOUCH, collapseHint: () => {
@@ -15754,7 +16675,7 @@ async function boot() {
     }
   });
   refreshShopButtons();
-  resolution.setBudget(graphics.compatibility ? 'performance' : GAME.settings.get('quality'));
+  resolution.setBudget(graphics.compatibility ? 'compatibility' : GAME.settings.get('quality'));
   applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
   GAME.settings.onChange(applySetting);
   refreshInfo();
@@ -15767,12 +16688,6 @@ async function boot() {
   startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('title-shop').disabled = $('course-load').disabled = false;
   startBtn.textContent = 'fly';
   api.ready = true;
-  if (graphics.compatibility) setTimeout(() => {
-    if (graphics.recovering) return;
-    const url = new URL(location.href);
-    url.searchParams.delete('graphics');
-    history.replaceState(null, '', url.href);
-  }, 30000);
   api.state = () => ({
     graphics: { ...graphics, post: GAME.post.status() },
     mode, loading: courseLoading, input: input.mode, code: seedCode, difficulty, extremeUnlocked: extremeUnlocked(seedCode), courseLength: course.length,
@@ -15887,8 +16802,10 @@ function startFrozen() {
   hud.show(true);
   let rendered = 0;
   const frozen = now => {
+    if (graphics.recovering || GAME.gfx.contextLost()) return;
     resolution.fitCanvas();
-    hudFrame(render(now, canvas.width, canvas.height));
+    const [w, h] = graphics.compatibility ? resolution.renderSize() : [canvas.width, canvas.height];
+    hudFrame(render(now, w, h));
     rendered++;
     api.frames++;
     requestAnimationFrame(frozen);
@@ -15914,16 +16831,17 @@ function startFrozen() {
   api.bench = async poses => {
     const out = [];
     resolution.fitCanvas();
+    const [w, h] = graphics.compatibility ? resolution.renderSize() : [canvas.width, canvas.height];
     for (const p of poses) {
       run.glider = Object.assign(GAME.flight.create(p, difficulty), p);
       timerPoll();
-      for (let k = 0; k < 15; k++) { timerBegin(0); render(performance.now(), canvas.width, canvas.height); timerEnd(); }
+      for (let k = 0; k < 15; k++) { timerBegin(0); render(performance.now(), w, h); timerEnd(); }
       const ms = [];
       for (let i = 0; i < 30 && ms.length < 15; i++) { await nextFrame(); ms.push(...timerPoll().map(r => r.ms)); }
       ms.sort((a, b) => a - b);
       out.push({ pose: p, min: ms[0], median: ms[ms.length >> 1], max: ms[ms.length - 1] });
     }
-    return { width: canvas.width, height: canvas.height, results: out };
+    return { width: w, height: h, results: out };
   };
   api.glider = () => run.glider;
   api.course = { code: seedCode, environment: isSewer() ? 'sewer' : 'surface', gates: course.gates.length,
