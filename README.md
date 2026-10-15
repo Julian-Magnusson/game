@@ -23,27 +23,37 @@ Fly through a generated city with mouse/keyboard on desktop, or phone tilt and a
 touch stick on mobile. Find stars on harder detours, finish the course to save them, then spend
 them in Shop. Saved stars are shared across difficulties; unfinished finds are lost on leaving
 the course or starting a new attempt.
+Course and flight summaries show collected slots without a lifetime “Stars saved” total.
+Shop shows the stars still available to spend after purchases.
 
 The **Collapse Key** costs **10 stars**. Its mysterious **MM:SS** hint changes with the selected
 Hard/Extreme course and difficulty.
 
 Look for glitching red windows and banners with white warning signs around the entrance
 between buildings. Extreme has a short opening for the departure. Collapse follows crowded
-streets with stopped traffic, sideways-falling buildings and trees, smaller rings and a small
-street manhole leading underground.
+streets with stopped traffic and four generous escape rings ahead of the entrance. A brief
+guided entry aligns the flight during the red warning and alarm, then restores manual control.
+Nearby buildings and burning trees topple sideways while thousands more buildings fall
+throughout the skyline. The route ends at a rocky park hill with a broad tunnel entrance,
+broken metal bars, a stone arch and warm Sewer-style brickwork and lamps. Fly gently downhill
+to the fifth ring inside. A Collapse crash returns to the normal surface course.
 
 Once discovered, **The Sewer** has playable courses through cylindrical collectors, smaller
 connecting tunnels, and winding upward/downward chambers. Dodge round pipes and dirt banks;
 the murky green water causes a crash, like the street above. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
 underground, with records kept separate from the city.
-Collapse's chapter card opens the Sewer menu directly. The menu previews the actual starting
+Completing Collapse gives 2.5 seconds of black, the white **The Sewer** chapter card, then opens
+the Sewer menu directly. The menu previews the actual starting
 tunnel, keeping the same scenery through **3, 2, 1, Go**. Brickwork, arch detail, lamps, services,
 stone ledges and drains carry the menu's detail into the course. Side flows match their inlet's
 flat waterline and full width before spilling into the lower collector. The manhole menu button
 switches between the Sewer and the surface. **Undertow** provides the underground soundtrack.
 
 Arctic Dawn has snowy trees and frozen fountains. Surface rain and snow stay above ground.
+Some park corners rise into grassy hills with trees and bushes rooted at their actual height;
+walking paths, fountains and benches keep flat foundations. Ordinary course layouts and medal
+times stay unchanged.
 
 This repository contains the published single-file build, `index.html`. Development sources,
 tests and the project plan live in the separate `game-demo` workspace.
