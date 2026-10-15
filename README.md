@@ -2,26 +2,23 @@
 
 Play at **https://julian-magnusson.github.io/game/**.
 
-Windows starts with city and Sewer meshes instead of compiling the large ray-tracing shaders.
-Small separate passes restore neon glow, theme skies/weather, filtered windows/brickwork,
-wet surfaces and warm underground lamps. Bright lighting works in ordinary color buffers.
-Clustered rooms, glass sheen, height fog, animated ring halos and broader glow match the phone
-style. Wet streets reflect buildings through a small geometry pass, and Sewer water reflects
-its lamps. These effects keep bounded shaders, real depth and fallbacks when effects fail.
-The latest Windows polish adds hemispheric skylight, warmer sunlight, quieter distant windows,
-stronger skyline haze and distinct seeded window patterns. Reflective shop glass, roof panels,
-facade framing, edged park paths and finer water ripples enrich close views, using the same
-six small shaders and ordinary RGBA8 buffers.
-Automatic resolution starts at 1080p and adapts; selected resolution settings are honored.
-Real obstacles, course layout and depth occlusion stay intact. Optional effects have a readable
-fallback. Mac and mobile keep the full renderer, with a simpler display fallback
-for optional effect failures. Graphics interruptions stop rendering without automatic reloads;
-the full renderer offers a single **use compatibility graphics** switch. Interruptions are
-remembered so later visits use compatibility rendering. Saved progress and preferences are preserved.
+Every browser and operating system now starts with the same full city and Sewer renderer,
+including Chrome and Edge on Windows. Old saved fallback/interruption flags are ignored.
+Automatic resolution adapts to frame cost, and selected resolution settings are honored.
+Optional effect failures have a readable display fallback. Graphics interruptions stop rendering
+and flight without automatic reloads; the full renderer offers a single **use compatibility graphics**
+switch that opens `?graphics=safe`. Failures do not save a graphics preference for later visits.
+`?graphics=safe` explicitly selects the optional compatibility renderer. It retains meshes of the
+real world, theme skies/weather, detailed buildings, park planting and warm Sewer brickwork/lamps,
+with six small shaders, ordinary color buffers and bounded reflections/glow. Removing that URL
+option restores full graphics on the next visit. Saved progress and preferences are preserved.
 **Settings → Graphics → Graphics report** provides copyable browser, adapter/backend and shader
 details for troubleshooting; it also remains available after a graphics interruption. No player
-progress or course codes are included, and nothing is sent automatically. Use the ordinary play
-URL so healthy phones/Macs retain their full renderer.
+progress or course codes are included, and nothing is sent automatically. The earlier mesh
+release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The original shader
+failure and browser freeze remain unisolated, and Mac Chrome browser-profile checks do not
+reproduce that AMD driver. The restored full renderer still needs testing on the Windows PC.
+Use the ordinary play URL for the same full renderer everywhere.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional
 touch stick on mobile. Find stars on harder detours, finish the course to save them, then spend
@@ -35,10 +32,15 @@ Hard/Extreme course and difficulty.
 
 Look for glitching red windows and banners with white warning signs around the entrance
 between buildings. Extreme has a short opening for the departure. Collapse follows crowded
-streets with stopped traffic and four generous escape rings ahead of the entrance. A brief
-guided entry aligns the flight during the red warning and alarm, then restores manual control.
+streets with stopped traffic and four generous escape rings ahead of the entrance. Flight stays
+fully manual, preserving the live heading, pitch, bank, speed and steering input on entry.
+The first arc adapts to the incoming direction so the next ring is visible and reachable,
+without temporary steering assistance or a camera alignment blend. The route ribbon is hidden;
+the highlighted next ring and HUD arrow remain visible.
 Nearby buildings and burning trees topple sideways while thousands more buildings fall
-throughout the skyline. The route ends at a rocky park hill with a broad tunnel entrance,
+throughout the skyline. The route ends at a pointed mountain on a larger park plot, about
+82 units high with a 135×149-unit local footprint. Six angular ridge pieces and four low boulders
+have matching visible and collision surfaces. The broad tunnel entrance has
 broken metal bars, a stone arch and warm Sewer-style brickwork and lamps. Fly gently downhill
 to the fifth ring inside. A Collapse crash returns to the normal surface course.
 
@@ -55,9 +57,11 @@ flat waterline and full width before spilling into the lower collector. The manh
 switches between the Sewer and the surface. **Undertow** provides the underground soundtrack.
 
 Arctic Dawn has snowy trees and frozen fountains. Surface rain and snow stay above ground.
-Some park corners rise into grassy hills with trees and bushes rooted at their actual height;
-walking paths, fountains and benches keep flat foundations. Ordinary course layouts and medal
-times stay unchanged.
+Some park parcels rise into broad grassy hills 7–10 units high, with raised lawns about
+24–26 units across. Trees and bushes follow their actual height, and walking paths climb the
+slopes. Fountains and benches keep level foundations. Avenue lanes remain roads through parks;
+tree trunks and benches stay outside traveled streets and intersections, with bus stops and
+shop-front benches on sidewalks. Ordinary course layouts and medal times stay unchanged.
 
 This repository contains the published single-file build, `index.html`. Development sources,
 tests and the project plan live in the separate `game-demo` workspace.

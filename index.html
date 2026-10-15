@@ -4017,6 +4017,23 @@ function terrainHeight(city, x, z) {
   return height;
 }
 
+// Roads retain their original grid footprint even where park carving removes buildings.
+// Avenues carry four lanes; the narrower streets run between adjacent building parcels.
+// Test the trunk/seat footprint rather than a canopy, which may sensibly overhang a sidewalk.
+function roadFootprint(city, x, z, halfX = 0, halfZ = halfX) {
+  if (x < 0 || z < 0 || x >= city.size || z >= city.size) return true;
+  const nearest = (v, period, offset = 0) => Math.abs(v - (Math.round((v - offset) / period) * period + offset));
+  const c = city.cell;
+  return nearest(x, c) <= 3 + halfX || nearest(z, c) <= 3 + halfZ
+    || nearest(x, c * GAME.city.AVENUE_X, c / 2) <= 9 + halfX
+    || nearest(z, c * GAME.city.AVENUE_Z, c / 2) <= 9 + halfZ;
+}
+
+function streetFree(city, pieces) {
+  return !pieces.some(b => roadFootprint(city, (b[0] + b[3]) / 2, (b[2] + b[5]) / 2,
+    (b[3] - b[0]) / 2, (b[5] - b[2]) / 2));
+}
+
 function decorate(city, course) {
   city.clearGeometryCache();
   const { line, sample } = course, finish = course.gates.at(-1);
@@ -4036,6 +4053,9 @@ function decorate(city, course) {
         if (ix + dx < 1 || iz + dz < 1 || ix + dx >= city.n - 1 || iz + dz >= city.n - 1) continue;
         const cell = (iz + dz) * city.n + ix + dx;
         if (protectedCells.has(cell)) continue;
+        // Keep the large roads crossing an open park as roads, including their intersections.
+        // Previously their newly set park flag allowed trunks and seats in traffic lanes.
+        if ((ix + dx) % GAME.city.AVENUE_X === 0 || (iz + dz) % GAME.city.AVENUE_Z === 0) continue;
         cells.add(cell);
         if (marked.has(cell)) continue;
         marked.add(cell);
@@ -4167,7 +4187,8 @@ function decorate(city, course) {
     const len = Math.hypot(offsetX, offsetZ);
     const x = oldX[k] - offsetX / len * 2.2, z = oldZ[k] - offsetZ / len * 2.2;
     const cell = city.cellIndex(x, z);
-    if (!city.park[cell] || course.parkTrees.some(t => Math.hypot(t.x - x, t.z - z) < 30)) continue;
+    if (!city.park[cell] || roadFootprint(city, x, z, 1.1)
+      || course.parkTrees.some(t => Math.hypot(t.x - x, t.z - z) < 30)) continue;
     const h = Math.min(72, Math.max(36, line.y[k] / 0.68));
     const pieces = vegetation('column', x, z, h, 1.8), bypass = { x: oldX[k], y: line.y[k], z: oldZ[k] };
     if (!pieces.some(b => b[7] === SHAPE.ELLIPSOID && GAME.collide.ellipsoidDistance2(b, bypass.x, bypass.y, bypass.z) <= GAME.flight.FLIGHT.RADIUS ** 2)) continue;
@@ -4189,7 +4210,8 @@ function decorate(city, course) {
     course.fountains.push({ object, cell, x, z, variant, s, park, finish: isFinish,
       radius: variant === 'spray' ? 7 : 6.4, h: Math.max(...pieces.map(b => b[4])) });
     // A nearby seat makes each fountain read as a small plaza rather than an isolated prop.
-    place(bench(x + 9, z - 10));
+    const seat = bench(x + 9, z - 10);
+    if (streetFree(city, seat)) place(seat);
     return true;
   }
   for (const park of course.parks) {
@@ -4210,15 +4232,15 @@ function decorate(city, course) {
     if (city.park[i] || city.kind[i] !== city.KIND.PLAZA || GAME.rng.stream(city.seed, `plaza-fountain-${i}`)() > 0.04) continue;
     if (addFountain(i)) plazaFountains++;
   }
-  // Some corners rise into grassy knolls while the crossing paths, fountains and sculpture
-  // foundations stay level. One cell-local solid adds no new atlas or tracing-loop budget.
+  // Broad central hills occupy most of selected park parcels. They rise enough to read as
+  // sloping ground from flight height, while neighboring lawns and fountain foundations stay
+  // level. One cell-local solid adds no new atlas or tracing-loop budget.
   // Metadata is {object,cell,x,z,h,rx,rz}; its shared ellipsoid has centre y=-h and radius 2h.
   for (let cell = 0; cell < city.kind.length; cell++) {
     if (!city.park[cell] || protectedCells.has(cell) || city.streetBoxes[cell]?.length) continue;
     const r = GAME.rng.stream(city.seed, `park-ground-${cell}`);
-    if (r() > 0.36) continue;
-    const [cx, cz] = city.cellCenter(cell), x = cx + (r() < 0.5 ? -1 : 1) * 8.6,
-      z = cz + (r() < 0.5 ? -1 : 1) * 8.6, h = r.range(2.1, 4.0), rx = r.range(6.0, 6.9), rz = r.range(6.0, 6.9);
+    if (r() > 0.55) continue;
+    const [x, z] = city.cellCenter(cell), h = r.range(7, 10), rx = r.range(14.0, 14.8), rz = r.range(14.0, 14.8);
     const object = place([box(x, -h, z, rx, h * 2, rz, MATERIAL.TERRAIN, SHAPE.ELLIPSOID)]);
     if (object) course.parkMounds.push({ object, cell, x, z, h, rx, rz });
   }
@@ -4243,7 +4265,9 @@ function decorate(city, course) {
         const h = type === 'spreading' ? r.range(38, 58) : type === 'small' ? r.range(8, 15) : r.range(21, 42);
         const width = type === 'spreading' ? r.range(8.5, 11.5) : type === 'small' ? r.range(2.1, 3.5) : r.range(3.2, 5.3);
         const y = terrainHeight(city, x, z);
-        const object = place(raise(vegetation(type, x, z, h, width, Math.floor(r.range(0, 4))), y));
+        const pieces = raise(vegetation(type, x, z, h, width, Math.floor(r.range(0, 4))), y);
+        const trunk = pieces[0];
+        const object = roadFootprint(city, x, z, (trunk[3] - trunk[0]) / 2) ? false : place(pieces);
         if (object && isPark) course.parkTrees.push({ object, type, cell: i, x, y, z, h });
       }
       if (r() < 0.8) {
@@ -4254,15 +4278,21 @@ function decorate(city, course) {
       }
       if (r() < 0.55) {
         const seat = bench(cx + 9, cz - 10, r() < 0.5);
-        if (flatSeat(seat)) place(seat);
+        if (flatSeat(seat) && streetFree(city, seat)) place(seat);
       }
     } else if (city.kind[i] === city.KIND.AVENUE) {
       const alongZ = i % city.n % GAME.city.AVENUE_X === 0;
-      if (r() < 0.16) place(shelter(cx + (alongZ ? 12 : 0), cz + (alongZ ? 0 : 12), alongZ));
-      else if (r() < 0.23) place(vegetation('small', cx + (alongZ ? -12 : 0), cz + (alongZ ? 0 : -12), r.range(7, 12), 2));
+      if (r() < 0.16) {
+        const pieces = shelter(cx + (alongZ ? 11 : 0), cz + (alongZ ? 0 : 11), alongZ);
+        if (streetFree(city, pieces)) place(pieces);
+      } else if (r() < 0.23) {
+        const x = cx + (alongZ ? -12 : 0), z = cz + (alongZ ? 0 : -12), h = r.range(7, 12);
+        if (!roadFootprint(city, x, z, 0.4)) place(vegetation('small', x, z, h, 2));
+      }
     } else if (r() < 0.28) {
       // Benches sit on the pavement outside the ground-floor shop fronts.
-      place(bench(cx, cz + 13.8));
+      const seat = bench(cx, cz + 12);
+      if (streetFree(city, seat)) place(seat);
     }
   }
   city.cacheGeometry();
@@ -4317,7 +4347,7 @@ function decorate(city, course) {
     throw new Error('street decoration must preserve a clean course proof');
 }
 
-GAME.street = { MATERIAL, SHAPE, MAX_PIECES, reset, decorate, vegetation, fountain, capsuleData, terrainHeight };
+GAME.street = { MATERIAL, SHAPE, MAX_PIECES, reset, decorate, vegetation, fountain, capsuleData, terrainHeight, roadFootprint };
 
 })();
 
@@ -7718,23 +7748,43 @@ function point(portal,along=0,across=0,height=0) {
   return portal.origin.map((v,i)=>v+portal.axis[i]*along+portal.right[i]*across+portal.up[i]*height);
 }
 
-function create({x,z,yaw=0,origin=[x,9,z],slope=-0.22,length=80,radius=10,mountainRadius=36,mountainHeight=30}={}) {
+function polyhedron(vertices,faces) {
+  const centre=vertices[0].map((_,i)=>vertices.reduce((sum,p)=>sum+p[i],0)/vertices.length),planes=[];
+  faces=faces.map(face=>{
+    let n=unit(cross(sub(vertices[face[1]],vertices[face[0]]),sub(vertices[face[2]],vertices[face[0]])));
+    if(dot(n,sub(centre,vertices[face[0]]))>0) {face=[...face].reverse();n=n.map(v=>-v);}
+    planes.push([...n,-dot(n,vertices[face[0]])]);return face;
+  });
+  return {vertices,faces,planes,bounds:[...centre.map((_,i)=>Math.min(...vertices.map(p=>p[i]))),
+    ...centre.map((_,i)=>Math.max(...vertices.map(p=>p[i])))]};
+}
+
+function create({x,z,yaw=0,origin=[x,9,z],slope=-0.22,length=80,radius=10,mountainRadius=62,mountainHeight=78}={}) {
   if(!origin.every(Number.isFinite)||![yaw,slope,length,radius].every(Number.isFinite)||length<20||radius<4)
     throw new Error('Invalid mountain tunnel geometry');
   const forward=[Math.sin(yaw),0,Math.cos(yaw)],axis=unit([forward[0],slope,forward[2]]),
     right=[forward[2],0,-forward[0]],up=cross(axis,right);
-  const portal={origin:[...origin],axis,right,up,forward,slope,length,radius,mountainRadius,mountainHeight,rocks:[],bars:[]};
-  // Round overlapping rock masses keep the mouth at the front of the mountain, with a clear
-  // forecourt. The actual passage is removed from this shell, never painted over solid rock.
-  const scale=mountainRadius/36,vertical=mountainHeight/30;
-  // The first mass starts beyond the tilted mouth plane. A tangent in horizontal space can
-  // otherwise leave a thin solid lip in front of that plane when the tunnel slopes down.
-  for(const [across,along,y,rx,ry,rz] of [[0,35,8,34,24,34],[2,36,23,24,16,24],
-    [-19,34,10,20,20,20],[19,36,8,22,20,22],[0,62,2,24,20,24],
-    [-24,58,3,20,14,20],[24,59,4,20,16,20],[-9,47,27,16,12,16]]) {
+  const portal={origin:[...origin],axis,right,up,forward,slope,length,radius,mountainRadius,mountainHeight,rocks:[],peaks:[],bars:[]};
+  // Low boulders anchor a broad, angular ridge. The six convex rock pieces below have real
+  // flat faces and sharp summits shared by collision, triangles and analytic intersections.
+  const scale=mountainRadius/62,vertical=mountainHeight/78;
+  for(const [across,along,y,rx,ry,rz] of [[0,34,3,31,15,30],[-40,54,2,25,13,27],
+    [43,64,1,25,14,30],[0,114,0,43,14,32]]) {
     const centre=[origin[0]+forward[0]*along*scale+right[0]*across*scale,y*vertical,
       origin[2]+forward[2]*along*scale+right[2]*across*scale],radii=[rx*scale,ry*vertical,rz*scale];
     portal.rocks.push({centre,radii,bounds:[...centre.map((v,i)=>v-radii[i]),...centre.map((v,i)=>v+radii[i]),11,1]});
+  }
+  // The front cliff lies precisely on the tilted mouth plane: the arch is embedded in rock
+  // rather than floating in front of a rounded hill, and no lip projects into the approach.
+  const front=[[-35,-17],[35,-17],[-2,36]].map(([a,h])=>[a*scale,h*vertical]);
+  portal.peaks.push(polyhedron([0,35*scale].flatMap(s=>front.map(([a,h])=>point(portal,s,a,h))),
+    [[0,1,2],[3,5,4],[0,3,4,1],[1,4,5,2],[2,5,3,0]]));
+  const surface=(a,s,y)=>[origin[0]+right[0]*a*scale+forward[0]*s*scale,y*vertical,
+    origin[2]+right[2]*a*scale+forward[2]*s*scale];
+  for(const [a,s,w,d,h,da,ds] of [[0,57,58,55,82,-5,4],[-35,55,30,40,60,-4,-3],
+    [36,67,34,46,68,3,-3],[-20,105,39,39,74,2,-3],[26,114,38,35,56,-5,-2]]) {
+    const vertices=[surface(a-w,s-d,-6),surface(a+w,s-d,-6),surface(a+w,s+d,-6),surface(a-w,s+d,-6),surface(a+da,s+ds,h)];
+    portal.peaks.push(polyhedron(vertices,[[0,3,2,1],[0,1,4],[1,2,4],[2,3,4],[3,0,4]]));
   }
   // Broken iron stubs leave a wide central aperture. Every visible rod remains a real capsule;
   // no decorative unbroken bar can cross the flight path through the entrance.
@@ -7766,6 +7816,32 @@ function capsuleDistance2(p,a,b) {
   return pa.reduce((s,v,i)=>s+(v-ba[i]*t)**2,0);
 }
 
+// Closest point on a triangle, including its edges and vertices. This gives true sphere
+// contacts at the sharp ridge instead of treating the mountain's AABB as solid scenery.
+function triangleDistance2(p,a,b,c) {
+  const ab=sub(b,a),ac=sub(c,a),ap=sub(p,a),d1=dot(ab,ap),d2=dot(ac,ap);
+  if(d1<=0&&d2<=0)return dot(ap,ap);
+  const bp=sub(p,b),d3=dot(ab,bp),d4=dot(ac,bp);
+  if(d3>=0&&d4<=d3)return dot(bp,bp);
+  const vc=d1*d4-d3*d2;
+  if(vc<=0&&d1>=0&&d3<=0) {const v=d1/(d1-d3),q=ap.map((n,i)=>n-v*ab[i]);return dot(q,q);}
+  const cp=sub(p,c),d5=dot(ab,cp),d6=dot(ac,cp);
+  if(d6>=0&&d5<=d6)return dot(cp,cp);
+  const vb=d5*d2-d1*d6;
+  if(vb<=0&&d2>=0&&d6<=0) {const w=d2/(d2-d6),q=ap.map((n,i)=>n-w*ac[i]);return dot(q,q);}
+  const va=d3*d6-d5*d4;
+  if(va<=0&&d4-d3>=0&&d5-d6>=0) {const w=(d4-d3)/(d4-d3+d5-d6),q=bp.map((n,i)=>n-w*(c[i]-b[i]));return dot(q,q);}
+  const inverse=1/(va+vb+vc),v=vb*inverse,w=vc*inverse,q=ap.map((n,i)=>n-ab[i]*v-ac[i]*w);
+  return dot(q,q);
+}
+
+function peakDistance2(peak,p) {
+  if(peak.planes.every(plane=>dot(plane,p)+plane[3]<=1e-8))return 0;
+  let d=Infinity;
+  for(const face of peak.faces)for(let i=1;i<face.length-1;i++)d=Math.min(d,triangleDistance2(p,peak.vertices[face[0]],peak.vertices[face[i]],peak.vertices[face[i+1]]));
+  return d;
+}
+
 function sphere(portal,x,y,z,r) {
   if(!portal)return null;
   if(portal.bounds&&[x,y,z].some((v,i)=>v<portal.bounds[i]-r||v>portal.bounds[i+3]+r))return null;
@@ -7784,6 +7860,7 @@ function sphere(portal,x,y,z,r) {
     const d=GAME.collide.solidDistance2(rock.bounds,x,y,z);
     if(d<=r*r)return {kind:'tower',portal:true,part:'rock'};
   }
+  for(const peak of portal.peaks||[])if(peakDistance2(peak,p)<=r*r)return {kind:'tower',portal:true,part:'rock'};
   return null;
 }
 
@@ -7804,12 +7881,23 @@ function groundHeight(portal,x,z,y=null) {
     const qx=(x-rock.centre[0])/rock.radii[0],qz=(z-rock.centre[2])/rock.radii[2],d=qx*qx+qz*qz;
     if(d<1)top=Math.max(top,rock.centre[1]+rock.radii[1]*Math.sqrt(1-d));
   }
+  for(const peak of portal.peaks||[]) {
+    let lo=-Infinity,hi=Infinity;
+    for(const plane of peak.planes) {
+      const value=-(plane[0]*x+plane[2]*z+plane[3]);
+      if(plane[1]>1e-8)hi=Math.min(hi,value/plane[1]);
+      else if(plane[1]<-1e-8)lo=Math.max(lo,value/plane[1]);
+      else if(value<0) {hi=-Infinity;break;}
+    }
+    if(hi>=lo&&Number.isFinite(hi))top=Math.max(top,hi);
+  }
   return top;
 }
 
 function bounds(portal) {
   const b=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];
   for(const rock of portal.rocks)for(let i=0;i<3;i++) {b[i]=Math.min(b[i],rock.bounds[i]);b[i+3]=Math.max(b[i+3],rock.bounds[i+3]);}
+  for(const peak of portal.peaks||[])for(let i=0;i<3;i++) {b[i]=Math.min(b[i],peak.bounds[i]);b[i+3]=Math.max(b[i+3],peak.bounds[i+3]);}
   for(const bar of portal.bars)for(const p of [bar.a,bar.b])for(let i=0;i<3;i++) {
     b[i]=Math.min(b[i],p[i]-bar.radius);b[i+3]=Math.max(b[i+3],p[i]+bar.radius);
   }
@@ -7820,7 +7908,7 @@ function bounds(portal) {
   return b;
 }
 
-GAME.collapsePortal={create,point,local,contains,sphere,floorHeight,groundHeight,bounds,capsuleDistance2};
+GAME.collapsePortal={create,point,local,contains,sphere,floorHeight,groundHeight,bounds,capsuleDistance2,peakDistance2};
 
 })();
 
@@ -7830,7 +7918,7 @@ GAME.collapsePortal={create,point,local,contains,sphere,floorHeight,groundHeight
 // A hidden, optional flight. Its destruction happens in a separate city copy. Extreme gets
 // one small departure opening; the seeded racing line, stars and medal time remain unchanged.
 const SAMPLE = 4, TRIGGER_RADIUS = 2.25;
-const NOTICE_RANGE = 180, ENTRY_ASSIST = 0.75;
+const NOTICE_RANGE = 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = v => { v = clamp(v, 0, 1); return v * v * (3 - 2 * v); };
 
@@ -7893,29 +7981,33 @@ function approach(city, course, trigger, line, snapshots = null) {
   return { glider: best, trigger: corrected };
 }
 
-// The escape is a forward flight of its own, not a jump back to a bend in the race.
-// Its gentle bow leaves every gate ahead and makes the park entrance visible on approach.
-function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
-  const heading = Math.atan2(trigger.n[0], trigger.n[2]), direction = [Math.sin(heading), Math.cos(heading)];
-  const side = [-direction[1], direction[0]], mouthS = 440, inside = 60, tail = 80;
-  const origin = [trigger.x + direction[0] * mouthS, 9, trigger.z + direction[1] * mouthS];
-  // Reject edge-facing entrances before cloning/destruction can become an expensive proof.
-  if (origin[0] < 100 || origin[2] < 100 || origin[0] > sourceCity.size - 100 || origin[2] > sourceCity.size - 100) return null;
-  const city = GAME.courseData.unpack(structuredClone(GAME.courseData.pack(sourceCity, sourceCourse))).city;
-  city.clearGeometryCache();
-  const portal = GAME.collapsePortal.create({ x: origin[0], z: origin[2], yaw: heading, origin,
-    slope: -0.22, length: tail, radius: 10, mountainRadius: 36, mountainHeight: 30 });
-  const length = mouthS + inside, n = Math.round((mouthS + tail) / SAMPLE) + 1;
+// Place the route in front of the actual incoming flight, rather than steering the player
+// towards a prepared heading. Resampling this small curve costs no city generation or search.
+function escapeCourse(difficulty, portal, initial) {
+  const first = [initial.x, initial.z], last = [portal.origin[0], portal.origin[2]];
+  const controls = [first, [first[0] + Math.sin(initial.yaw) * 220, first[1] + Math.cos(initial.yaw) * 220],
+    [last[0] - portal.forward[0] * 180, last[1] - portal.forward[2] * 180], last];
+  const points = [], distances = [0];
+  for (let i = 0; i <= 192; i++) {
+    const t = i / 192, u = 1 - t, weights = [u ** 3, 3 * u * u * t, 3 * u * t * t, t ** 3];
+    const point = [0, 1].map(axis => controls.reduce((sum, p, j) => sum + p[axis] * weights[j], 0));
+    if (i) distances.push(distances.at(-1) + Math.hypot(point[0] - points.at(-1)[0], point[1] - points.at(-1)[1]));
+    points.push(point);
+  }
+  const arc = distances.at(-1), mouthS = Math.ceil(arc / SAMPLE) * SAMPLE, inside = 60;
+  const length = mouthS + inside, n = Math.round((mouthS + portal.length) / SAMPLE) + 1;
   const line = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n) };
-  const bow = ((city.seed >>> 2) & 1) ? 14 : -14;
+  let segment = 1;
   for (let k = 0; k < n; k++) {
     const s = k * SAMPLE;
     if (s <= mouthS) {
-      const t = clamp((s - 160) / (mouthS - 160), 0, 1), lateral = bow * Math.sin(Math.PI * t) ** 2;
-      line.x[k] = trigger.x + direction[0] * s + side[0] * lateral;
-      line.z[k] = trigger.z + direction[1] * s + side[1] * lateral;
+      const distance = s / mouthS * arc;
+      while (segment < distances.length - 1 && distances[segment] < distance) segment++;
+      const f = (distance - distances[segment - 1]) / (distances[segment] - distances[segment - 1]);
+      line.x[k] = points[segment - 1][0] + (points[segment][0] - points[segment - 1][0]) * f;
+      line.z[k] = points[segment - 1][1] + (points[segment][1] - points[segment - 1][1]) * f;
       const height = initial.y + (16 - initial.y) * smooth(s / 120);
-      line.y[k] = height + (origin[1] - 16) * smooth((s - mouthS + 112) / 112);
+      line.y[k] = height + (portal.origin[1] - 16) * smooth((s - mouthS + 112) / 112);
     } else {
       const distance = s - mouthS;
       line.x[k] = portal.origin[0] + portal.axis[0] * distance;
@@ -7923,7 +8015,7 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
       line.z[k] = portal.origin[2] + portal.axis[2] * distance;
     }
   }
-  const gates = [100, 200, 300, 400].map((s, index) => {
+  const gates = [100, 200, 300, mouthS - 40].map((s, index) => {
     const k = Math.round(s / SAMPLE), a = k - 1, b = k + 1;
     const dx = line.x[b] - line.x[a], dy = line.y[b] - line.y[a], dz = line.z[b] - line.z[a], d = Math.hypot(dx, dy, dz);
     return { index, x: line.x[k], y: line.y[k], z: line.z[k], s,
@@ -7932,16 +8024,16 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   const final = portal.origin.map((v, i) => v + portal.axis[i] * inside);
   gates.push({ index: 4, x: final[0], y: final[1], z: final[2], s: length,
     n: [...portal.axis], radius: 8, finish: true, sewer: true });
-  const course = { difficulty: sourceCourse.difficulty, collapse: true, line, sample: SAMPLE, length,
-    start: { x: trigger.x, y: initial.y, z: trigger.z, yaw: heading }, gates, boosters: [], pads: [], stars: [], sections: [],
-    par: length / GAME.flight.cruise(sourceCourse.difficulty), ambientLift: 5.6,
+  return { difficulty, collapse: true, line, sample: SAMPLE, length,
+    start: { x: initial.x, y: initial.y, z: initial.z, yaw: initial.yaw }, gates, boosters: [], pads: [], stars: [], sections: [],
+    par: length / GAME.flight.cruise(difficulty), ambientLift: 5.6,
     energyAt: s => line.y[Math.min(n - 1, Math.round(s / SAMPLE))] + 8,
     portalEntry: { mouthS, finalS: length, inside, origin: [...portal.origin], axis: [...portal.axis],
       mouth: [...portal.origin], final, gentleSlope: portal.slope, minimumRadius: 8 } };
-  const state = { time: 0, falls: new Float32Array(city.n * city.n * 4), portal, hazards: [], progress: 0,
-    entryAssist: ENTRY_ASSIST, entryPilot: { k: 0 } };
-  city.collapse = state;
-  const changed = new Set(), removedObjects = new Set(), parkCells = new Set();
+}
+
+function clearLane(city, course, changed, removedObjects) {
+  const { line, gates } = course;
   function clearBuilding(cell) {
     if (city.kind[cell] === GAME.city.KIND.TOWER || city.kind[cell] === GAME.city.KIND.OBSTACLE) {
       changed.add(cell); city.kind[cell] = GAME.city.KIND.PLAZA;
@@ -7949,17 +8041,9 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
     const a = cell * 4;
     for (const field of ['boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB']) city[field].fill(0, a, a + 4);
   }
-  // A park parcel belongs only to the escape's private city copy. It is an explicit exception
-  // to the crowded streets, giving the rocky hillside a readable forecourt and tunnel mouth.
-  for (let cell = 0; cell < city.n * city.n; cell++) {
-    const [x, z] = city.cellCenter(cell), dx = x - portal.origin[0], dz = z - portal.origin[2];
-    const along = dx * direction[0] + dz * direction[1], across = dx * side[0] + dz * side[1];
-    if (along < -52 || along > tail + 42 || Math.abs(across) > 52) continue;
-    clearBuilding(cell); city.streetBoxes[cell] = null; city.park[cell] = 1; parkCells.add(cell);
-  }
   // Clear only solids that intrude on the generous flight lane. Gate apertures receive their
   // full radius of space; the surrounding city blocks and frontage remain in place.
-  for (let k = 0; k <= Math.round(mouthS / SAMPLE); k++) {
+  for (let k = 0; k <= Math.round(course.portalEntry.mouthS / SAMPLE); k++) {
     const x = line.x[k], y = line.y[k], z = line.z[k];
     const gate = gates.slice(0, 4).find(g => Math.abs(g.s - k * SAMPLE) < 18), margin = gate ? 10.4 : 6.5;
     const ix = Math.floor(x / city.cell), iz = Math.floor(z / city.cell);
@@ -7982,6 +8066,35 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
     }
   }
   city.clearGeometryCache();
+}
+
+// The escape has its own private city copy. The existing world is reused on crossing; only
+// its short flight lane changes with the player's approach, keeping the entrance responsive.
+function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
+  const heading = Math.atan2(trigger.n[0], trigger.n[2]), direction = [Math.sin(heading), Math.cos(heading)];
+  const side = [-direction[1], direction[0]], tail = 80;
+  const origin = [trigger.x + direction[0] * 440, 9, trigger.z + direction[1] * 440];
+  if (origin[0] < 140 || origin[2] < 140 || origin[0] > sourceCity.size - 140 || origin[2] > sourceCity.size - 140) return null;
+  const city = GAME.courseData.unpack(structuredClone(GAME.courseData.pack(sourceCity, sourceCourse))).city;
+  city.clearGeometryCache();
+  const portal = GAME.collapsePortal.create({ x: origin[0], z: origin[2], yaw: heading, origin,
+    slope: -0.22, length: tail, radius: 10, mountainRadius: 62, mountainHeight: 78 });
+  const course = escapeCourse(sourceCourse.difficulty, portal, initial), { line } = course;
+  const mouthS = course.portalEntry.mouthS;
+  const state = { time: 0, falls: new Float32Array(city.n * city.n * 4), portal, hazards: [], progress: 0 };
+  city.collapse = state;
+  const changed = new Set(), removedObjects = new Set(), parkCells = new Set();
+  // The larger mountain has a real park parcel, including a little open ground at its mouth.
+  const bounds = portal.bounds;
+  for (let cell = 0; cell < city.n * city.n; cell++) {
+    const [x, z] = city.cellCenter(cell), margin = city.cell * 0.5 + 8;
+    if (x < bounds[0] - margin || x > bounds[3] + margin || z < bounds[2] - margin || z > bounds[5] + margin) continue;
+    changed.add(cell); city.kind[cell] = GAME.city.KIND.PLAZA;
+    const a = cell * 4;
+    for (const field of ['boxA', 'boxB', 'structure', 'propA', 'propB', 'bridgeA', 'bridgeB']) city[field].fill(0, a, a + 4);
+    city.streetBoxes[cell] = null; city.park[cell] = 1; parkCells.add(cell);
+  }
+  clearLane(city, course, changed, removedObjects);
   const end = Math.round(mouthS / SAMPLE), nearest = (x, z) => {
     let best = { distance: Infinity, k: 0, dx: 0, dz: 0 };
     for (let k = 0; k <= end; k += 2) {
@@ -8022,7 +8135,8 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   if (!motionSpecs.some(m => m.kind === 'tree')) {
     outer: for (let k = 20; k < end - 20; k += 8) for (const sign of [-1, 1]) {
       const x = line.x[k] + side[0] * 22 * sign, z = line.z[k] + side[1] * 22 * sign, cell = city.cellIndex(x, z);
-      if (cell < 0 || used.has(cell) || city.buildingBoxes(cell).length || GAME.collide.sphere(city, x, 5, z, 4)) continue;
+      if (cell < 0 || used.has(cell) || city.buildingBoxes(cell).length || GAME.street.roadFootprint(city, x, z, 0.6)
+        || GAME.collide.sphere(city, x, 5, z, 4)) continue;
       const pieces = GAME.street.vegetation('small', x, z, 10, 2.5).map(b => [...b, 900000 + cell]);
       if ((city.streetBoxes[cell]?.length || 0) + pieces.length > GAME.street.MAX_PIECES) continue;
       city.streetBoxes[cell] = [...(city.streetBoxes[cell] || []), ...pieces];
@@ -8058,25 +8172,16 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   return { city, course, state };
 }
 
-// A short, explicit guided entrance is shown during the red onset. It uses the proved
-// forward heading, so an oblique secret-ring approach cannot place escape gates behind us.
 function entryGlider(world, live = null) {
-  const start = world.course.start, glider = GAME.flight.create(start, world.course.difficulty);
-  return { ...glider, x: start.x, y: start.y, z: start.z, yaw: start.yaw, gamma: 0, bank: 0,
-    speed: GAME.flight.cruise(world.course.difficulty), lift: 0, vy: 0 };
+  return live ? { ...live } : GAME.flight.create(world.course.start, world.course.difficulty);
 }
 
 function step(state, run, stick, dt) {
   if (run.finished || run.crashed) return [];
   const events = [], g = run.glider, from = [g.x, g.y, g.z];
-  // The short guided red onset is part of the real simulation and its proof. A held mouse
-  // or touch input cannot immediately undo entry alignment; manual control resumes afterward.
-  const guided = state.entryAssist > 1e-6;
-  const appliedStick = guided ? steer(state.entryPilot ||= { k: 0 }, g, run.course) : stick;
-  state.entryAssist = Math.max(0, (state.entryAssist || 0) - dt);
   state.time += dt;
   // Shop powers are deliberately not consumed in the easter egg; its descent needs no boosts.
-  GAME.flight.step(g, appliedStick, dt, () => run.course.ambientLift || 0);
+  GAME.flight.step(g, stick, dt, () => run.course.ambientLift || 0);
   run.time += dt;
   const to = [g.x, g.y, g.z], gate = run.course.gates[run.next];
   const hit = GAME.collide.sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS);
@@ -8440,9 +8545,42 @@ function begin(city, course, secret = course.collapse, glider = null) {
   if (!secret?.world) throw new Error('This course has no prepared Collapse route');
   const world = GAME.courseData.unpack(structuredClone(secret.world));
   const state = { time: 0, falls: Float32Array.from(secret.falls), portal: structuredClone(secret.portal),
-    fallingCells: [...(secret.fallingCells || [])], hazards: secret.hazards.map(h => ({ ...h })), progress: 0,
-    entryAssist: ENTRY_ASSIST, entryPilot: { k: 0 } };
-  GAME.collapseMotion.prepare(world.city, state, secret.motionSpecs || []);
+    fallingCells: [...(secret.fallingCells || [])], hazards: secret.hazards.map(h => ({ ...h })), progress: 0 };
+  const initial = glider || secret.entry;
+  world.course = { ...escapeCourse(course.difficulty, state.portal, initial), escapeGeometry: world.course.escapeGeometry };
+  const changed = new Set(), removed = new Set();
+  clearLane(world.city, world.course, changed, removed);
+  // Keep toppling objects beside the actual entry curve and aim their fall away from it.
+  // Only the small existing mover set is adjusted, never regenerated at the ring crossing.
+  const line = world.course.line, end = Math.round(world.course.portalEntry.mouthS / SAMPLE);
+  const nearest = (x, z) => {
+    let best = { distance: Infinity, dx: 0, dz: 0 };
+    for (let k = 0; k <= end; k += 2) {
+      const dx = x - line.x[k], dz = z - line.z[k], distance = Math.hypot(dx, dz);
+      if (distance < best.distance) best = { distance, dx, dz };
+    }
+    return best;
+  };
+  const specs = (secret.motionSpecs || []).filter(spec => !changed.has(spec.cell) && !removed.has(spec.object)).map(spec => {
+    const [x, z] = world.city.cellCenter(spec.cell), near = nearest(x, z);
+    return near.distance > 1 ? { ...spec, axis: [near.dz / near.distance, -near.dx / near.distance] } : spec;
+  });
+  // Distant downward-only falls must also remain outside the new lane. A small cell window
+  // clears their timeline; there is no scan or re-planning of the thousands of skyline falls.
+  for (let k = 0; k <= end; k += 4) {
+    const ix = Math.floor(line.x[k] / world.city.cell), iz = Math.floor(line.z[k] / world.city.cell);
+    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+      const x = ix + dx, z = iz + dz;
+      if (x >= 0 && z >= 0 && x < world.city.n && z < world.city.n) state.falls[(z * world.city.n + x) * 4 + 3] = 0;
+    }
+  }
+  state.fallingCells = state.fallingCells.filter(cell => state.falls[cell * 4 + 3]);
+  const geometry = world.course.escapeGeometry;
+  geometry.clearedCells = [...new Set([...geometry.clearedCells, ...changed])];
+  geometry.removedObjects = [...new Set([...geometry.removedObjects, ...removed])];
+  geometry.streetClearedCells = [...new Set([...geometry.streetClearedCells, ...changed])];
+  geometry.retainedBuildings -= changed.size;
+  GAME.collapseMotion.prepare(world.city, state, specs);
   world.city.collapse = state;
   const result = { ...world, state };
   result.entryGlider = entryGlider(result, glider);
@@ -8450,7 +8588,7 @@ function begin(city, course, secret = course.collapse, glider = null) {
 }
 
 GAME.collapse = { prepare, begin, entryGlider, step, steer, approachSteer, prove, through, crossing, fallOffset,
-  lineOfSight, normalTrace, visibleFrom, entrancePanels, entranceFrontage, escapeWorld, NOTICE_RANGE, TRIGGER_RADIUS, ENTRY_ASSIST };
+  lineOfSight, normalTrace, visibleFrom, entrancePanels, entranceFrontage, escapeWorld, NOTICE_RANGE, TRIGGER_RADIUS };
 
 })();
 
@@ -9455,26 +9593,16 @@ GAME.glsl = { fragmentPrelude, vertexPrelude, UNIFORMS, LIB };
 ;(function () {
 'use strict';
 // ---- src/engine/graphics-profile.js ----
-// Choose the renderer before any scene shader is created. Windows uses conventional meshes;
-// a remembered interruption also avoids retrying the same expensive ray-tracing program.
-const KEY = 'neonflight.graphics.compat.v1';
+// Every browser starts with the same full renderer. Compatibility is an explicit URL choice;
+// old device detection and saved interruption flags must not hide the cross-browser test.
 
-function select({ platform = '', userAgentPlatform = '', userAgent = '', requested = '', remembered = false } = {}) {
-  const windows = /^win/i.test(platform) || /^windows$/i.test(userAgentPlatform) || /Windows NT/i.test(userAgent);
-  const reason = windows ? 'windows' : requested === 'safe' ? 'requested' : remembered ? 'remembered' : 'standard';
+function select({ requested = '' } = {}) {
+  const reason = requested === 'safe' ? 'requested' : 'standard';
   return { compatibility: reason !== 'standard', renderer: reason === 'standard' ? 'raytrace' : 'mesh', reason };
 }
 
-let remembered = false;
-try { remembered = localStorage.getItem(KEY) === '1'; } catch { /* the explicit URL still works */ }
-const profile = select({ platform: navigator.platform, userAgentPlatform: navigator.userAgentData?.platform,
-  userAgent: navigator.userAgent, requested: new URLSearchParams(location.search).get('graphics'), remembered });
-
-function rememberCompatibility() {
-  try { localStorage.setItem(KEY, '1'); } catch { /* keep recovery explicit when storage is refused */ }
-}
-
-GAME.graphicsProfile = { ...profile, key: KEY, select, rememberCompatibility };
+const profile = select({ requested: new URLSearchParams(location.search).get('graphics') });
+GAME.graphicsProfile = { ...profile, select };
 
 })();
 
@@ -11841,7 +11969,7 @@ const add=(a,b)=>a.map((v,i)=>v+b[i]), sub=(a,b)=>a.map((v,i)=>v-b[i]),
   mul=(a,s)=>a.map(v=>v*s), dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0),
   cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
   unit=p=>mul(p,1/Math.max(1e-9,Math.hypot(...p))), middle=(a,b)=>mul(add(a,b),0.5);
-const MAX_ROCKS=12, MAX_BARS=24, CUT_CLEARANCE=0.045;
+const MAX_ROCKS=12, MAX_PEAKS=6, PEAK_FACES=6, MAX_BARS=24, CUT_CLEARANCE=0.045;
 function local(portal,p) {
   const d=sub(p,portal.origin),along=dot(d,portal.axis),radial=sub(d,mul(portal.axis,along));
   return {along,radial,radialDistance:Math.hypot(...radial)};
@@ -11955,6 +12083,18 @@ function* buildSteps(portal,theme) {
       if(i%(S*3*48)===0)yield;
     }
   }
+  for(const [index,peak] of (portal.peaks||[]).entries()) {
+    const colour=rockColour(theme,index+4);
+    for(const [faceIndex,face] of peak.faces.entries()) {
+      const normal=peak.planes[faceIndex].slice(0,3),shade=0.91+(faceIndex%3)*0.065,
+        tint=colour.map(v=>v*shade);
+      for(let i=1;i<face.length-1;i++) {
+        subtractTunnel([peak.vertices[face[0]],peak.vertices[face[i]],peak.vertices[face[i+1]]],portal,
+          tri=>rock.triangle(...tri,tint,normal));
+        yield;
+      }
+    }
+  }
   // The cylindrical brick lining descends on precisely the same basis as the collision void.
   // It is open at both ends, with no cap hiding the transition ring.
   const end=point(portal,portal.length),brick=[0.21,0.105,0.062];
@@ -11993,8 +12133,10 @@ const GLSL=`
 uniform float uCollapsePortalActive;
 uniform vec4 uCollapsePortalOrigin, uCollapsePortalAxis;
 uniform vec3 uCollapsePortalRight, uCollapsePortalUp;
-uniform int uCollapseRockCount, uCollapseBarCount;
+uniform int uCollapseRockCount, uCollapsePeakCount, uCollapseBarCount;
 uniform vec3 uCollapseRockCentre[${MAX_ROCKS}], uCollapseRockRadii[${MAX_ROCKS}];
+uniform int uCollapsePeakFaces[${MAX_PEAKS}];
+uniform vec4 uCollapsePeakPlanes[${MAX_PEAKS*PEAK_FACES}];
 uniform vec4 uCollapseBarA[${MAX_BARS}], uCollapseBarB[${MAX_BARS}];
 vec3 portalLocal(vec3 p) {
   vec3 d=p-uCollapsePortalOrigin.xyz;
@@ -12032,12 +12174,33 @@ float portalEllipsoid(vec3 ro,vec3 rd,vec3 centre,vec3 radii,out vec3 normal) {
   }
   return hit;
 }
+float portalPeak(vec3 ro,vec3 rd,int index,out vec3 normal) {
+  float near=-1e9,far=1e9;vec3 nearNormal=vec3(0.0),farNormal=vec3(0.0);
+  for(int face=0;face<${PEAK_FACES};face++) {
+    if(face>=uCollapsePeakFaces[index])break;
+    vec4 plane=uCollapsePeakPlanes[index*${PEAK_FACES}+face];
+    float value=dot(plane.xyz,ro)+plane.w,speed=dot(plane.xyz,rd);
+    if(abs(speed)<1e-7) {if(value>0.0)return 1e9;continue;}
+    float t=-value/speed;
+    if(speed<0.0&&t>near) {near=t;nearNormal=plane.xyz;}
+    if(speed>0.0&&t<far) {far=t;farNormal=plane.xyz;}
+    if(near>far)return 1e9;
+  }
+  if(near>0.001&&!portalVoid(ro+rd*near)) {normal=nearNormal;return near;}
+  if(far>0.001&&!portalVoid(ro+rd*far)) {normal=farNormal;return far;}
+  return 1e9;
+}
 float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material) {
   float hit=1e9;material=0;
   if(uCollapsePortalActive<0.5)return hit;
   for(int i=0;i<${MAX_ROCKS};i++) {
     if(i>=uCollapseRockCount)break;
     vec3 n;float t=portalEllipsoid(ro,rd,uCollapseRockCentre[i],uCollapseRockRadii[i],n);
+    if(t<hit) {hit=t;normal=n;material=0;}
+  }
+  for(int i=0;i<${MAX_PEAKS};i++) {
+    if(i>=uCollapsePeakCount)break;
+    vec3 n;float t=portalPeak(ro,rd,i,n);
     if(t<hit) {hit=t;normal=n;material=0;}
   }
   vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
@@ -12067,18 +12230,22 @@ const uniformCache=new WeakMap();let emptyUniforms=null;
 function uniforms(portal) {
   if(portal&&uniformCache.has(portal))return uniformCache.get(portal);
   if(!portal&&emptyUniforms)return emptyUniforms;
-  const rocks=portal?.rocks||[],bars=portal?.bars||[],rockCentres=new Float32Array(MAX_ROCKS*3),rockRadii=new Float32Array(MAX_ROCKS*3),
+  const rocks=portal?.rocks||[],peaks=portal?.peaks||[],bars=portal?.bars||[],rockCentres=new Float32Array(MAX_ROCKS*3),rockRadii=new Float32Array(MAX_ROCKS*3),
+    peakFaces=new Int32Array(MAX_PEAKS),peakPlanes=new Float32Array(MAX_PEAKS*PEAK_FACES*4),
     barA=new Float32Array(MAX_BARS*4),barB=new Float32Array(MAX_BARS*4);
   rocks.slice(0,MAX_ROCKS).forEach((r,i)=>{rockCentres.set(r.centre,i*3);rockRadii.set(r.radii,i*3);});
+  peaks.slice(0,MAX_PEAKS).forEach((peak,i)=>{peakFaces[i]=peak.planes.length;
+    peak.planes.forEach((plane,j)=>peakPlanes.set(plane,(i*PEAK_FACES+j)*4));});
   bars.slice(0,MAX_BARS).forEach((b,i)=>{barA.set([...b.a,b.radius],i*4);barB.set([...b.b,b.radius],i*4);});
   const result={uCollapsePortalActive:portal?1:0,uCollapsePortalOrigin:portal?[...portal.origin,portal.radius]:[0,0,0,0],
     uCollapsePortalAxis:portal?[...portal.axis,portal.length]:[0,0,1,0],uCollapsePortalRight:portal?.right||[1,0,0],
-    uCollapsePortalUp:portal?.up||[0,1,0],uCollapseRockCount:Math.min(rocks.length,MAX_ROCKS),uCollapseBarCount:Math.min(bars.length,MAX_BARS),
+    uCollapsePortalUp:portal?.up||[0,1,0],uCollapseRockCount:Math.min(rocks.length,MAX_ROCKS),uCollapsePeakCount:Math.min(peaks.length,MAX_PEAKS),
+    uCollapsePeakFaces:peakFaces,uCollapsePeakPlanes:peakPlanes,uCollapseBarCount:Math.min(bars.length,MAX_BARS),
     uCollapseRockCentre:rockCentres,uCollapseRockRadii:rockRadii,uCollapseBarA:barA,uCollapseBarB:barB};
   if(portal)uniformCache.set(portal,result);else emptyUniforms=result;
   return result;
 }
-GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunnel,local,point,outside,uniforms,GLSL,MAX_ROCKS,MAX_BARS};
+GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunnel,local,point,outside,uniforms,GLSL,MAX_ROCKS,MAX_PEAKS,PEAK_FACES,MAX_BARS};
 
 })();
 
@@ -17062,7 +17229,6 @@ const graphics = api.graphics = {
 
 function retryGraphics() {
   if (graphics.compatibility) return;
-  GAME.graphicsProfile.rememberCompatibility();
   const url = new URL(location.href);
   url.searchParams.set('graphics', 'safe');
   if (url.href === location.href) location.reload();
@@ -17075,7 +17241,6 @@ function recoverGraphics(err) {
   graphics.recovering = true;
   flowVersion++;
   graphics.lastError = err?.message || 'The graphics connection was interrupted.';
-  GAME.graphicsProfile.rememberCompatibility();
   api.ready = false;
   GAME.courseLoader.cancel();
   hud?.show(false);
@@ -17345,10 +17510,9 @@ function enterCollapse() {
   pendingStars = new Set(); newStars = 0;
   city = world.city; course = world.course; collapse = world.state;
   run = GAME.run.create(city, course); run.glider = world.entryGlider;
-  collapse.entryView = { yaw: glider.yaw, gamma: glider.gamma, bank: glider.bank };
   guide = GAME.guide.create(course); pilot = { k: 0 };
   renderer.setWorld(city, course.pads); renderer.setCollapse(collapse);
-  input.reset(); setMode('playing');
+  setMode('playing');
   hud.clearToasts();
   hud.message('COLLAPSE', 'bad', 2);
   hud.toast('Find the way beneath the city', 'bad', 3);
@@ -17439,11 +17603,6 @@ function shownGlider() {
     const a = stepBefore, b = run.glider, t = Math.min(1, Math.max(0, acc / PHYSICS_DT));
     const mix = k => a[k] + (b[k] - a[k]) * t;
     shown={ ...b, x: mix('x'), y: mix('y'), z: mix('z'), yaw: mix('yaw'), gamma: mix('gamma'), bank: mix('bank'), speed: mix('speed') };
-  }
-  if(collapse?.entryView&&collapse.time<0.75&&!reducedMotion.matches) {
-    const t=Math.max(0,collapse.time/0.75),blend=t*t*(3-2*t),a=collapse.entryView;
-    const yaw=a.yaw+Math.atan2(Math.sin(shown.yaw-a.yaw),Math.cos(shown.yaw-a.yaw))*blend;
-    shown={...shown,yaw,gamma:a.gamma+(shown.gamma-a.gamma)*blend,bank:a.bank+(shown.bank-a.bank)*blend};
   }
   return shown;
 }
@@ -17629,7 +17788,7 @@ function render(now, w, h) {
   // camera and masonry through the countdown instead of swapping an underground backdrop.
   if (isSewer()) sewerFlightRenderer.draw(cam, sewerMenu ? [] : view.rings,
     sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide, []);
-  else renderer.draw(cam, view.rings, mode === 'finished' || mode === 'results' ? [] : view.guide,
+  else renderer.draw(cam, view.rings, collapse || mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
   const over = Math.max(0, (g.speed - FLIGHT.CRUISE) / (FLIGHT.MAX_SPEED - FLIGHT.CRUISE));
