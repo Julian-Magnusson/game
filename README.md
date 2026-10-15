@@ -18,18 +18,27 @@ after a graphics interruption, with pending durations frozen when rendering stop
 identify the last submitted operation, not a proven
 failing driver stage. No player
 progress or course codes are included, and nothing is sent automatically. The earlier mesh
-release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The latest report shows
-the post programs ready, the city shader still pending at the 30-second startup timeout and zero
-rendered frames. Its context-loss flag also included timeout recovery, so it does not prove the
-WebGL context was lost. New reports distinguish observed context loss from recovery. The evidence
-isolates city graphics preparation, not weak hardware, a proven driver hang or an exact driver bug.
-The full renderer now shares its primary/reflection tracing and material work through one runtime
-loop, preserving graphics and tracing budgets while reducing compiler expansion. Reports also
-show elapsed preparation time. Mac Chrome checks do not reproduce that AMD driver; this fix
-still needs testing on the Windows PC. A standalone city compiler probe is available in the
-development repository for isolating shader preparation from the rest of startup.
-Nine deterministic full-scene comparisons on ANGLE/OpenGL preserve the original HDR image
-exactly, including reflections, weather, park hills and Collapse scenery.
+release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The earlier full-renderer
+refactor still failed: the 106,165-byte city shader (`bfa12964`) remained pending at 30,014 ms,
+with post programs ready in 15–85 ms, zero rendered frames and `context.lost: false`. This
+isolates city preparation, not weak hardware, a proven driver hang or an exact driver bug.
+The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
+building materials, street materials and composition. Reflected rays are computed once and
+cached so tracing and shading use the same direction. Each submitted fragment source is under
+30 KB, replacing the previous 106 KB combined city shader. They preserve the full graphics and
+reflections with the same 120/40-cell tracing budgets. Eight draws per horizontal band reuse
+eight full-precision RGBA32F scratch textures, capped at 32 MiB (33.6 MB) in steady use and
+64 MiB (67.1 MB) briefly during resize. Final-image and post-processing targets are additional;
+output resolution is preserved.
+New reports distinguish observed context loss from timeout recovery. Mac Chrome checks do not
+reproduce the AMD/Direct3D11 backend; the new pipeline still needs testing on the Windows PC.
+A standalone city compiler probe is available in the development repository for isolating
+shader preparation from the rest of startup.
+Nine local scene comparisons against the original renderer with a shared reflection ray retain
+at least 99% identical display channels; differences are at most three 8-bit code values, confined
+to three isolated Arctic Dawn pixels above one code. The raw original comparison also preserves
+the same visible detail and features, with small floating-point differences in its rain ripples.
+This checks graphics locally; Windows AMD startup still needs confirmation.
 Use the ordinary play URL for the same full renderer everywhere.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional

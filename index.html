@@ -9564,13 +9564,22 @@ vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0
 `;
 
 // Fullscreen fragment programs get vUv from the built-in vertex shader; custom-vertex programs don't.
-function fragmentPrelude(fullscreen, { library = true } = {}) {
+function fragmentPrelude(fullscreen, { library = true, outputs = 1 } = {}) {
+  let declarations = 'out vec4 fragColor;';
+  if (outputs !== 1) {
+    const names = Array.isArray(outputs) ? outputs : Number.isInteger(outputs) && outputs >= 1 && outputs <= 4
+      ? Array.from({ length: outputs }, (_, i) => i ? `frag${i}` : 'fragColor') : [];
+    if (names.length < 1 || names.length > 4 || new Set(names).size !== names.length
+        || names.some(name => typeof name !== 'string' || !/^[A-Za-z_]\w*$/.test(name) || name.startsWith('gl_') || name.includes('__')))
+      throw new Error('Fragment outputs must contain one to four unique GLSL names.');
+    declarations = names.map((name, i) => `layout(location=${i}) out vec4 ${name};`).join('\n');
+  }
   return `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 ${fullscreen ? 'in vec2 vUv;' : ''}
-out vec4 fragColor;
+${declarations}
 ${UNIFORMS}
 ${library ? LIB : ''}
 `;
@@ -9930,6 +9939,64 @@ function bindTarget(target) {
   }
 }
 
+let drawBufferLimits = null;
+// A non-owning framebuffer view lets the city reuse large hit-data textures between passes.
+// Texture allocation and its budget belong to the renderer; disposing a view only deletes its
+// framebuffer. Limits are checked once, while construction always validates completeness.
+function createTargetView(w, h, textures) {
+  requireContext('creating framebuffer view');
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0
+      || !Array.isArray(textures) || !textures.length || textures.some(tex => !tex) || new Set(textures).size !== textures.length)
+    throw gfxError('GFX_RESOURCE_FAILED', 'Framebuffer view requires positive dimensions and color textures.', { resource: 'framebuffer view', stage: 'validation', width: w, height: h });
+  if (!drawBufferLimits) {
+    const maxDrawBuffers = gl.getParameter(gl.MAX_DRAW_BUFFERS);
+    requireContext('checking framebuffer draw support');
+    const maxColorAttachments = gl.getParameter(gl.MAX_COLOR_ATTACHMENTS);
+    requireContext('checking framebuffer output support');
+    drawBufferLimits = { maxDrawBuffers, maxColorAttachments };
+  }
+  if (!Number.isInteger(drawBufferLimits.maxDrawBuffers) || !Number.isInteger(drawBufferLimits.maxColorAttachments)
+      || textures.length > Math.min(drawBufferLimits.maxDrawBuffers, drawBufferLimits.maxColorAttachments))
+    throw gfxError('GFX_RESOURCE_FAILED', 'The graphics driver cannot provide the required framebuffer outputs.',
+      { resource: 'framebuffer view', stage: 'capability', outputs: textures.length, ...drawBufferLimits });
+  const previous = boundTarget, attachments = textures.slice();
+  let fb = null;
+  try {
+    fb = createHandle(() => gl.createFramebuffer(), 'framebuffer view');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    attachments.forEach((tex, index) => {
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + index, gl.TEXTURE_2D, tex, 0);
+      requireContext(`attaching framebuffer output ${index}`);
+    });
+    gl.drawBuffers(attachments.map((_, index) => gl.COLOR_ATTACHMENT0 + index));
+    requireContext('configuring framebuffer outputs');
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    requireContext('checking framebuffer view');
+    if (status !== gl.FRAMEBUFFER_COMPLETE)
+      throw gfxError('GFX_RESOURCE_FAILED', `Framebuffer view incomplete (0x${Number(status || 0).toString(16)}) for ${textures.length} outputs at ${w}x${h}.`,
+        { resource: 'framebuffer view', stage: 'completeness', status, outputs: textures.length, width: w, height: h });
+    const view = { fb, w, h, tex: attachments[0], textures: attachments };
+    let disposed = false;
+    view.dispose = () => {
+      if (disposed) return;
+      disposed = true; gl.deleteFramebuffer(fb);
+      if (boundTarget === view) {
+        if (contextLost()) boundTarget = null;
+        else bindTarget(null);
+      }
+    };
+    return view;
+  } catch (error) {
+    if (fb) gl.deleteFramebuffer(fb);
+    throw error;
+  } finally {
+    // Return to the caller's scene target and its full viewport. Callers using a custom
+    // viewport restore it separately. After loss, retain only the cached target state.
+    if (contextLost()) boundTarget = previous;
+    else bindTarget(previous);
+  }
+}
+
 // ---- Shared textures --------------------------------------------------------------------------
 // 256² RGBA random bytes; smooth fetches make cheap noise in heavy shaders. Green is red
 // shifted by (37, 17) texels, which tnoise() relies on to read two z-slices in one fetch.
@@ -10022,7 +10089,7 @@ GAME.gfx = {
     }
     return ready;
   },
-  createTexture, createTarget, bindTarget,
+  createTexture, createTarget, createTargetView, bindTarget,
   get target() { return boundTarget; },
   setFrame, applyStandard, fullscreen, pass,
   noiseTex,
@@ -12288,6 +12355,371 @@ GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunn
 
 ;(function () {
 'use strict';
+// ---- src/render/city-passes.js ----
+// The full city picture, divided into small programs. Canonical material/geometry functions
+// remain in city.js; selecting their dependency closures prevents duplicate visual definitions.
+// Horizontal bands keep exact float intermediates bounded independently of screen resolution.
+const BAND_PIXELS = 262144;
+
+function functionParts(source) {
+  // Keep positions while hiding comments, so braces or sample calls in prose cannot affect
+  // the parser. GLSL has no string literals in these bodies.
+  const masked = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, comment => comment.replace(/[^\n]/g, ' '));
+  const definitions = [];
+  const header = /^(?:(?:lowp|mediump|highp)\s+)?(?:float|vec[234]|ivec[234]|uvec[234]|bool|int|uint|Hit|void|mat[234])\s+(\w+)\s*\([^;{}]*\)\s*\{/gm;
+  let match;
+  while ((match = header.exec(masked))) {
+    let end = header.lastIndex, depth = 1;
+    while (depth && end < masked.length) {
+      if (masked[end] === '{') depth++;
+      else if (masked[end] === '}') depth--;
+      end++;
+    }
+    if (depth) throw new Error(`Unclosed city shader function ${match[1]}`);
+    definitions.push({ name: match[1], start: match.index, end, source: source.slice(match.index, end),
+      code: masked.slice(match.index, end) });
+    header.lastIndex = end;
+  }
+  if (!definitions.some(d => d.name === 'trace') || !definitions.some(d => d.name === 'main')) {
+    throw new Error('City passes require the canonical city shader');
+  }
+  let declarations = '', at = 0;
+  for (const definition of definitions) {
+    declarations += source.slice(at, definition.start);
+    at = definition.end;
+  }
+  declarations += source.slice(at);
+  const named = new Map();
+  for (const definition of definitions) {
+    if (!named.has(definition.name)) named.set(definition.name, []);
+    named.get(definition.name).push(definition);
+  }
+  function select(roots) {
+    const needed = new Set();
+    function visit(name) {
+      if (needed.has(name) || !named.has(name)) return;
+      needed.add(name);
+      for (const definition of named.get(name)) {
+        for (const call of definition.code.matchAll(/\b(\w+)\s*\(/g)) visit(call[1]);
+      }
+    }
+    roots.forEach(visit);
+    if (needed.has('main') || needed.has('shadeObject')) throw new Error('City pass retained the combined shader');
+    return declarations + '\n' + definitions.filter(d => needed.has(d.name)).map(d => d.source).join('\n\n');
+  }
+  return { select };
+}
+
+const BAND = `
+uniform vec2 uBandOrigin, uBandSize;
+ivec2 cityPixel() { return clamp(ivec2(vUv * uRes - uBandOrigin), ivec2(0), ivec2(uBandSize) - 1); }
+vec3 cityDirection() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  return normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
+}
+void cityMetadata(float metadataValue, out int kind, out int moving, out ivec2 cell) {
+  int value = int(metadataValue), n = int(uN), index = value >> 8;
+  kind = value & 7; moving = (value >> 3) & 31;
+  cell = index < n * n ? ivec2(index % n, index / n) : ivec2(-1);
+}
+struct CityRay { vec3 origin; vec3 direction; float pixelBase; float fresnel; float gloss; bool enabled; };
+CityRay cityPrimary(vec3 rd) {
+  CityRay ray; ray.origin = uCamPos; ray.direction = rd; ray.pixelBase = 0.0;
+  ray.fresnel = 0.0; ray.gloss = 0.0; ray.enabled = true; return ray;
+}
+`;
+
+const REFLECTION_BUILD = `
+uniform highp sampler2D uPrimaryG0;
+CityRay cityBuildReflection(ivec2 pixel, vec3 rd, float pixAngle) {
+  CityRay ray = cityPrimary(rd); ray.enabled = false;
+  vec4 primary = texelFetch(uPrimaryG0, pixel, 0);
+  int kind, moving; ivec2 cell; cityMetadata(primary.y, kind, moving, cell);
+  if (kind != GROUND) return ray;
+  vec3 p = uCamPos + rd * primary.x;
+  float pix = primary.x * pixAngle;
+  bool inCity = all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, ivec2(int(uN))));
+  float gloss = inCity && texelFetch(uStreetInfo, cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
+  if (gloss <= 0.01) return ray;
+  float ripple = 0.035 * saturate(1.3 - pix * 2.5);
+  vec2 tilt = vec2(noise(p * 0.35), noise(p * 0.35 + 7.0)) * ripple;
+  if (uRain > 0.0) tilt += rainRipple(p.xz, pix) * uRain;
+  ray.origin = p;
+  ray.direction = reflect(rd, normalize(vec3(tilt.x, 1.0, tilt.y)));
+  ray.pixelBase = pix;
+  ray.fresnel = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);
+  ray.gloss = gloss; ray.enabled = true; return ray;
+}
+`;
+
+// Cache the high-frequency ripple/noise result once. Independently compiling that expression
+// into geometry and material programs can change its hash rounding and produce different rays.
+const REFLECTION = `
+uniform highp sampler2D uReflectionRay;
+CityRay cityReflection(ivec2 pixel, vec3 rd, float pixAngle) {
+  CityRay ray = cityPrimary(rd);
+  vec4 cached = texelFetch(uReflectionRay, pixel, 0);
+  ray.enabled = cached.w >= 0.0;
+  if (!ray.enabled) return ray;
+  ray.origin = uCamPos + rd * cached.w;
+  ray.direction = cached.xyz;
+  ray.pixelBase = cached.w * pixAngle;
+  return ray;
+}
+`;
+
+const REFLECTION_MAIN = `
+void main() {
+  ivec2 pixel = cityPixel(); vec4 primary = texelFetch(uPrimaryG0, pixel, 0);
+  int kind, moving; ivec2 cell; cityMetadata(primary.y, kind, moving, cell);
+  // Object RGB is already shaded. Its alpha is -1, marking it as an inactive ray packet.
+  if (kind == TOWER || kind == PROP || kind == BRIDGE || kind == STREET || kind == PORTAL) discard;
+  // Write the sentinel in the shader: clearColor may clamp negative clear components.
+  if (kind != GROUND) { fragColor = vec4(0.0, 0.0, 0.0, -1.0); return; }
+  CityRay ray = cityBuildReflection(pixel, cityDirection(), 2.0 * uTanHalf.y / uRes.y);
+  fragColor = ray.enabled ? vec4(ray.direction, primary.x) : vec4(0.0, 0.0, 0.0, -1.0);
+}
+`;
+
+const READ_HIT = `
+uniform highp sampler2D uHit0, uHitA, uHitB, uHitGlow;
+uniform int uPassMode;
+Hit cityReadHit(ivec2 pixel) {
+  vec4 first = texelFetch(uHit0, pixel, 0), last = texelFetch(uHitGlow, pixel, 0);
+  Hit h; h.t = first.x; h.n = vec3(first.zw, last.w);
+  cityMetadata(first.y, h.kind, h.moving, h.cell);
+  h.a = texelFetch(uHitA, pixel, 0); h.b = texelFetch(uHitB, pixel, 0); return h;
+}
+`;
+
+const TRACE_MAIN = `
+uniform int uPassMode;
+void cityWriteHit(Hit h, vec3 glow) {
+  // Fields unused by a material are made explicit before storing the complete packet.
+  if (h.kind == SKY) { h.n = vec3(0.0); h.cell = ivec2(-1); h.a = vec4(0.0); h.b = vec4(0.0); h.moving = 0; }
+  if (h.kind == GROUND || h.kind == SEWER) { h.a = vec4(0.0); h.b = vec4(0.0); }
+  if (h.kind == BRIDGE || h.kind == PORTAL) h.b = vec4(0.0);
+  int n = int(uN), index = n * n;
+  if (all(greaterThanEqual(h.cell, ivec2(0))) && all(lessThan(h.cell, ivec2(n)))) index = h.cell.x + n * h.cell.y;
+  float metadata = float(h.kind + 8 * h.moving + 256 * index);
+  gHit = vec4(h.t, metadata, h.n.xy); gA = h.a; gB = h.b; gGlow = vec4(glow, h.n.z);
+}
+void main() {
+  ivec2 pixel = cityPixel(); vec3 rd = cityDirection();
+  float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  bool reflected = uPassMode > 0;
+  CityRay ray = cityPrimary(rd);
+  if (reflected) ray = cityReflection(pixel, rd, pixAngle);
+  vec3 glow = vec3(0.0);
+  Hit h; h.kind = SKY; h.t = FAR; h.n = vec3(0.0); h.cell = ivec2(-1);
+  h.a = vec4(0.0); h.b = vec4(0.0); h.moving = 0;
+  if (ray.enabled) {
+    vec3 origin = reflected ? ray.origin + vec3(0.0, 0.01, 0.0) : ray.origin;
+    h = trace(origin, ray.direction, reflected ? uTraceCells.y : uTraceCells.x, pixAngle, glow);
+  }
+  cityWriteHit(h, glow);
+}
+`;
+
+const TOWER_MAIN = `
+void main() {
+  ivec2 pixel = cityPixel(); Hit h = cityReadHit(pixel);
+  if (h.kind != TOWER && h.kind != PROP && h.kind != BRIDGE) discard;
+  vec3 rd = cityDirection(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityPrimary(rd); if (uPassMode > 0) ray = cityReflection(pixel, rd, pixAngle);
+  vec3 p = ray.origin + ray.direction * h.t; rd = ray.direction;
+  float pix = ray.pixelBase + h.t * pixAngle;
+  if (h.moving > 0) {
+    p = collapseLocalPoint(h.moving, p);
+    h.n = collapseLocalVector(h.moving, h.n); rd = collapseLocalVector(h.moving, rd);
+  }
+  vec3 col;
+  if (h.kind == TOWER) col = shadeTower(h, p, rd, pix, uPassMode > 0);
+  else if (h.kind == PROP) col = shadeProp(h, p, rd, pix);
+  else col = shadeBridge(h, p, rd, pix);
+  fragColor = vec4(col, -1.0);
+}
+`;
+
+const STREET_MAIN = `
+void main() {
+  ivec2 pixel = cityPixel(); Hit h = cityReadHit(pixel);
+  if (h.kind != STREET && h.kind != PORTAL) discard;
+  vec3 rd = cityDirection(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityPrimary(rd); if (uPassMode > 0) ray = cityReflection(pixel, rd, pixAngle);
+  vec3 worldP = ray.origin + ray.direction * h.t, p = worldP; rd = ray.direction;
+  float pix = ray.pixelBase + h.t * pixAngle;
+  // Moving foliage keeps its world-space normal/view, matching shadeObject's original rule.
+  if (h.moving > 0) {
+    p = collapseLocalPoint(h.moving, p);
+    if (h.kind != STREET) { h.n = collapseLocalVector(h.moving, h.n); rd = collapseLocalVector(h.moving, rd); }
+  }
+  vec3 col = h.kind == PORTAL ? shadePortal(h, p, rd, pix) : shadeStreet(h, p, rd, pix);
+  if (uPassMode == 0 && h.kind == STREET && uCollapseActive > 0.5 && h.b.z < 2.5) {
+    float burning = smoothstep(0.0, 2.0, uCollapseTime);
+    float flicker = 0.5 + 0.5 * tnoise(worldP * 0.65 + vec3(0.0, -uAmbientTime * 3.0, 0.0));
+    col = mix(col, col * 0.18 + vec3(0.5, 0.045, 0.008) * flicker, burning);
+    col += vec3(0.55, 0.13, 0.018) * pow(flicker, 3.0) * burning;
+  }
+  fragColor = vec4(col, -1.0);
+}
+`;
+
+const COMPOSE_MAIN = `
+uniform highp sampler2D uPrimaryG0, uPrimaryG3, uReflectionG0, uReflectionG3, uPrimarySurface, uReflectionSurface;
+bool cityObject(int kind) { return kind == TOWER || kind == PROP || kind == BRIDGE || kind == STREET || kind == PORTAL; }
+void main() {
+  ivec2 pixel = cityPixel(); vec3 rd = cityDirection(); vec3 ro = uCamPos;
+  float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  vec4 first = texelFetch(uPrimaryG0, pixel, 0), last = texelFetch(uPrimaryG3, pixel, 0);
+  int kind, moving; ivec2 cell; cityMetadata(first.y, kind, moving, cell);
+  float t = first.x; vec3 p = ro + rd * t; float pix = t * pixAngle;
+  vec3 col;
+  if (cityObject(kind)) col = texelFetch(uPrimarySurface, pixel, 0).rgb;
+  else if (kind == SKY) col = sky(rd, pixAngle);
+  else if (kind == SEWER) {
+    vec3 n = vec3(first.zw, last.w);
+    vec2 uv = abs(n.y) > 0.5 ? p.xz : vec2(atan(p.z - uCollapseHole.y, p.x - uCollapseHole.x) * uCollapseHole.z, p.y);
+    float joints = max(pulseAA((uv.x + floor(uv.y / 1.5) * 1.5) / 3.0, 0.05, pix / 3.0), pulseAA(uv.y / 1.5, 0.06, pix / 1.5));
+    col = vec3(0.035, 0.055, 0.041) * (0.8 + tnoise(p * 0.7) * 0.4) * (1.0 - joints * 0.6);
+    col += vec3(0.015, 0.12, 0.065) * exp(-abs(p.y + 7.0) * 0.6);
+  } else col = shadeGround(p, pix);
+  if (kind == GROUND) {
+    CityRay ray = cityReflection(pixel, rd, pixAngle);
+    if (ray.enabled) {
+      vec4 reflected = texelFetch(uReflectionG0, pixel, 0);
+      int reflectedKind, reflectedMoving; ivec2 reflectedCell;
+      cityMetadata(reflected.y, reflectedKind, reflectedMoving, reflectedCell);
+      vec3 refl = cityObject(reflectedKind) ? texelFetch(uReflectionSurface, pixel, 0).rgb : sky(ray.direction, pixAngle);
+      refl = applyFog(refl + texelFetch(uReflectionG3, pixel, 0).rgb, p, ray.direction, reflected.x);
+      bool inCity = all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, ivec2(int(uN))));
+      float gloss = inCity && texelFetch(uStreetInfo, cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
+      float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);
+      col += refl * fres * gloss;
+    }
+  }
+  if (kind != SKY) col = applyFog(col, ro, rd, t);
+  if (uRain > 0.0) col += rainLight(rd, t, pixAngle);
+  if (uSnowfall > 0.0) col += snowLight(rd, t, pixAngle);
+  col += ambientMotes(ro, rd, t, pixAngle);
+  fragColor = vec4(overScene(col, courseLight(ro, rd, t, pixAngle) + last.rgb), 1.0);
+}
+`;
+
+function sources(canonical) {
+  // Include the shared library in the same reachability pass instead of prepending all of
+  // its unused functions separately to every shader. The standard uniforms stay in glsl.js.
+  const { select } = functionParts(GAME.glsl.LIB + '\n' + canonical);
+  const reflectionRoots = ['groundGloss', 'rainRipple', 'noise', 'saturate'];
+  const result = {
+    trace: select(['trace']) + BAND + REFLECTION + TRACE_MAIN,
+    towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector'])
+      + BAND + REFLECTION + READ_HIT + TOWER_MAIN,
+    street: select(['shadeStreet', 'shadePortal', 'collapseLocalPoint', 'collapseLocalVector'])
+      + BAND + REFLECTION + READ_HIT + STREET_MAIN,
+    reflection: select(reflectionRoots) + BAND + REFLECTION_BUILD + REFLECTION_MAIN,
+    compose: select(['shadeGround', 'sky', 'applyFog', 'rainLight', 'snowLight', 'ambientMotes', 'courseLight', 'overScene', 'groundGloss'])
+      + BAND + REFLECTION + COMPOSE_MAIN,
+  };
+  // Comments remain readable in the canonical sources, without inflating driver uploads.
+  const compact = source => source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ')
+    .split('\n').map(line => line.trim()).filter(Boolean).join('\n');
+  return Object.fromEntries(Object.entries(result).map(([name, source]) => [name, compact(source)]));
+}
+
+function create(gfx, canonical) {
+  const { gl } = gfx, bodies = sources(canonical);
+  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false, outputs: ['gHit', 'gA', 'gB', 'gGlow'] });
+  const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false });
+  const street = gfx.program('city:street', bodies.street, undefined, { library: false });
+  const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false });
+  const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false });
+  const programs = [trace, towers, street, reflection, compose];
+  let scratch = null;
+
+  function free(value) {
+    if (!value) return;
+    for (const view of value.views) view.dispose();
+    for (const texture of value.textures) gl.deleteTexture(texture);
+  }
+  function allocate(w, h) {
+    const next = { w, h, views: [], textures: [] }, saved = gfx.target;
+    const viewport = Array.from(gl.getParameter(gl.VIEWPORT));
+    try {
+      for (let i = 0; i < 8; i++) next.textures.push(gfx.createTexture(w, h, { format: 'rgba32f', filter: 'nearest' }));
+      const [p0, a, b, p3, r0, r3, pSurface, rSurface] = next.textures;
+      function view(textures) {
+        const target = gfx.createTargetView(w, h, textures); next.views.push(target); return target;
+      }
+      Object.assign(next, { p0, a, b, p3, r0, r3, pSurface, rSurface,
+        primary: view([p0, a, b, p3]), reflection: view([r0, a, b, r3]),
+        primarySurface: view([pSurface]), reflectionSurface: view([rSurface]) });
+      return next;
+    } catch (error) { free(next); throw error; }
+    finally { gfx.bindTarget(saved); gl.viewport(...viewport); }
+  }
+
+  function draw(uniforms) {
+    if (!Number.isInteger(uniforms.uN) || uniforms.uN < 1 || uniforms.uN > 255) throw new Error('City hit metadata requires a grid of at most 255 cells per side');
+    const output = gfx.target, w = output?.w ?? gfx.canvas.width, height = output?.h ?? gfx.canvas.height;
+    const bandHeight = Math.max(1, Math.min(height, Math.floor(BAND_PIXELS / w)));
+    if (!scratch || scratch.w !== w || scratch.h !== bandHeight) {
+      const next = allocate(w, bandHeight), old = scratch; scratch = next; free(old);
+    }
+    const s = scratch;
+    try {
+      gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST);
+      gl.clearColor(0, 0, 0, 0);
+      for (let y = 0; y < height; y += bandHeight) {
+        const h = Math.min(bandHeight, height - y);
+        // Bound raster work before fragment shading, even on drivers that defer clipping to
+        // the framebuffer's small physical extent. The viewport still preserves global rays.
+        gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, w, h);
+        const band = { ...uniforms, uBandOrigin: [0, y], uBandSize: [w, h] };
+        function pass(program, target, extra, clear = false) {
+          // Translate the original full-height raster into the scratch framebuffer. Its
+          // physical bounds clip the band while preserving the original global vUv/rays.
+          gfx.bindTarget(target); gl.viewport(0, -y, w, height);
+          if (clear) gl.clear(gl.COLOR_BUFFER_BIT);
+          gfx.fullscreen(program, { ...band, ...extra });
+        }
+        // Primary material output later becomes the ray cache. Bind a safe dummy until that
+        // output is complete: WebGL checks feedback even inside an untaken shader branch.
+        pass(trace, s.primary, { uPassMode: 0, uReflectionRay: gfx.noiseTex });
+        const primary = { uPassMode: 0, uReflectionRay: gfx.noiseTex, uHit0: s.p0, uHitA: s.a, uHitB: s.b, uHitGlow: s.p3 };
+        pass(towers, s.primarySurface, primary, true);
+        pass(street, s.primarySurface, primary);
+        // Ground does not use primary object RGB, so its surface texel can hold a shared ray.
+        // Non-ground object texels retain their color and the explicit inactive alpha sentinel.
+        pass(reflection, s.primarySurface, { uPrimaryG0: s.p0 });
+        // Original a/b data is no longer needed after both primary material passes, so
+        // the reflected hit packet reuses those two full precision textures.
+        pass(trace, s.reflection, { uPassMode: 1, uReflectionRay: s.pSurface });
+        const reflected = { uPassMode: 1, uReflectionRay: s.pSurface, uHit0: s.r0, uHitA: s.a, uHitB: s.b, uHitGlow: s.r3 };
+        pass(towers, s.reflectionSurface, reflected, true);
+        pass(street, s.reflectionSurface, reflected);
+        gfx.bindTarget(output); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, y, w, h);
+        gfx.fullscreen(compose, { ...band, uReflectionRay: s.pSurface, uPrimaryG0: s.p0, uPrimaryG3: s.p3,
+          uReflectionG0: s.r0, uReflectionG3: s.r3, uPrimarySurface: s.pSurface, uReflectionSurface: s.rSurface });
+      }
+    } finally {
+      // Full city drawing owns fullscreen state; callers resume at the complete output target.
+      // No driver state queries are needed in the frame loop.
+      gl.disable(gl.SCISSOR_TEST);
+      gfx.bindTarget(output);
+    }
+  }
+
+  function dispose() { free(scratch); scratch = null; }
+  return { programs, draw, dispose };
+}
+
+GAME.cityPasses = { create, sources, BAND_PIXELS };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/city.js ----
 // Draws the city data (src/world/city.js) by ray tracing: each ray walks the grid cell by cell
 // (2D DDA over x/z) and intersects that cell's tower boxes exactly, so edges are sharp and the
@@ -13374,12 +13806,12 @@ function weatherMotion() {
   };
 }
 
-// Compiles the city program. setWorld() uploads a city and its course's pads; setTheme() must
+// Compiles the small city passes. setWorld() uploads a city and its course's pads; setTheme() must
 // pick the colours before the first draw(), which takes the camera and this frame's view of the
 // course: rings and guide line points (see GAME.overlay.uniforms).
 function create(gfx) {
-  const { gl, createTexture, program, fullscreen } = gfx;
-  const prog = program('city', FRAG);
+  const { gl, createTexture } = gfx;
+  const passes = GAME.cityPasses.create(gfx, FRAG);
   const weather = weatherMotion();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const emptyMotionBounds = new Float32Array(GAME.collapseMotion.MAX_MOVERS * 4);
@@ -13397,6 +13829,10 @@ function create(gfx) {
   }
 
   function setWorld(city, pads) {
+    // Hit metadata uses one exact float32 integer: cell*256 + mover*8 + kind.
+    // Reserve cell N*N for sky/outside-ground; the current city is 96 by 96.
+    if (!Number.isInteger(city.n) || city.n < 1 || city.n > 255)
+      throw new Error('city grid exceeds the exact graphics metadata range');
     if (world) Object.values(world.textures).forEach(t => gl.deleteTexture(t));
     const n = city.n;
     collapseState = city.collapse || null;
@@ -13465,7 +13901,7 @@ function create(gfx) {
       world.motionTime = collapseState.time;
     }
     const now = performance.now() / 1000, snowing = themed.uSnowfall > 0;
-    fullscreen(prog, {
+    passes.draw({
       ...world.textures,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uCell: city.cell, uN: city.n, uMaxH: city.maxHeight + 1, uSize: city.size,
@@ -13505,10 +13941,13 @@ function create(gfx) {
     world.motionTime = state?.time;
   }
 
-  return { program: prog, setWorld, draw, setTheme, setCollapse, get theme() { return theme; } };
+  return { program: passes.programs[0], programs: passes.programs, setWorld, draw, setTheme, setCollapse,
+    dispose: passes.dispose, get theme() { return theme; } };
 }
 
-GAME.cityRenderer = { create };
+// The canonical functions are also available to isolated diagnostic tools. The game never
+// submits this combined source to the graphics driver; cityPasses selects each dependency set.
+GAME.cityRenderer = { create, source: FRAG };
 
 })();
 
