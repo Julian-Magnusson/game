@@ -8,6 +8,10 @@ wet surfaces and warm underground lamps. Bright lighting works in ordinary color
 Clustered rooms, glass sheen, height fog, animated ring halos and broader glow match the phone
 style. Wet streets reflect buildings through a small geometry pass, and Sewer water reflects
 its lamps. These effects keep bounded shaders, real depth and fallbacks when effects fail.
+The latest Windows polish adds hemispheric skylight, warmer sunlight, quieter distant windows,
+stronger skyline haze and distinct seeded window patterns. Reflective shop glass, roof panels,
+facade framing, edged park paths and finer water ripples enrich close views, using the same
+six small shaders and ordinary RGBA8 buffers.
 Automatic resolution starts at 1080p and adapts; selected resolution settings are honored.
 Real obstacles, course layout and depth occlusion stay intact. Optional effects have a readable
 fallback. Mac and mobile keep the full renderer, with a simpler display fallback

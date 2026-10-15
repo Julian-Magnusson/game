@@ -14094,11 +14094,11 @@ void main() {
   if(mat==1.0 && abs(n.y)<0.5) {
     vec2 p=vec2(abs(n.x)>0.5?vPosition.z:vPosition.x,vPosition.y);
     float key=rnd(vColour.rb*127.0+17.0), kind=fract(key*7.13);
-    vec2 pitch=vec2(mix(1.1,2.1,rnd(vec2(key,3.1))),mix(2.3,2.9,rnd(vec2(key,7.2))));
+    vec2 pitch=vec2(mix(1.55,2.7,rnd(vec2(key,3.1))),mix(2.6,3.5,rnd(vec2(key,7.2))));
     vec2 duty=kind<0.5?vec2(0.62,0.5):kind<0.8?vec2(0.96,0.42):vec2(0.4,0.9);
     vec2 grid=p/pitch, cell=floor(grid), uv=vec2(fract(grid.x),fract(grid.y-0.3));
     float window=boxAA(uv,vec2(0.0),duty);
-    float visible=1.0-smoothstep(0.35,1.2,max(fwidth(grid.x),fwidth(grid.y)));
+    float visible=(1.0-smoothstep(0.35,1.2,max(fwidth(grid.x),fwidth(grid.y))))*(1.0-smoothstep(180.0,650.0,vDepth));
     float busy=mix(0.15,0.80,rnd(vec2(key,11.3)));
     float random=rnd(cell+key*311.0);
     float occupied=step(rnd(floor(cell/vec2(5.0,3.0))+key*131.0),busy);
@@ -14110,13 +14110,13 @@ void main() {
     float roomLight=0.45+1.1*smoothstep(0.2,0.9,pane.y);
     float mullion=lineAA(pane.x-0.5,0.025), sill=lineAA(uv.y,0.015);
     float blinds=step(0.55,fract(random*5.7))*smoothstep(-0.03,0.03,pane.y-0.35-0.5*fract(random*3.3));
-    emission=mix((uWindowWarm+uWindowCool)*0.125*busy,lit*window*room*roomLight*(1.0-mullion*0.75)*(1.0-blinds*0.75),visible);
+    emission=mix((uWindowWarm+uWindowCool)*0.035*busy,lit*window*room*roomLight*(1.0-mullion*0.75)*(1.0-blinds*0.75),visible);
     col*=1.0-sill*window*visible*0.20;
     vec3 glassRay=reflect(-view,n);
     if(uMirrorClip<0.5)col+=environment(glassRay)*(0.04+0.75*pow(max(0.0,1.0-abs(dot(n,view))),5.0))*window*visible;
     float frame=lineAA(uv.x,0.006)+lineAA(uv.x-duty.x,0.006);
     col+=vec3(0.026,0.033,0.039)*frame*visible;
-    col*=0.85+0.15*noise2(p*0.065);
+    col*=(0.85+0.15*noise2(p*0.065))*(1.0-lineAA(fract(p.y/13.0)-0.02,0.016)*visible*0.25);
     if(uTheme.x>0.0) {
       float ivy=smoothstep(0.52,0.78,noise2(p*0.13)+noise2(p*0.043)*0.30);
       col=mix(col,vec3(0.018,0.067,0.023),ivy*uTheme.x); emission*=1.0-ivy*uTheme.x*0.78;
@@ -14143,7 +14143,8 @@ void main() {
   } else if(mat==3.0 || mat==10.0) {
     float waterTime=mat==10.0?0.0:uTimeLite;
     float wave=sin(vPosition.x*0.23+waterTime*0.8)*sin(vPosition.z*0.31-waterTime*0.65);
-    n=normalize(n+vec3(sin(vPosition.z*0.32+waterTime)*0.065,0,cos(vPosition.x*0.29-waterTime)*0.065));
+    float ripple=sin((vPosition.x+vPosition.z)*1.9-waterTime*2.0)*0.025;
+    n=normalize(n+vec3(sin(vPosition.z*0.32+waterTime)*0.065+ripple,0,cos(vPosition.x*0.29-waterTime)*0.065-ripple));
     col*=0.93+wave*0.07; shine=mat==10.0?0.8:0.95;
     if(mat==10.0) col=mix(col,vec3(0.20,0.34,0.43),0.48);
     else col=mix(col,uFog*0.30,0.25);
@@ -14153,7 +14154,7 @@ void main() {
       float scum=smoothstep(0.66,0.82,noise2(vPosition.xz*vec2(0.33,0.20)-waterTime*0.08));
       col=mix(col,vec3(0.035,0.090,0.024),scum*0.47);
       emission+=vec3(0.010,0.023,0.010)*lineAA(wave-0.65,0.025);
-    } else col+=environment(reflect(-view,n))*0.16;
+    } else col+=environment(reflect(-view,n))*0.24;
   } else if(mat==15.0) {
     float grain=noise2(vPosition.xz*0.36+vPosition.y*0.19);
     float fissure=smoothstep(0.035,0.08,abs(noise2(vPosition.xz*0.055+vPosition.y*0.08)-0.5));
@@ -14176,7 +14177,9 @@ void main() {
     col=mix(col,vec3(0.12,0.038,0.013),smoothstep(0.60,0.80,rust)*0.5); shine=0.5;
   } else if(mat==7.0) {
     float leaves=noise2(vPosition.xz*0.61+vPosition.y*0.37);
-    col*=0.67+0.45*noise2(vPosition.xz*0.23+vPosition.y*0.11);
+    col*=0.60+0.58*noise2(vPosition.xz*0.23+vPosition.y*0.11);
+    n=normalize(n+vec3(sin(vPosition.z*1.7),sin(vPosition.x*1.3),cos(vPosition.y*1.5))*0.09);
+    shine=0.06+uTheme.z*0.09;
     col+=vec3(0.035,0.052,0.012)*smoothstep(0.45,0.77,leaves)*max(n.y,0.0);
     if(uTheme.y>0.0) col=mix(col,vec3(0.50,0.66,0.80),smoothstep(0.05,0.65,n.y)*uTheme.y*0.85);
   } else if(mat==8.0) {
@@ -14184,7 +14187,7 @@ void main() {
     col*=0.65+0.35*noise2(bark);
     col*=0.86+0.14*noise2(bark*vec2(4.0,0.3));
   } else if(mat==9.0) {
-    col=mix(col,uFog+uNeon*0.025,pow(max(0.0,1.0-abs(dot(n,view))),3.0)*0.7); shine=0.7;
+    col=mix(col,environment(reflect(-view,n)),0.2+pow(max(0.0,1.0-abs(dot(n,view))),3.0)*0.5); shine=0.7;
   } else if(mat==11.0) {
     col*=0.8+0.25*noise2(vPosition.xz*0.07); shine=uTheme.z*0.55;
     col+=uNeon*(0.006+uTheme.z*0.020)*(0.5+0.5*sin(vPosition.x*0.09)*sin(vPosition.z*0.08));
@@ -14215,7 +14218,7 @@ void main() {
     // Quiet near-field fill keeps lethal pipes/dirt readable between the warm wall fixtures.
     lighting+=vec3(0.34,0.37,0.34)*max(dot(n,view),0.0)/(1.0+vDepth*vDepth*0.0004);
   } else {
-    lighting=uAmbient*(0.62+0.38*max(n.y,0.0))+uSunColour*max(dot(n,uLight),0.0);
+    lighting=uAmbient*mix(0.48,1.40,n.y*0.5+0.5)+uSunColour*max(dot(n,uLight),0.0);
     float highlight=pow(max(dot(n,normalize(uLight+view+vec3(0.00001))),0.0),48.0)*shine;
     lighting+=uSunColour*highlight;
   }
@@ -14224,7 +14227,7 @@ void main() {
   float distance=length(uCamPos-vPosition), heightFog=1.0;
   if(uUnderground<0.5) {
     float k=(vPosition.y-uCamPos.y)*0.008;
-    heightFog=exp(-max(uCamPos.y,0.0)*0.008)*(abs(k)>0.001?(1.0-exp(-k))/k:1.0);
+    heightFog=0.30+0.70*exp(-max(uCamPos.y,0.0)*0.008)*(abs(k)>0.001?(1.0-exp(-k))/k:1.0);
   }
   float fog=1.0-exp(-max(distance-25.0,0.0)*uDensity*heightFog);
   vec3 fogColour=mix(uFog,uFogHigh,smoothstep(-0.1,0.4,-view.y));
@@ -14421,7 +14424,7 @@ function create(gfx) {
       uTanHalf:cam.tanHalf,uClip:[near,far],uFog:fog,uDensity:density,uTint:colour,uAlpha:alpha,
       uUnlit:unlit?1:0,uLight:unit(sun?.dir||[-0.4,0.8,-0.25]),uTimeLite:time,
       uEncoded:encoded?1:0,uUnderground:sewer?1:0,uAmbient:ambient,
-      uSunColour:sun?sun.top.map(v=>0.28+Math.min(v,2)*0.18):[0.10,0.12,0.20],
+      uSunColour:sun?sun.top.map(v=>0.16+v/(1+Math.max(...sun.top))*0.85):[0.10,0.12,0.20],
       uWindowWarm:theme?.windows?.[0]||[1,0.60,0.30],uWindowCool:theme?.windows?.[1]||[0.55,0.78,1],
       uNeon:theme?.neon?.[0]||[0.10,0.50,0.60],uTheme:[theme?.growth||0,theme?.snow||0,theme?.wetness||0,theme?.soot||0],
       uSkyZenith:theme?.sky?.zenith||fog,uSkyHorizon:theme?.sky?.horizon||fog,uFogHigh:theme?.fog?.high||fog,
@@ -14970,7 +14973,9 @@ function solidColour(b,theme,cell=0,role='building') {
     if(growth)colour=mix(colour,[0.054,0.076,0.046],0.42);
     if(theme?.dust)colour=mix(colour,[0.092,0.065,0.036],theme.dust*0.55);
     if(theme?.soot)colour=mix(colour,[0.042,0.035,0.033],theme.soot*0.55);
-    return mix(colour,[0.075,0.095,0.13],snow*0.24);
+    // The facade shader also uses this colour as its stable tower seed. A small common
+    // tint preserves each theme's palette while avoiding just five repeated window layouts.
+    return scale(mix(colour,[0.075,0.095,0.13],snow*0.24),0.90+hash(cell,29)*0.20);
   }
   const M=GAME.street.MATERIAL;
   const colours={
@@ -15002,6 +15007,28 @@ function roofColour(theme,cell) {
   if(theme.dust)return mix(base,[0.12,0.071,0.030],theme.dust*0.65);
   return base;
 }
+function roofPaint(builder,b,theme,cell,metal) {
+  const w=b[3]-b[0],d=b[5]-b[2],x=(b[0]+b[3])/2,z=(b[2]+b[5])/2,y=b[4]+PAINT_OFFSET*2,
+    rim=Math.min(0.26,w*0.05,d*0.05),light=theme.snow?[0.38,0.49,0.60]:[0.13,0.17,0.20],dark=[0.020,0.029,0.038];
+  // A narrow parapet cap, its inset shadow and service panels read as a finished roof from
+  // above. They remain paint on the existing top face, so narrow flight gaps stay honest.
+  for(const [x0,z0,x1,z1,c] of [[b[0],b[2],b[3],b[2]+rim,light],[b[0],b[5]-rim,b[3],b[5],scale(light,0.64)],
+    [b[0],b[2]+rim,b[0]+rim,b[5]-rim,light],[b[3]-rim,b[2]+rim,b[3],b[5]-rim,scale(light,0.64)]])
+    horizontal(builder.tag(metal),x0,z0,x1,z1,y,c);
+  const hx=Math.min(2.2,w*0.23),hz=Math.min(1.6,d*0.18);
+  horizontal(builder.tag(metal),x-hx,z-hz,x+hx,z+hz,y,[0.11,0.15,0.17]);
+  for(let j=0;j<5;j++)horizontal(builder,x-hx+0.16,z-hz+0.18+j*hz*0.33,x+hx-0.16,z-hz+0.25+j*hz*0.33,y+0.006,dark);
+  if(w>11&&d>9) {
+    const left=b[0]+0.8,right=Math.min(left+3.3,x-hx-0.45),near=b[2]+0.85,far=Math.min(b[5]-0.8,near+4.4);
+    if(right-left>1.2) {
+      const panel=hash(cell,21)>0.5,colour=panel?[0.025,0.060,0.090]:theme.growth?[0.042,0.10,0.033]:[0.12,0.16,0.18];
+      horizontal(builder.tag(metal),left-0.12,near-0.12,right+0.12,far+0.12,y,dark);
+      horizontal(builder.tag(panel?(GAME.mesh.MATERIAL.GLASS??metal):(theme.growth?(GAME.mesh.MATERIAL.SOIL??metal):metal)),left,near,right,far,y+0.006,colour);
+      for(let j=1;j<4;j++)horizontal(builder.tag(metal),left,near+(far-near)*j/4-0.025,right,near+(far-near)*j/4+0.025,y+0.007,[0.16,0.20,0.22]);
+    }
+  }
+  if(theme.snow)horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),b[0]+0.3,b[2]+0.2,b[3]-0.5,b[2]+0.8,y,[0.48,0.60,0.70]);
+}
 function buildingPaint(builder,part,theme,close) {
   const b=part.bounds,cell=part.cell,w=b[3]-b[0],d=b[5]-b[2],h=b[4]-b[1],seed=hash(cell,part.ordinal),
     style=Math.floor(hash(cell,9)*4), neon=scale(theme.neon[Math.floor(hash(cell,7)*4)],theme.growth?0.32:0.42),
@@ -15010,7 +15037,16 @@ function buildingPaint(builder,part,theme,close) {
   horizontal(builder.tag(GAME.mesh.MATERIAL.ROOF??GAME.mesh.MATERIAL.PLAIN),b[0],b[2],b[3],b[5],b[4]+PAINT_OFFSET,roofColour(theme,cell));
   for(let face=0;face<4;face++) {
     const [lo,hi]=faceSpan(b,face),span=hi-lo;
+    // Broad, quiet masonry and metal bands give lit windows an architectural frame. A
+    // fixed number of face strips replaces the blank edges without extra collision volumes.
+    if(close)facePaint(builder,b,face,lo,b[4]-Math.min(1.05,h*0.45),hi,b[4]-0.39,[0.040,0.056,0.071],metal);
     facePaint(builder,b,face,lo,b[4]-0.38,hi,b[4]-0.22,neon,GAME.mesh.MATERIAL.LIGHT);
+    if(close&&span>4) {
+      const edge=Math.min(0.36,span*0.045),tint=theme.snow?[0.17,0.22,0.28]:theme.growth?[0.076,0.10,0.073]:[0.11,0.14,0.17];
+      facePaint(builder,b,face,lo,b[1]+0.1,lo+edge,b[4]-0.4,tint,metal);
+      facePaint(builder,b,face,hi-edge,b[1]+0.1,hi,b[4]-0.4,scale(tint,0.64),metal);
+      if(b[1]<0.1&&h>7)facePaint(builder,b,face,lo,4.48,hi,4.83,[0.095,0.12,0.14],metal);
+    }
     if(close&&(style===1||style===3))facePaint(builder,b,face,lo+0.14,b[1]+0.3,lo+0.30,b[4]-0.4,scale(neon,0.65),GAME.mesh.MATERIAL.LIGHT);
     if(close&&style===0&&h>24)for(let y=b[1]+16;y<b[4]-4&&y<b[1]+104;y+=16)
       facePaint(builder,b,face,lo,y-0.09,hi,y+0.09,scale(neon,0.62),GAME.mesh.MATERIAL.LIGHT);
@@ -15024,12 +15060,7 @@ function buildingPaint(builder,part,theme,close) {
         facePaint(builder,b,face,x-0.5,y,x+0.6,y+0.36,[0.070,0.19,0.050]);
     }
   }
-  if(close&&w>5&&d>5) {
-    const x=(b[0]+b[3])/2,z=(b[2]+b[5])/2,hx=Math.min(2.2,w*0.23),hz=Math.min(1.6,d*0.18),y=b[4]+PAINT_OFFSET*2;
-    horizontal(builder.tag(metal),x-hx,z-hz,x+hx,z+hz,y,[0.11,0.15,0.17]);
-    for(let j=0;j<5;j++)horizontal(builder,x-hx+0.16,z-hz+0.18+j*hz*0.33,x+hx-0.16,z-hz+0.25+j*hz*0.33,y+0.006,[0.025,0.039,0.049]);
-    if(theme.snow)horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),b[0]+0.3,b[2]+0.2,b[3]-0.5,b[2]+0.8,y,[0.48,0.60,0.70]);
-  }
+  if(close&&w>5&&d>5)roofPaint(builder,b,theme,cell,metal);
 }
 function storefrontPaint(builder,b,face,theme,cell,seed) {
   const [lo,hi]=faceSpan(b,face),mid=(lo+hi)/2,width=hi-lo,kind=Math.floor(hash(cell,face+17)*3),
@@ -15037,12 +15068,12 @@ function storefrontPaint(builder,b,face,theme,cell,seed) {
   facePaint(builder,b,face,lo+0.18,0.10,hi-0.18,4.5,[0.018,0.025,0.034]);
   for(const [left,right] of [[lo+0.45,mid-0.80],[mid+0.80,hi-0.45]]) {
     if(right-left<0.5)continue;
-    facePaint(builder,b,face,left,0.45,right,3.28,mix(glass,warm,0.24));
+    facePaint(builder,b,face,left,0.45,right,3.28,mix(glass,warm,0.24),GAME.mesh.MATERIAL.GLASS);
     facePaint(builder,b,face,left,2.62,right,2.70,scale(warm,0.78),GAME.mesh.MATERIAL.LIGHT);
     facePaint(builder,b,face,(left+right)/2-0.05,0.45,(left+right)/2+0.05,3.28,[0.18,0.21,0.22]);
   }
   facePaint(builder,b,face,mid-0.61,0.1,mid+0.61,3.25,[0.08,0.115,0.13]);
-  facePaint(builder,b,face,mid-0.49,0.43,mid+0.49,2.95,mix(glass,warm,0.17));
+  facePaint(builder,b,face,mid-0.49,0.43,mid+0.49,2.95,mix(glass,warm,0.17),GAME.mesh.MATERIAL.GLASS);
   facePaint(builder,b,face,mid+0.33,1.42,mid+0.38,1.80,[0.35,0.30,0.17]);
   facePaint(builder,b,face,lo+0.24,3.42,hi-0.24,4.28,scale(neon,kind===1?0.30:0.60),GAME.mesh.MATERIAL.LIGHT);
   if(kind===1) {
@@ -15114,7 +15145,19 @@ function groundPaint(builder,city,cell,theme,hole,close) {
     const path=theme.snow?[0.14,0.20,0.26]:[0.11,0.11,0.080];
     horizontal(builder.tag(stone),x-15,z-0.80,x+15,z+0.80,0.017,path);
     horizontal(builder,x-0.80,z-15,x+0.80,z+15,0.017,path);
-    if(close)for(let j=0;j<4;j++)horizontal(builder.tag(GAME.mesh.MATERIAL.SOIL??GAME.mesh.MATERIAL.PLAIN),x-13+j*6.5,z-13,x-10.2+j*6.5,z-1.0,0.013,scale(grass,1.035));
+    if(close) {
+      const edging=theme.snow?[0.23,0.31,0.38]:[0.15,0.17,0.13];
+      // Real grass hills and trees are left untouched; shallow edging and path joints make
+      // their flat courtyard read as planted city space during low flight.
+      for(const [x0,z0,x1,z1] of [[x-15,z-1.05,x+15,z-0.81],[x-15,z+0.81,x+15,z+1.05],
+        [x-1.05,z-15,x-0.81,z+15],[x+0.81,z-15,x+1.05,z+15]])horizontal(builder.tag(stone),x0,z0,x1,z1,0.018,edging);
+      for(let j=-12;j<=12;j+=6) {
+        if(!j)continue;
+        horizontal(builder.tag(GAME.mesh.MATERIAL.PLAIN),x+j-0.025,z-0.80,x+j+0.025,z+0.80,0.024,scale(path,0.48));
+        horizontal(builder,x-0.80,z+j-0.025,x+0.80,z+j+0.025,0.024,scale(path,0.48));
+      }
+      for(let j=0;j<4;j++)horizontal(builder.tag(GAME.mesh.MATERIAL.SOIL??GAME.mesh.MATERIAL.PLAIN),x-13+j*6.5,z-13,x-10.2+j*6.5,z-1.0,0.013,scale(grass,1.035));
+    }
   } else if(city.kind?city.kind[cell]===GAME.city.KIND.TOWER||city.kind[cell]===GAME.city.KIND.OBSTACLE:city.buildingBoxes(cell).length) {
     const pavement=theme.snow?[0.17,0.23,0.29]:theme.growth?[0.050,0.069,0.056]:[0.086,0.095,0.105];
     // Perimeter slabs and joints distinguish pavement from the dark central street.
