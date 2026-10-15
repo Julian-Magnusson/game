@@ -192,6 +192,7 @@
   .set-option[aria-checked="true"] { color: #fff; background: rgba(95, 227, 255, 0.18); border-color: var(--cyan); box-shadow: 0 0 12px rgba(95, 227, 255, 0.35); }
   .set-option:hover { border-color: rgba(95, 227, 255, 0.7); }
   .graphics-report { margin-top: 10px; text-align: left; }
+  .graphics-report[hidden], #overlay:not(.error) > .graphics-report { display: none; }
   .graphics-report .btn { min-height: 36px; padding: 8px 12px; font-size: 10px; letter-spacing: 0.12em; }
   .graphics-report-panel { margin-top: 8px; max-width: 100%; }
   .graphics-report-panel[hidden] { display: none; }
@@ -17323,7 +17324,6 @@ function createSettingsPanel(panel, device) {
     show(settings.get(key));
     rows.set(key, show);
   }
-  const graphicsReport = groups.has('Graphics') ? GAME.graphicsReport?.mount(groups.get('Graphics')) : null;
   // A live note on a choice row, such as the resolution a frame is drawn at right now.
   function note(key, text) {
     const n = body.querySelector(`[data-setting="${key}"] .set-note`);
@@ -17367,7 +17367,6 @@ function createSettingsPanel(panel, device) {
       backTo = then;
       before = settings.all();
       panel.classList.remove('hidden');
-      graphicsReport?.refresh();
       dropFocus();
     },
     close,

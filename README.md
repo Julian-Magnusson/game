@@ -12,7 +12,7 @@ switch that opens `?graphics=safe`. Failures do not save a graphics preference f
 real world, theme skies/weather, detailed buildings, park planting and warm Sewer brickwork/lamps,
 with six small shaders, ordinary color buffers and bounded reflections/glow. Removing that URL
 option restores full graphics on the next visit. Saved progress and preferences are preserved.
-**Settings → Graphics → Graphics report** provides copyable browser, adapter/backend, shader
+**Graphics error screen → Graphics report** provides copyable browser, adapter/backend, shader
 preparation phases/times, source fingerprints and pending-program details. It remains available
 after a graphics interruption, with pending durations frozen when rendering stops. Phase labels
 identify the last submitted operation, not a proven
