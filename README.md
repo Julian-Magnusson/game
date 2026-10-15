@@ -12,12 +12,24 @@ switch that opens `?graphics=safe`. Failures do not save a graphics preference f
 real world, theme skies/weather, detailed buildings, park planting and warm Sewer brickwork/lamps,
 with six small shaders, ordinary color buffers and bounded reflections/glow. Removing that URL
 option restores full graphics on the next visit. Saved progress and preferences are preserved.
-**Settings → Graphics → Graphics report** provides copyable browser, adapter/backend and shader
-details for troubleshooting; it also remains available after a graphics interruption. No player
+**Settings → Graphics → Graphics report** provides copyable browser, adapter/backend, shader
+preparation phases/times, source fingerprints and pending-program details. It remains available
+after a graphics interruption, with pending durations frozen when rendering stops. Phase labels
+identify the last submitted operation, not a proven
+failing driver stage. No player
 progress or course codes are included, and nothing is sent automatically. The earlier mesh
-release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The original shader
-failure and browser freeze remain unisolated, and Mac Chrome browser-profile checks do not
-reproduce that AMD driver. The restored full renderer still needs testing on the Windows PC.
+release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The latest report shows
+the post programs ready, the city shader still pending at the 30-second startup timeout and zero
+rendered frames. Its context-loss flag also included timeout recovery, so it does not prove the
+WebGL context was lost. New reports distinguish observed context loss from recovery. The evidence
+isolates city graphics preparation, not weak hardware, a proven driver hang or an exact driver bug.
+The full renderer now shares its primary/reflection tracing and material work through one runtime
+loop, preserving graphics and tracing budgets while reducing compiler expansion. Reports also
+show elapsed preparation time. Mac Chrome checks do not reproduce that AMD driver; this fix
+still needs testing on the Windows PC. A standalone city compiler probe is available in the
+development repository for isolating shader preparation from the rest of startup.
+Nine deterministic full-scene comparisons on ANGLE/OpenGL preserve the original HDR image
+exactly, including reflections, weather, park hills and Collapse scenery.
 Use the ordinary play URL for the same full renderer everywhere.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional

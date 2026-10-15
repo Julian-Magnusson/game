@@ -9617,6 +9617,15 @@ const gl = canvas.getContext('webgl2', {
   antialias: false, alpha: false, depth: false, stencil: false,
   premultipliedAlpha: false, powerPreference: GAME.graphicsProfile?.compatibility ? 'default' : 'high-performance',
 });
+const programs = [];
+const graphicsNow = () => typeof performance === 'object' ? performance.now() : Date.now();
+// Cached lifecycle data only: diagnostics must remain safe after the driver stops responding.
+function pendingDetails(now = graphicsNow()) {
+  const p = programs.find(p => p.metrics?.status === 'pending');
+  if (!p) return {};
+  return { program: p.name, stage: p.metrics.phase, elapsedMs: Math.max(0, now - p.metrics.startedMs),
+    phaseElapsedMs: Math.max(0, now - p.metrics.phaseStartedMs) };
+}
 function gfxError(code, message, details = {}) {
   const error = new Error(message);
   error.name = code === 'GFX_CONTEXT_LOST' ? 'WebGLContextError' : code === 'GFX_RESOURCE_FAILED' ? 'WebGLResourceError' : 'WebGLProgramError';
@@ -9626,7 +9635,7 @@ function gfxError(code, message, details = {}) {
 }
 function contextLost() { return gl.isContextLost(); }
 function requireContext(operation) {
-  if (contextLost()) throw gfxError('GFX_CONTEXT_LOST', `Graphics context was lost while ${operation}.`, { operation, contextLost: true });
+  if (contextLost()) throw gfxError('GFX_CONTEXT_LOST', `Graphics context was lost while ${operation}.`, { ...pendingDetails(), operation, contextLost: true });
 }
 function createHandle(create, resource) {
   requireContext(`creating ${resource}`);
@@ -9659,9 +9668,13 @@ void main() {
 
 // ---- Programs ---------------------------------------------------------------------------------
 const SAMPLER_TYPES = new Set([gl.SAMPLER_2D, gl.SAMPLER_3D, gl.SAMPLER_2D_ARRAY, gl.INT_SAMPLER_2D, gl.UNSIGNED_INT_SAMPLER_2D]);
-const programs = [];
-const graphicsNow = () => typeof performance === 'object' ? performance.now() : Date.now();
 const sourceBytes = src => encodeURIComponent(src).replace(/%[0-9A-F]{2}/g, 'x').length;
+// An opaque source fingerprint distinguishes builds without retaining or reporting GLSL.
+const sourceHash = src => {
+  let hash = 2166136261;
+  for (let i = 0; i < src.length; i++) hash = Math.imul(hash ^ src.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
 
 class Program {
   // vs / fs are bodies; the shared prelude (version, precision, standard uniforms, GLSL lib)
@@ -9677,7 +9690,9 @@ class Program {
     const vsPre = GAME.glsl.vertexPrelude(options);
     const vertexSource = vsPre + (vs || FULLSCREEN_VS), fragmentSource = fsPre + fs;
     this.metrics = { vertexBytes: sourceBytes(vertexSource), fragmentBytes: sourceBytes(fragmentSource),
+      vertexHash: sourceHash(vertexSource), fragmentHash: sourceHash(fragmentSource),
       startedMs: graphicsNow(), readyMs: null, prepareMs: null, optional: this.optional, status: 'pending' };
+    this.phase('shader allocation');
     this.fsOffset = fsPre.split('\n').length - 1;
     this.vsOffset = vsPre.split('\n').length - 1;
     programs.push(this);
@@ -9692,15 +9707,23 @@ class Program {
       requireContext(`attaching vertex shader for "${name}"`);
       gl.attachShader(this.prog, this.fs);
       requireContext(`attaching fragment shader for "${name}"`);
+      this.phase('program link submission');
       gl.linkProgram(this.prog);
       requireContext(`linking shader "${name}"`);
+      this.phase('driver completion');
     } catch (error) {
       this.metrics.status = 'failed';
+      this.phase('failed');
       this.metrics.prepareMs = graphicsNow() - this.metrics.startedMs;
       if (error.code !== 'GFX_PROGRAM_FAILED') throw error;
       this.error = error;
       if (!this.optional) throw error;
     }
+  }
+
+  phase(name) {
+    this.metrics.phase = name;
+    this.metrics.phaseStartedMs = graphicsNow();
   }
 
   compile(type, src) {
@@ -9709,8 +9732,10 @@ class Program {
     const s = gl.createShader(type);
     requireContext(`creating ${stage} shader "${this.name}"`);
     if (!s) throw gfxError('GFX_PROGRAM_FAILED', `shader "${this.name}" ${stage} allocation failed; the driver returned no shader.`, { program: this.name, stage: `${stage} allocation` });
+    this.phase(`${stage} source upload`);
     gl.shaderSource(s, src);
     requireContext(`uploading ${stage} shader "${this.name}"`);
+    this.phase(`${stage} compile submission`);
     gl.compileShader(s);
     requireContext(`compiling ${stage} shader "${this.name}"`);
     return s;
@@ -9766,8 +9791,10 @@ class Program {
     if (this.uniforms) return true;
     if (!this.isReady()) return false;
     try {
+      this.phase('program validation');
       const linkStatus = this.query(() => gl.getProgramParameter(this.prog, gl.LINK_STATUS), `reading link status for shader "${this.name}"`);
       if (linkStatus !== true) throw this.failed(linkStatus);
+      this.phase('uniform discovery');
       const uniforms = new Map();
       const n = this.query(() => gl.getProgramParameter(this.prog, gl.ACTIVE_UNIFORMS), `reading uniforms for shader "${this.name}"`);
       if (!Number.isInteger(n) || n < 0) throw this.failed(linkStatus, 'uniform discovery');
@@ -9782,9 +9809,11 @@ class Program {
       this.metrics.readyMs = graphicsNow();
       this.metrics.prepareMs = this.metrics.readyMs - this.metrics.startedMs;
       this.metrics.status = 'ready';
+      this.phase('ready');
       return true;
     } catch (error) {
       this.metrics.status = 'failed';
+      this.phase('failed');
       this.metrics.prepareMs = graphicsNow() - this.metrics.startedMs;
       if (error.code !== 'GFX_PROGRAM_FAILED') throw error;
       this.error = error;
@@ -9980,7 +10009,7 @@ function timerPoll() {
 }
 
 GAME.gfx = {
-  gl, canvas, contextLost,
+  gl, canvas, contextLost, pendingDetails,
   hasTimer: !!timerExt, timerBegin, timerEnd, timerPoll,
   program: (name, fs, vs, options) => new Program(name, fs, vs, options),
   programs,
@@ -10014,9 +10043,11 @@ const number = (v, max = 1e9) => typeof v === 'number' && Number.isFinite(v) && 
 const label = (v, max = 256) => typeof v === 'string' ? v.replace(/[\r\n\t]/g, ' ').replace(/(?:https?:\/\/|file:\/\/|www\.)\S+/gi, '[address omitted]').replace(/[?#]\S*/g, '').slice(0, max) : null;
 const identifier = v => typeof v === 'string' && /^[a-z0-9:._ -]{1,80}$/i.test(v) ? v : null;
 const status = v => typeof v === 'boolean' ? v : v === null ? null : number(v);
+const fingerprint = v => typeof v === 'string' && /^[a-f0-9]{8}$/.test(v) ? v : null;
+const now = () => typeof performance === 'object' ? performance.now() : Date.now();
 const gfx = GAME.gfx;
 const canvas = gfx?.canvas;
-let lost = false, restored = false, lastFailure = null;
+let lost = false, restored = false, lastFailure = null, stoppedAt = null;
 
 function initialHardware() {
   const gl = gfx?.gl;
@@ -10050,14 +10081,20 @@ function initialHardware() {
 }
 
 const hardware = initialHardware();
-canvas?.addEventListener?.('webglcontextlost', () => { lost = true; restored = false; });
+canvas?.addEventListener?.('webglcontextlost', () => { lost = true; restored = false; stoppedAt ??= now(); });
 canvas?.addEventListener?.('webglcontextrestored', () => { restored = true; });
 
 function record(error) {
-  const details = error?.details ?? {};
+  // Context-loss events may arrive without a Program error. The cached pending lifecycle
+  // still identifies the work in flight without asking the interrupted driver anything.
+  if (['GFX_CONTEXT_LOST', 'GFX_STARTUP_TIMEOUT', 'GFX_RESOURCE_FAILED'].includes(error?.code) || error?.details?.contextLost === true)
+    stoppedAt ??= now();
+  const pending = error?.code === 'GFX_CONTEXT_LOST' || error?.code === 'GFX_STARTUP_TIMEOUT' ? gfx?.pendingDetails?.(stoppedAt ?? now()) : null;
+  const details = { ...pending, ...error?.details };
   lastFailure = { code: identifier(error?.code), name: identifier(error?.name), program: identifier(details.program),
     stage: identifier(details.stage), linkStatus: status(details.linkStatus), vertexStatus: status(details.vertexStatus),
-    fragmentStatus: status(details.fragmentStatus), glError: number(details.glError) };
+    fragmentStatus: status(details.fragmentStatus), glError: number(details.glError), elapsedMs: number(details.elapsedMs),
+    phaseElapsedMs: number(details.phaseElapsedMs) };
   if (error?.code === 'GFX_CONTEXT_LOST' || details.contextLost === true) { lost = true; restored = false; }
 }
 
@@ -10076,18 +10113,22 @@ function capture() {
   const dimensions = value => Array.isArray(value) && value.length === 2 ? value.map(v => number(v, 1e6)) : null;
   const size = read(() => GAME.resolution?.renderSize());
   const post = read(() => GAME.post?.status()) ?? {};
+  const capturedAt = stoppedAt ?? now();
   const programs = (gfx?.programs ?? []).slice(0, 64).map(program => {
     const metrics = program.metrics ?? {};
     return { name: identifier(program.name), optional: !!program.optional, status: identifier(metrics.status)
       || (program.error ? 'failed' : program.uniforms ? 'ready' : 'pending'),
     vertexBytes: number(metrics.vertexBytes), fragmentBytes: number(metrics.fragmentBytes),
+    vertexHash: fingerprint(metrics.vertexHash), fragmentHash: fingerprint(metrics.fragmentHash), phase: identifier(metrics.phase),
+    elapsedMs: number(metrics.status === 'pending' ? capturedAt - metrics.startedMs : metrics.prepareMs),
+    phaseElapsedMs: number(metrics.status === 'pending' ? capturedAt - metrics.phaseStartedMs : null),
     startedMs: number(metrics.startedMs), readyMs: number(metrics.readyMs), prepareMs: number(metrics.prepareMs),
     errorCode: identifier(program.error?.code) };
   });
   // Whitelisting here is intentional: settings.all() and api.state() also contain unrelated
   // player preferences, purchases and progress, and must never be included in a shared report.
   const report = { report: 'Neon Flight graphics', version: 1, browser: browserInfo(), hardware,
-    context: { lost: lost || graphics.recovering === true, restored, recovering: graphics.recovering === true },
+    context: { lost, restored, recovering: graphics.recovering === true },
     profile: { renderer: identifier(graphics.renderer), compatibility: !!graphics.compatibility, reason: identifier(graphics.reason) },
     display: { canvas: dimensions(canvas ? [canvas.width, canvas.height] : null), render: dimensions(size),
       devicePixelRatio: number(typeof window === 'undefined' ? null : window.devicePixelRatio, 32),
@@ -12176,8 +12217,7 @@ float portalEllipsoid(vec3 ro,vec3 rd,vec3 centre,vec3 radii,out vec3 normal) {
 }
 float portalPeak(vec3 ro,vec3 rd,int index,out vec3 normal) {
   float near=-1e9,far=1e9;vec3 nearNormal=vec3(0.0),farNormal=vec3(0.0);
-  for(int face=0;face<${PEAK_FACES};face++) {
-    if(face>=uCollapsePeakFaces[index])break;
+  for(int face=0;face<uCollapsePeakFaces[index];face++) {
     vec4 plane=uCollapsePeakPlanes[index*${PEAK_FACES}+face];
     float value=dot(plane.xyz,ro)+plane.w,speed=dot(plane.xyz,rd);
     if(abs(speed)<1e-7) {if(value>0.0)return 1e9;continue;}
@@ -12193,13 +12233,11 @@ float portalPeak(vec3 ro,vec3 rd,int index,out vec3 normal) {
 float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material) {
   float hit=1e9;material=0;
   if(uCollapsePortalActive<0.5)return hit;
-  for(int i=0;i<${MAX_ROCKS};i++) {
-    if(i>=uCollapseRockCount)break;
+  for(int i=0;i<uCollapseRockCount;i++) {
     vec3 n;float t=portalEllipsoid(ro,rd,uCollapseRockCentre[i],uCollapseRockRadii[i],n);
     if(t<hit) {hit=t;normal=n;material=0;}
   }
-  for(int i=0;i<${MAX_PEAKS};i++) {
-    if(i>=uCollapsePeakCount)break;
+  for(int i=0;i<uCollapsePeakCount;i++) {
     vec3 n;float t=portalPeak(ro,rd,i,n);
     if(t<hit) {hit=t;normal=n;material=0;}
   }
@@ -12211,8 +12249,7 @@ float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material) {
       vec2 radial=q.xy+d.xy*t;hit=t;normal=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);material=1;
     }
   }
-  for(int i=0;i<${MAX_BARS};i++) {
-    if(i>=uCollapseBarCount)break;
+  for(int i=0;i<uCollapseBarCount;i++) {
     vec3 n;float t=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,n);
     if(t>0.001&&t<hit) {hit=t;normal=n;material=2;}
   }
@@ -12234,8 +12271,8 @@ function uniforms(portal) {
     peakFaces=new Int32Array(MAX_PEAKS),peakPlanes=new Float32Array(MAX_PEAKS*PEAK_FACES*4),
     barA=new Float32Array(MAX_BARS*4),barB=new Float32Array(MAX_BARS*4);
   rocks.slice(0,MAX_ROCKS).forEach((r,i)=>{rockCentres.set(r.centre,i*3);rockRadii.set(r.radii,i*3);});
-  peaks.slice(0,MAX_PEAKS).forEach((peak,i)=>{peakFaces[i]=peak.planes.length;
-    peak.planes.forEach((plane,j)=>peakPlanes.set(plane,(i*PEAK_FACES+j)*4));});
+  peaks.slice(0,MAX_PEAKS).forEach((peak,i)=>{peakFaces[i]=Math.min(peak.planes.length,PEAK_FACES);
+    peak.planes.slice(0,PEAK_FACES).forEach((plane,j)=>peakPlanes.set(plane,(i*PEAK_FACES+j)*4));});
   bars.slice(0,MAX_BARS).forEach((b,i)=>{barA.set([...b.a,b.radius],i*4);barB.set([...b.b,b.radius],i*4);});
   const result={uCollapsePortalActive:portal?1:0,uCollapsePortalOrigin:portal?[...portal.origin,portal.radius]:[0,0,0,0],
     uCollapsePortalAxis:portal?[...portal.axis,portal.length]:[0,0,1,0],uCollapsePortalRight:portal?.right||[1,0,0],
@@ -12269,6 +12306,10 @@ uniform highp sampler2D uStreet, uStreetInfo;
 uniform highp sampler2D uCollapseFall;
 uniform highp sampler2D uCollapseMotion, uCollapseMotionMap, uCollapseSolids;
 uniform int uCollapseMoverCount;
+// These remain runtime bounds even though their values are fixed for a frame. Some D3D11
+// compilers expand constant-bounded nested loops and duplicate the entire reflection trace.
+uniform int uRayPasses, uBridgePieceLimit, uPropPieceLimit;
+uniform ivec2 uTraceCells;
 uniform vec4 uCollapseMoverBounds[24];         // matches collapseMotion.MAX_MOVERS
 uniform float uCollapseActive, uCollapseTime;
 uniform vec4 uCollapseHole;                    // shaft centre x/z, radius, bottom
@@ -12491,8 +12532,7 @@ vec3 collapseFire(vec3 ro, vec3 rd, vec3 centre, float top, float tMax, float pi
 
 Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) {
   Hit hit; hit.kind = SKY; hit.t = min(limit, FAR); hit.moving = 0;
-  for (int group = 0; group < 24; group++) {
-    if (group >= uCollapseMoverCount) break;
+  for (int group = 0; group < uCollapseMoverCount; group++) {
     vec4 bound = uCollapseMoverBounds[group];
     vec3 delta = bound.xyz - ro;
     float along = dot(delta, rd);
@@ -12503,8 +12543,7 @@ Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) 
     vec3 localRo = collapseRotate(ro - pivot.xyz + vec3(0.0, pivot.w, 0.0), turn, true) + pivot.xyz;
     vec3 localRd = collapseRotate(rd, turn, true);
     vec3 inv = 1.0 / mix(localRd, vec3(1e-6), lessThan(abs(localRd), vec3(1e-6)));
-    for (int part = 0; part < 16; part++) {
-      if (float(part) >= object.w) break;
+    for (int part = 0; part < int(object.w); part++) {
       ivec2 at = ivec2(group * 16 + part, 0);
       vec4 lo = texelFetch(uCollapseSolids, at, 0), hi = texelFetch(uCollapseSolids, at + ivec2(0, 1), 0);
       vec3 normal;
@@ -12525,8 +12564,7 @@ Hit finishTrace(Hit fixedHit, Hit movingHit, vec3 ro, vec3 rd, float pixAngle, i
   Hit near = closerHit(fixedHit, movingHit);
   // Moving flames are resolved after the nearest static/moving surface is known, so they
   // cling to the rotated crown without shining through a nearer intact building.
-  for (int group = 0; group < 24; group++) {
-    if (group >= uCollapseMoverCount) break;
+  for (int group = 0; group < uCollapseMoverCount; group++) {
     vec4 object = texelFetch(uCollapseMotion, ivec2(group, 2), 0);
     if (object.y < 0.5) continue;
     vec3 crown = texelFetch(uCollapseMotion, ivec2(group, 3), 0).xyz;
@@ -12580,8 +12618,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       float lowY = min(ro.y + rd.y * t, ro.y + rd.y * min(tExit, span.y));
       if (lowY < uStreetMaxH && t < 640.0) {
         vec4 info = texelFetch(uStreetInfo, cell, 0);
-        if (lowY < info.y) for (int part = 0; part < ${GAME.street.MAX_PIECES}; part++) {
-          if (float(part) >= info.x) break;
+        if (lowY < info.y) for (int part = 0; part < int(info.x); part++) {
           if (movingStreetPart(moveMap, part)) continue;
           ivec2 at = cell + ivec2(0, part * 2 * int(uN));
           vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
@@ -12603,7 +12640,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       float tBridge = 1e9;
       vec3 nBridge;
       vec4 bridgeData;
-      for (int j = 0; j < 2; j++) {
+      for (int j = 0; j < uBridgePieceLimit; j++) {
         vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
         if (moveMap.x > 0.5) continue;
         C.y -= fall;
@@ -12629,8 +12666,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         float tb = 1e9;
         // Up to three pieces, already assembled from the collision geometry at upload time.
         // Only composite buildings fetch extra bounds; no per-ray architecture/rotation work.
-        for (int part = 0; part < 3; part++) {
-          if (float(part) >= B.z) break;
+        for (int part = 0; part < int(B.z); part++) {
           vec4 P = A, Q = B;
           if (part > 0) {
             ivec2 at = cell + ivec2(0, (part - 1) * 2 * int(uN));
@@ -12661,7 +12697,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
             float railHalf = (Q.y - Q.x) * 0.1;
             float supportHalf = (Q.y - Q.x) * 0.38;
             float outer = (alongZ ? pc.x : pc.y) - Q.w * (depthHalf - 0.17);
-            for (int j = 0; j < 4; j++) {
+            for (int j = 0; j < uPropPieceLimit; j++) {
               vec3 lo, hi;
               if (j < 2) {
                 float cy = py + (j == 0 ? -spread : spread);
@@ -13196,67 +13232,89 @@ vec3 shadeObject(Hit h, vec3 p, vec3 rd, float pix, bool reflection) {
 
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
-  vec3 rd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
+  vec3 primaryRd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
   vec3 ro = uCamPos;
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
 
-  vec3 glow = vec3(0.0);
-  Hit h = trace(ro, rd, PRIMARY_CELLS, pixAngle, glow);
-  vec3 col;
-  if (h.kind == SKY) {
-    col = sky(rd, pixAngle);
-  } else {
-    vec3 p = ro + rd * h.t;
-    float pix = h.t * pixAngle;
-    if (h.kind == TOWER) {
-      col = shadeObject(h, p, rd, pix, false);
-    } else if (h.kind == PROP) {
-      col = shadeObject(h, p, rd, pix, false);
-    } else if (h.kind == BRIDGE) {
-      col = shadeObject(h, p, rd, pix, false);
-    } else if (h.kind == STREET) {
-      col = shadeObject(h, p, rd, pix, false);
-      if (uCollapseActive > 0.5 && h.b.z < 2.5) {
+  vec3 col = vec3(0.0), primaryGlow = vec3(0.0);
+  float primaryT = FAR;
+  bool primaryFog = false;
+  vec3 reflectionOrigin = ro, reflectionRd = primaryRd;
+  float reflectionPix = 0.0, reflectionFres = 0.0, reflectionGloss = 0.0;
+
+  // One tracing/material call graph serves both rays. The uniform bound is always two;
+  // unlike two static call sites, it keeps D3D11 compilers from expanding a second copy of
+  // the city's nested intersection and material loops. The reflection is still optional.
+  for (int phase = 0; phase < uRayPasses; phase++) {
+    bool reflection = phase > 0;
+    vec3 origin = reflection ? reflectionOrigin : ro;
+    vec3 rd = reflection ? reflectionRd : primaryRd;
+    vec3 traceOrigin = reflection ? origin + vec3(0.0, 0.01, 0.0) : origin;
+    vec3 glow = vec3(0.0);
+    Hit h = trace(traceOrigin, rd, reflection ? uTraceCells.y : uTraceCells.x, pixAngle, glow);
+    // The reflected trace starts above the road, while its shading/fog coordinates retain
+    // the original road point. This is the same offset and footprint as the primary pass.
+    vec3 p = origin + rd * h.t;
+    float pix = (reflection ? reflectionPix : 0.0) + h.t * pixAngle;
+    bool objectHit = h.kind == TOWER || h.kind == PROP || h.kind == BRIDGE || h.kind == STREET || h.kind == PORTAL;
+    vec3 surface;
+    if (objectHit) {
+      surface = shadeObject(h, p, rd, pix, reflection);
+      if (!reflection && h.kind == STREET && uCollapseActive > 0.5 && h.b.z < 2.5) {
         float burning = smoothstep(0.0, 2.0, uCollapseTime);
         float flicker = 0.5 + 0.5 * tnoise(p * 0.65 + vec3(0.0, -uAmbientTime * 3.0, 0.0));
-        col = mix(col, col * 0.18 + vec3(0.5, 0.045, 0.008) * flicker, burning);
-        col += vec3(0.55, 0.13, 0.018) * pow(flicker, 3.0) * burning;
+        surface = mix(surface, surface * 0.18 + vec3(0.5, 0.045, 0.008) * flicker, burning);
+        surface += vec3(0.55, 0.13, 0.018) * pow(flicker, 3.0) * burning;
       }
-    } else if (h.kind == PORTAL) {
-      col=shadePortal(h,p,rd,pix);
+    } else if (reflection || h.kind == SKY) {
+      // A reflected ray's ground/sewer fallback has always been the sky; it never starts
+      // another reflection or shades a second road surface.
+      surface = sky(rd, pixAngle);
     } else if (h.kind == SEWER) {
       vec2 uv = abs(h.n.y) > 0.5 ? p.xz : vec2(atan(p.z - uCollapseHole.y, p.x - uCollapseHole.x) * uCollapseHole.z, p.y);
       float joints = max(pulseAA((uv.x + floor(uv.y / 1.5) * 1.5) / 3.0, 0.05, pix / 3.0),
         pulseAA(uv.y / 1.5, 0.06, pix / 1.5));
-      col = vec3(0.035, 0.055, 0.041) * (0.8 + tnoise(p * 0.7) * 0.4) * (1.0 - joints * 0.6);
-      col += vec3(0.015, 0.12, 0.065) * exp(-abs(p.y + 7.0) * 0.6);
+      surface = vec3(0.035, 0.055, 0.041) * (0.8 + tnoise(p * 0.7) * 0.4) * (1.0 - joints * 0.6);
+      surface += vec3(0.015, 0.12, 0.065) * exp(-abs(p.y + 7.0) * 0.6);
     } else {
-      col = shadeGround(p, pix);
+      surface = shadeGround(p, pix);
+    }
+
+    if (reflection) {
+      vec3 refl = applyFog(surface + glow, origin, rd, h.t);
+      col += refl * reflectionFres * reflectionGloss;
+      // Let the uploaded two-pass bound finish the loop. A static break here would expose
+      // an implicit two-iteration bound and allow the same unwanted compiler expansion.
+      continue;
+    }
+
+    col = surface;
+    primaryGlow = glow;
+    primaryT = h.t;
+    primaryFog = h.kind != SKY;
+    if (h.kind == GROUND) {
       bool inCity = all(greaterThanEqual(h.cell, ivec2(0))) && all(lessThan(h.cell, ivec2(int(uN))));
       float gloss = inCity && texelFetch(uStreetInfo, h.cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
       if (gloss > 0.01) {
-      // Wet street: a rippled mirror. Ripples fade out once they would be smaller than a pixel,
-      // where they would only shimmer. The reflection is a shorter trace, without its own reflection.
-      float ripple = 0.035 * saturate(1.3 - pix * 2.5);
-      vec2 tilt = vec2(noise(p * 0.35), noise(p * 0.35 + 7.0)) * ripple;
-      if (uRain > 0.0) tilt += rainRipple(p.xz, pix) * uRain;
-      vec3 n = normalize(vec3(tilt.x, 1.0, tilt.y));
-      vec3 rr = reflect(rd, n);
-      vec3 rglow = vec3(0.0);
-      Hit r = trace(p + vec3(0.0, 0.01, 0.0), rr, REFLECT_CELLS, pixAngle, rglow);
-      vec3 refl = r.kind == TOWER || r.kind == PROP || r.kind == BRIDGE || r.kind == STREET || r.kind == PORTAL
-        ? shadeObject(r, p + rr * r.t, rr, pix + r.t * pixAngle, true) : sky(rr, pixAngle);
-      refl = applyFog(refl + rglow, p, rr, r.t);
-      float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);   // rain: wetter
-      col += refl * fres * gloss;
+        // Wet street: the same shorter, rippled trace, scheduled as the second ray phase.
+        float ripple = 0.035 * saturate(1.3 - pix * 2.5);
+        vec2 tilt = vec2(noise(p * 0.35), noise(p * 0.35 + 7.0)) * ripple;
+        if (uRain > 0.0) tilt += rainRipple(p.xz, pix) * uRain;
+        reflectionOrigin = p;
+        reflectionRd = reflect(rd, normalize(vec3(tilt.x, 1.0, tilt.y)));
+        reflectionPix = pix;
+        reflectionFres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);
+        reflectionGloss = gloss;
+        continue;
       }
     }
-    col = applyFog(col, ro, rd, h.t);
+    break;
   }
-  if (uRain > 0.0) col += rainLight(rd, h.t, pixAngle);
-  if (uSnowfall > 0.0) col += snowLight(rd, h.t, pixAngle);
-  col += ambientMotes(ro, rd, h.t, pixAngle);
-  fragColor = vec4(overScene(col, courseLight(ro, rd, h.t, pixAngle) + glow), 1.0);
+  if (primaryFog) col = applyFog(col, ro, primaryRd, primaryT);
+  if (uRain > 0.0) col += rainLight(primaryRd, primaryT, pixAngle);
+  if (uSnowfall > 0.0) col += snowLight(primaryRd, primaryT, pixAngle);
+  col += ambientMotes(ro, primaryRd, primaryT, pixAngle);
+  fragColor = vec4(overScene(col, courseLight(ro, primaryRd, primaryT, pixAngle) + primaryGlow), 1.0);
 }`;
 
 const GOLDEN = 0.6180339887;
@@ -13414,6 +13472,7 @@ function create(gfx) {
       uStreetMaxH: world.streetMaxH,
       uCollapseActive: collapseState ? 1 : 0, uCollapseTime: collapseState?.time ?? 0,
       uCollapseMoverCount: motion?.records.length ?? 0,
+      uRayPasses: 2, uTraceCells: [120, 40], uBridgePieceLimit: 2, uPropPieceLimit: 4,
       uCollapseMoverBounds: motion?.bounds ?? emptyMotionBounds,
       uCollapseHole: collapseState?.hole ? [collapseState.hole.x, collapseState.hole.z, collapseState.hole.radius, collapseState.hole.bottom] : [0, 0, 0, -14],
       ...GAME.collapsePortalRender.uniforms(collapseState?.portal),
@@ -17270,17 +17329,24 @@ function recoverGraphics(err) {
 
 function requireGraphics() {
   if (graphics.recovering || GAME.gfx.contextLost())
-    throw Object.assign(new Error('The graphics context was lost.'), { code: 'GFX_CONTEXT_LOST' });
+    throw Object.assign(new Error('The graphics context was lost.'), { code: 'GFX_CONTEXT_LOST', details: GAME.gfx.pendingDetails() });
 }
 
 async function prepareGraphics() {
   requireGraphics();
   const started = performance.now();
+  let shownSecond = 0;
   statusEl.textContent = 'Preparing graphics…';
   while (!GAME.gfx.allReady()) {
     requireGraphics();
-    if (performance.now() - started > 30000)
-      throw Object.assign(new Error('The graphics driver did not finish preparing.'), { code: 'GFX_STARTUP_TIMEOUT' });
+    const elapsed = performance.now() - started;
+    if (elapsed > 30000) {
+      const details = GAME.gfx.pendingDetails();
+      throw Object.assign(new Error(`The graphics driver did not finish preparing${details.program ? ` shader "${details.program}"` : ''}.`),
+        { code: 'GFX_STARTUP_TIMEOUT', details });
+    }
+    const second = Math.floor(elapsed / 1000);
+    if (second !== shownSecond) { statusEl.textContent = `Preparing graphics… ${second}s`; shownSecond = second; }
     await nextFrame();
   }
   requireGraphics();
