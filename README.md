@@ -18,7 +18,7 @@ after a graphics interruption, with pending durations frozen when rendering stop
 identify the last submitted operation, not a proven
 failing driver stage. No player
 progress or course codes are included, and nothing is sent automatically. The earlier mesh
-release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. Its latest report
+release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. An earlier report
 confirms that all five city programs prepare in 128–1,746 ms, the Sewer program in 2,766 ms,
 and initial program preparation in 4,587 ms.
 Context loss and restoration follow one submitted 2560×1271 frame; successful GPU
@@ -31,10 +31,15 @@ The standalone 64×36 report now shows GPU-fenced completion of every resource s
 then context loss during the first primary `city:trace` attempt with four RGBA32F outputs.
 That narrows the failing stage without distinguishing native compilation, trace execution or
 attachment writes as the underlying cause.
-The next compact-hit report stops before creating any shader or resource because WebGL2 is
+An interim compact-hit report stops before creating any shader or resource because WebGL2 is
 unavailable. It does not test that renderer. A fresh full browser restart is needed for the next
 check; repeated-loss blocking is one possible cause. The diagnostic captures the browser's
 context-creation error message when available.
+After fully exiting and reopening Chrome, context creation succeeds, followed by context loss
+during shader preparation around 2.95 seconds. Several city programs are pending, so that report
+does not identify which compiler job caused the reset. City programs now prepare one at a time,
+with later sources queued, and the moving-fire calculation is invoked once after tracing instead
+of through repeated early-return calls. Full graphics remain; Windows stability still needs confirmation.
 The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
 building materials, street materials and composition. Reflected rays are computed once and
 cached so tracing and shading use the same direction. Each submitted fragment source is under

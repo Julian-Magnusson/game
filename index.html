@@ -9701,11 +9701,23 @@ class Program {
     const vertexSource = vsPre + (vs || FULLSCREEN_VS), fragmentSource = fsPre + fs;
     this.metrics = { vertexBytes: sourceBytes(vertexSource), fragmentBytes: sourceBytes(fragmentSource),
       vertexHash: sourceHash(vertexSource), fragmentHash: sourceHash(fragmentSource),
-      startedMs: graphicsNow(), readyMs: null, prepareMs: null, optional: this.optional, status: 'pending' };
-    this.phase('shader allocation');
+      startedMs: null, readyMs: null, prepareMs: null, optional: this.optional, status: 'queued' };
+    this.phase('queued');
     this.fsOffset = fsPre.split('\n').length - 1;
     this.vsOffset = vsPre.split('\n').length - 1;
+    this.sources = { vertexSource, fragmentSource };
     programs.push(this);
+    if (!options.deferred) this.prepare();
+  }
+
+  // Descriptors can be registered without submitting any shader work. Preparation is explicit
+  // and idempotent; the startup scheduler waits for validation before submitting the next one.
+  prepare() {
+    if (this.metrics.status !== 'queued') return this;
+    requireContext(`preparing shader "${this.name}"`);
+    const { name } = this, { vertexSource, fragmentSource } = this.sources;
+    this.metrics.status = 'pending'; this.metrics.startedMs = graphicsNow();
+    this.phase('shader allocation');
     try {
       this.vs = this.compile(gl.VERTEX_SHADER, vertexSource);
       this.fs = this.compile(gl.FRAGMENT_SHADER, fragmentSource);
@@ -9728,7 +9740,10 @@ class Program {
       if (error.code !== 'GFX_PROGRAM_FAILED') throw error;
       this.error = error;
       if (!this.optional) throw error;
+    } finally {
+      this.sources = null;
     }
+    return this;
   }
 
   phase(name) {
@@ -9753,6 +9768,7 @@ class Program {
 
   // True once the driver has finished compiling (non-blocking with KHR_parallel_shader_compile).
   isReady() {
+    if (this.metrics.status === 'queued') return false;
     requireContext(`checking shader "${this.name}" readiness`);
     if (this.error) { if (this.optional) return true; throw this.error; }
     if (this.uniforms || !parallel) return true;
@@ -10089,8 +10105,14 @@ GAME.gfx = {
   programs,
   allReady: () => {
     requireContext('checking graphics readiness');
-    let ready = true;
+    let ready = true, submitted = false;
     for (const p of programs) {
+      if (p.metrics.status === 'queued') {
+        // Yield between submissions even if a cached program completes immediately. No city
+        // fragment is submitted while a preceding program is still pending or unvalidated.
+        if (!ready || submitted) { ready = false; continue; }
+        p.prepare(); submitted = true;
+      }
       if (!p.isReady()) { ready = false; continue; }
       if (!p.check() && !p.error) ready = false;
     }
@@ -12713,11 +12735,11 @@ function sources(canonical) {
 
 function create(gfx, canonical) {
   const { gl } = gfx, bodies = sources(canonical);
-  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false });
-  const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false });
-  const street = gfx.program('city:street', bodies.street, undefined, { library: false });
-  const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false });
-  const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false });
+  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false, deferred: true });
+  const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false, deferred: true });
+  const street = gfx.program('city:street', bodies.street, undefined, { library: false, deferred: true });
+  const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false, deferred: true });
+  const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false, deferred: true });
   const programs = [trace, towers, street, reflection, compose];
   let scratch = null;
 
@@ -13101,8 +13123,7 @@ Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) 
   return hit;
 }
 
-Hit finishTrace(Hit fixedHit, Hit movingHit, vec3 ro, vec3 rd, float pixAngle, inout vec3 glow) {
-  Hit near = closerHit(fixedHit, movingHit);
+void traceMovingFire(Hit near, vec3 ro, vec3 rd, float pixAngle, inout vec3 glow) {
   // Moving flames are resolved after the nearest static/moving surface is known, so they
   // cling to the rotated crown without shining through a nearer intact building.
   for (int group = 0; group < uCollapseMoverCount; group++) {
@@ -13111,12 +13132,11 @@ Hit finishTrace(Hit fixedHit, Hit movingHit, vec3 ro, vec3 rd, float pixAngle, i
     vec3 crown = texelFetch(uCollapseMotion, ivec2(group, 3), 0).xyz;
     glow += collapseFire(ro, rd, crown, crown.y, near.t, pixAngle);
   }
-  return near;
 }
 
-Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
+// The wrapper supplies the same clamped direction to both traversal and the final flames.
+Hit traceNearest(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
   Hit h; h.kind = SKY; h.t = FAR; h.moving = 0; h.primitive = citySpecialId(0);
-  rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
   vec3 inv = 1.0 / rd;
   float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
   if (uCollapsePortalActive > 0.5 && tGround <= 0.0) tGround = 1e9;
@@ -13263,12 +13283,12 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           }
           if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
             h.kind = PROP; h.t = tp; h.n = np; h.cell = cell; h.a = P; h.b = Q; h.primitive = cityStaticId(cell,3+propPart);
-            return finishTrace(h, moved, ro, rd, pixAngle, glow);
+            return closerHit(h, moved);
           }
         }
         if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
           h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB; h.primitive = cityStaticId(cell,towerPart);
-          return finishTrace(h, moved, ro, rd, pixAngle, glow);
+          return closerHit(h, moved);
         }
       } else {
         // Empty cell: a booster's light column stands wholly inside it, so only the ground can hide it.
@@ -13277,13 +13297,13 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       }
       if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
         h.kind = STREET; h.t = tStreet; h.n = nStreet; h.cell = cell; h.a = streetA; h.b = streetB; h.primitive = cityStaticId(cell,9+streetPart);
-        return finishTrace(h, moved, ro, rd, pixAngle, glow);
+        return closerHit(h, moved);
       }
       if (tBridge < tGround && tBridge < 1e8) {
         h.kind = BRIDGE; h.t = tBridge; h.n = nBridge; h.cell = cell; h.a = bridgeData; h.primitive = cityStaticId(cell,7+bridgePart);
-        return finishTrace(h, moved, ro, rd, pixAngle, glow);
+        return closerHit(h, moved);
       }
-      if (moved.kind != SKY && moved.t <= tExit) return finishTrace(h, moved, ro, rd, pixAngle, glow);
+      if (moved.kind != SKY && moved.t <= tExit) return closerHit(h, moved);
       if (tGround <= tExit) break;
       if (tExit > span.y || tExit > FAR) break;
       t = tExit;
@@ -13293,7 +13313,15 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
     }
   }
   if (tGround >= 0.0 && tGround < FAR) { h.kind = shaft ? SEWER : GROUND; h.t = tGround; h.n = shaft ? shaftNormal : vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); h.primitive = cityStaticId(h.cell,shaft?26:25); }
-  return finishTrace(h, moved, ro, rd, pixAngle, glow);
+  return closerHit(h, moved);
+}
+
+Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
+  rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
+  Hit near = traceNearest(ro, rd, maxCells, pixAngle, glow);
+  // Keep this after traversal so early returns do not duplicate the moving-fire call graph.
+  traceMovingFire(near, ro, rd, pixAngle, glow);
+  return near;
 }
 
 // ---- Atmosphere --------------------------------------------------------------------------------
