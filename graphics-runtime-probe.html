@@ -1,12 +1,13 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neon Flight graphics runtime probe</title>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neon Flight graphics check 6df5dfa</title>
 <style>body{font:16px system-ui;background:#111921;color:#f2f6ff;max-width:52rem;margin:2rem auto;padding:1rem}button,select,textarea{font:inherit}button,select{padding:.6rem;margin:.3rem}textarea{box-sizing:border-box;display:block;width:100%;height:24rem}canvas{display:block;width:320px;max-width:100%;height:auto;margin:1rem 0;background:#000;image-rendering:pixelated}#status{min-height:3rem}</style>
-<h1>Graphics runtime probe</h1><p>This checks the game's actual drawing stages one at a time. It runs once after you press Run. Nothing is sent automatically.</p>
+<h1>Graphics runtime probe</h1><p id="build">Diagnostic 2 · Build <strong>6df5dfa</strong></p><p>This checks the game's actual drawing stages one at a time. It runs once after you press Run. Nothing is sent automatically.</p>
 <label>Drawing size <select id="size"><option>64x36</option><option>320x180</option></select></label><button id="run">Run</button>
-<p id="status" role="status">Ready. Choose a size and press Run.</p><canvas id="c" width="64" height="36"></canvas>
-<button id="copy">Copy report</button><button id="save">Save report</button><span id="copy-note" role="status"></span><textarea id="report" readonly aria-label="Graphics runtime report"></textarea>
+<p id="attempt" hidden></p><p id="status" role="status">Ready. Choose a size and press Run.</p><canvas id="c" width="64" height="36"></canvas>
+<button id="copy" disabled>Copy report</button><button id="save" disabled>Save report</button><span id="copy-note" role="status"></span><textarea id="report" readonly aria-label="Graphics runtime report"></textarea>
 <script>(function runtimePage(loadModules, build) {
   const $ = id => document.getElementById(id), now = () => performance.now();
   const state = window.__runtimeProbe = { version: 1, build, started: false, done: false,
+    attemptStartedAt: null,
     contextLost: false, contextRestored: false, contextCreationError: null, size: null, phase: 'idle', lastSubmitted: null,
     lastCompleted: null, steps: [], resources: [], failure: null, report: null };
   let game = null, driver = null, hooks = null, pending = null;
@@ -18,7 +19,11 @@
     return JSON.parse(JSON.stringify({ ...state, elapsedMs: state.startedAt ? Math.round(now() - state.startedAt) : 0 }));
   }
   state.snapshot = snapshot;
-  function refresh() { $('report').value = JSON.stringify(snapshot(), null, 2); }
+  function refresh() {
+    $('report').value = JSON.stringify(snapshot(), null, 2);
+    // Copy only a completed or stopped attempt, never an idle or still-running snapshot.
+    $('copy').disabled = $('save').disabled = !state.done;
+  }
   function stop(reason) {
     if (state.done) return;
     state.done = true; state.phase = 'stopped';
@@ -152,16 +157,22 @@
   }
 
   $('copy').onclick = async () => {
-    refresh(); try { await navigator.clipboard.writeText($('report').value); $('copy-note').textContent = 'Copied.'; }
-    catch { $('report').focus(); $('report').select(); $('copy-note').textContent = 'Report selected for copying.'; }
+    if (!state.done) return;
+    refresh(); try { await navigator.clipboard.writeText($('report').value); $('copy-note').textContent = 'Copied this run (build ' + build.revision.slice(0, 7) + ').'; }
+    catch { $('report').focus(); $('report').select(); $('copy-note').textContent = 'Report selected. Press Ctrl+C (or ⌘C on Mac) to copy.'; }
   };
   $('save').onclick = () => {
+    if (!state.done) return;
     refresh(); const link = document.createElement('a'), url = URL.createObjectURL(new Blob([$('report').value], { type: 'application/json' }));
-    link.href = url; link.download = 'neon-flight-runtime-report.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    link.href = url; link.download = 'neon-flight-runtime-' + build.revision.slice(0, 7) + '-' + state.attemptStartedAt.replace(/[:.]/g, '-') + '.json';
+    link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   $('run').onclick = async () => {
     if (state.started) return;
     state.started = true; state.startedAt = now(); $('run').disabled = $('size').disabled = true;
+    state.attemptStartedAt = new Date().toISOString();
+    $('attempt').hidden = false; $('attempt').textContent = 'Run started: ' + state.attemptStartedAt;
+    $('copy-note').textContent = '';
     state.size = $('size').value.split('x').map(Number); const [width, height] = state.size;
     $('c').width = width; $('c').height = height;
     // The browser can refuse a context after prior resets. Capture its reason before the
@@ -5133,12 +5144,24 @@ const SAMPLE = 4, DT = 1 / 120;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+// Each code builds its own network: the number of bends and shafts, their direction, length and
+// tightness, and the hazards placed along straights all come from the seed. Hazards are listed
+// in placement order; the obstacles that bend the guide line need the most room, so go first.
 const PROFILES = {
-  easy: { main: 29, side: 23, gate: 9, pipes: 8, dirt: 6 },
-  medium: { main: 26, side: 21, gate: 7.8, pipes: 13, dirt: 8 },
-  hard: { main: 24, side: 19, gate: 6.6, pipes: 19, dirt: 11 },
-  extreme: { main: 22, side: 17, gate: 5.2, pipes: 24, dirt: 14 },
+  easy: { main: 30, side: 24, gate: 9.5, pipe: 1.6, gap: 0, connectors: [5, 6], shafts: 2, turn: [122, 136],
+    angles: [Math.PI / 2], straight: [250, 360], spacing: 110, dirt: 16, dirtSpacing: 85, cableLow: 0,
+    hazards: { pipe: 8 } },
+  medium: { main: 26, side: 21, gate: 7.8, pipe: 1.8, gap: 12, connectors: [6, 8], shafts: 2, turn: [112, 128],
+    angles: [Math.PI / 2, Math.PI / 3], straight: [220, 330], spacing: 80, dirt: 24, dirtSpacing: 65, cableLow: 0,
+    hazards: { falls: 1, cable: 3, pipe: 13 } },
+  hard: { main: 23, side: 18.5, gate: 6.4, pipe: 2.1, gap: 10, connectors: [8, 10], shafts: 3, turn: [106, 122],
+    angles: [Math.PI / 2, Math.PI / 3, Math.PI / 4], straight: [190, 300], spacing: 64, dirt: 32, dirtSpacing: 52,
+    cableLow: 0.3, hazards: { grate: 2, sluice: 2, falls: 2, cable: 5, pipe: 18 } },
+  extreme: { main: 21, side: 17, gate: 5.2, pipe: 2.4, gap: 8.5, connectors: [10, 12], shafts: 4, turn: [104, 118],
+    angles: [Math.PI / 2, Math.PI / 3, Math.PI / 4], straight: [170, 270], spacing: 54, dirt: 40, dirtSpacing: 44,
+    cableLow: 0.45, hazards: { grate: 4, sluice: 3, falls: 3, cable: 6, pipe: 22 } },
 };
+const PIPE_HITS = { grate: 'grate', sluice: 'sluice', cable: 'cable', root: 'cable', falls: 'falls' };
 
 function segmentPoint(point, a, b) {
   const ba = b.map((v, i) => v - a[i]), pa = point.map((v, i) => v - a[i]);
@@ -5164,7 +5187,7 @@ function sphere(city, x, y, z, radius) {
   }
   if (!safe) return { kind: inShell ? 'ground' : 'tower', sewer: inShell ? 'water' : 'wall' };
   for (const [i, pipe] of world.pipes.entries()) {
-    if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: 'pipe', pipe: i };
+    if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: PIPE_HITS[pipe.kind] || 'pipe', pipe: i };
   }
   for (const [i, pile] of world.dirt.entries()) {
     if (Math.abs(x - pile.centre[0]) > pile.radii[0] + radius
@@ -5181,11 +5204,12 @@ function sphere(city, x, y, z, radius) {
 // edge of the containing dry volume is its water, with a dirt bank or pipe on top when present.
 function groundHeight(city, x, z, y = city.sewer.startY) {
   const p = [x, y, z];
-  let floor = -Infinity, best = Infinity;
+  // Where overlapping volumes join (a chamber above a collector), the lowest dry edge is the floor.
+  let floor = Infinity;
   for (const tube of city.sewer.tunnels) {
     const distance = distanceToSegment(p, tube.a, tube.b);
-    if (distance <= tube.radius && distance < best && (tube.water === null || y > tube.water)) {
-      best = distance; floor = tube.water ?? Math.min(tube.a[1], tube.b[1]) - tube.radius;
+    if (distance <= tube.radius && (tube.water === null || y > tube.water)) {
+      floor = Math.min(floor, tube.water ?? Math.min(tube.a[1], tube.b[1]) - tube.radius);
     }
   }
   if (!Number.isFinite(floor)) floor = city.sewer.minY;
@@ -5329,20 +5353,25 @@ function pack(city, course) {
 }
 const unpack = data => restore(data.city, data.course);
 
-function generate(seed, difficulty = 'medium') {
+function build(seed, difficulty, attempt) {
   const profile = PROFILES[difficulty];
-  if (!profile) throw new Error(`unknown sewer difficulty ${difficulty}`);
-  const r = GAME.rng.stream(seed, 'sewer-network-v1'), mirrored = r.chance(0.5) ? -1 : 1;
+  const r = GAME.rng.stream(seed, `sewer-network-v2:${attempt}`), mirrored = r.chance(0.5) ? -1 : 1;
   const rotation = r.range(-Math.PI, Math.PI), ox = 1050, oz = 1050;
   const transform = p => [ox + Math.cos(rotation) * p[0] * mirrored + Math.sin(rotation) * p[2],
     p[1], oz - Math.sin(rotation) * p[0] * mirrored + Math.cos(rotation) * p[2]];
-  const raw = [], tunnels = [], shafts = [], ranges = [];
-  let pose = [0, 80, 0], yaw = 0, distance = 0;
+  const raw = [], tunnels = [], shafts = [], ranges = [], occupied = [];
+  let pose = [0, 80, 0], yaw = 0, distance = 0, piece = 0;
   const point = p => {
     if (raw.length) distance += Math.hypot(...p.map((v, i) => v - raw.at(-1).p[i]));
     raw.push({ p: [...p], s: distance }); pose = [...p];
   };
   point(pose);
+  // Pieces of one network may pass beside, above or below each other, but never merge;
+  // only the piece directly before a new one may touch it.
+  const thin = (points, radius) => points.filter((_, k) => k % 3 === 0 || k === points.length - 1).map(p => ({ p, radius }));
+  const fits = samples => samples.every(({ p, radius }) => occupied.every(o => o.piece >= piece - 1
+    || (p[0] - o.p[0]) ** 2 + (p[1] - o.p[1]) ** 2 + (p[2] - o.p[2]) ** 2 >= (radius + o.radius + 12) ** 2));
+  const occupy = samples => { for (const sample of samples) occupied.push({ ...sample, piece }); piece++; };
   function tubePath(points, kind, radius) {
     const first = distance, water = points[0][1] - radius * 0.65;
     for (let k = 1; k < points.length; k++) point(points[k]);
@@ -5361,7 +5390,10 @@ function generate(seed, difficulty = 'medium') {
       const f = k / steps;
       points.push([a[0] + Math.sin(yaw) * length * f, a[1] + dy * f, a[2] + Math.cos(yaw) * length * f]);
     }
-    tubePath(points, kind, kind === 'side' ? profile.side : profile.main);
+    const radius = kind === 'side' ? profile.side : profile.main, samples = thin(points, radius);
+    if (!fits(samples)) return false;
+    tubePath(points, kind, radius); occupy(samples);
+    return true;
   }
   function turn(angle, radius, kind = 'main') {
     const a = [...pose], from = yaw, points = [a], steps = Math.ceil(Math.abs(angle) * radius / SAMPLE);
@@ -5371,16 +5403,19 @@ function generate(seed, difficulty = 'medium') {
       points.push([a[0] + radius / sign * (Math.cos(from) - Math.cos(theta)), a[1],
         a[2] + radius / sign * (Math.sin(theta) - Math.sin(from))]);
     }
+    const width = kind === 'side' ? profile.side : profile.main, samples = thin(points, width);
+    if (!fits(samples)) return false;
+    occupy(samples);
     const first = distance;
     // Arc chords must stay short even when a curve belongs to the large main tunnel.
     for (let k = 1; k < points.length; k++) point(points[k]);
-    const width = kind === 'side' ? profile.side : profile.main;
     for (let k = 0; k < points.length - 1; k += 7) {
       const end = Math.min(points.length - 1, k + 7);
       tunnels.push({ a: transform(points[k]), b: transform(points[end]), radius: width, kind, water: a[1] - width * 0.65 });
     }
     ranges.push({ s0: first, s1: distance, kind, radius: width, water: a[1] - width * 0.65, straight: false });
     yaw += angle;
+    return true;
   }
   function shaft(dy, radius, hand) {
     const start = [...pose], side = [Math.cos(yaw) * hand, 0, -Math.sin(yaw) * hand];
@@ -5390,6 +5425,10 @@ function generate(seed, difficulty = 'medium') {
     const tangent = [-Math.sin(startAngle), 0, Math.cos(startAngle)];
     const forward = [Math.sin(yaw), 0, Math.cos(yaw)], winding = dot(tangent, forward) >= 0 ? 1 : -1;
     const first = distance, width = radius + 31, lo = Math.min(start[1], start[1] + dy), hi = Math.max(start[1], start[1] + dy);
+    const samples = [];
+    for (let y = lo; y <= hi + 0.01; y += Math.max(1, (hi - lo) / Math.ceil((hi - lo) / 12))) samples.push({ p: [centre[0], y, centre[2]], radius: width });
+    if (!fits(samples)) return false;
+    occupy(samples);
     const geometry = { a: transform([centre[0], lo, centre[2]]), b: transform([centre[0], hi, centre[2]]),
       radius: width, kind: dy > 0 ? 'riser' : 'drop', water: lo - 17 };
     tunnels.push(geometry);
@@ -5400,16 +5439,38 @@ function generate(seed, difficulty = 'medium') {
       point([centre[0] + Math.cos(angle) * radius, start[1] + dy * k / steps, centre[2] + Math.sin(angle) * radius]);
     }
     ranges.push({ s0: first, s1: distance, kind: geometry.kind, radius: width, water: geometry.water, straight: false });
+    return true;
   }
-  // A main collector, a smaller connecting branch, and two stacked collector systems linked
-  // by a rising and a descending cylinder. The course remains enclosed even inside the shafts.
-  straight(420 + r.range(0, 60)); turn(Math.PI / 2, 115, 'main');
-  straight(310 + r.range(0, 50), 'side'); turn(-Math.PI / 2, 110, 'side');
-  straight(200, 'main'); shaft(70, 76, 1);
-  straight(280, 'main'); turn(-Math.PI / 2, 120, 'main');
-  straight(240, 'side'); shaft(-55, 96, -1);
-  straight(220, 'side'); turn(Math.PI / 2, 120, 'main');
-  straight(390, 'main');
+  // Main collectors and narrower branches alternate between seeded bends and spiral chambers
+  // that lift or drop the route into another stacked level. Harder routes have more of both.
+  const connectors = r.int(...profile.connectors), shaftAt = new Set();
+  while (shaftAt.size < Math.min(profile.shafts, connectors - 1)) shaftAt.add(r.int(1, connectors - 1));
+  const shaftKinds = ['riser', 'drop'];
+  while (shaftKinds.length < shaftAt.size) shaftKinds.push(r.chance(0.5) ? 'riser' : 'drop');
+  for (let k = shaftKinds.length - 1; k > 0; k--) { const j = r.int(0, k); [shaftKinds[k], shaftKinds[j]] = [shaftKinds[j], shaftKinds[k]]; }
+  for (let c = 0; c <= connectors; c++) {
+    const first = c === 0, last = c === connectors;
+    const kind = first || last ? 'main' : r.chance(0.45) ? 'side' : 'main';
+    const length = first ? r.range(400, 470) : last ? r.range(380, 440) : r.range(...profile.straight);
+    if (![1, 0.75, 1.3, 0.6].some(scale => straight(Math.max(first || last ? 320 : 170, length * scale), kind))) return null;
+    if (last) break;
+    if (shaftAt.has(c)) {
+      const rising = shaftKinds.shift() === 'riser', height = Math.max(rising ? 70 : 56, profile.main * 2 + 12);
+      const dy = (height + r.range(0, 6)) * (rising ? 1 : -1), radius = r.range(76, 96), hand = r.chance(0.5) ? 1 : -1;
+      if (!shaft(dy, radius, hand) && !shaft(dy, radius, -hand)) return null;
+    } else {
+      const angle = r.pick(profile.angles), radius = r.range(...profile.turn);
+      let sign = r.chance(0.5) ? 1 : -1;
+      // Far from the first manhole, prefer bending back so the network stays compact.
+      if (Math.hypot(pose[0], pose[2]) > 650) {
+        const home = s => -(Math.sin(yaw + s * angle) * pose[0] + Math.cos(yaw + s * angle) * pose[2]);
+        const better = home(1) > home(-1) ? 1 : -1;
+        sign = r.chance(0.75) ? better : -better;
+      }
+      if (!turn(sign * angle, radius, kind) && !turn(-sign * angle, radius, kind)
+        && !turn(sign * Math.PI / 2, radius, kind) && !turn(-sign * Math.PI / 2, radius, kind)) return null;
+    }
+  }
 
   const n = Math.ceil(distance / SAMPLE) + 1, line = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n) };
   let source = 0;
@@ -5420,12 +5481,15 @@ function generate(seed, difficulty = 'medium') {
     const p = transform(a.p.map((v, i) => v + (b.p[i] - v) * f));
     [line.x[k], line.y[k], line.z[k]] = p;
   }
-  const at = s => {
-    const k = clamp(Math.round(s / SAMPLE), 1, n - 2), p = [line.x[k], line.y[k], line.z[k]];
-    const tangent = [line.x[k + 1] - line.x[k - 1], 0, line.z[k + 1] - line.z[k - 1]];
+  // The tunnel axis stays fixed; the guide line (and its rings) later bends through openings.
+  const base = { n, x: Float32Array.from(line.x), y: Float32Array.from(line.y), z: Float32Array.from(line.z) };
+  const frame = (L, s) => {
+    const k = clamp(Math.round(s / SAMPLE), 1, n - 2), p = [L.x[k], L.y[k], L.z[k]];
+    const tangent = [L.x[k + 1] - L.x[k - 1], 0, L.z[k + 1] - L.z[k - 1]];
     const length = Math.hypot(...tangent), direction = tangent.map(v => v / length);
     return { k, p, direction, side: [-direction[2], 0, direction[0]] };
   };
+  const at = s => frame(line, s);
   const inflows = [];
   for (const range of ranges.filter(range => ['main', 'side'].includes(range.kind))) {
     const s = (range.s0 + range.s1) / 2, { p, direction, side } = at(s), sign = r.chance(0.5) ? -1 : 1;
@@ -5438,32 +5502,127 @@ function generate(seed, difficulty = 'medium') {
     inflows.push({ a: [...mouth], b: [mouth[0] - side[0] * sign * 7, range.water + 0.6, mouth[2] - side[2] * sign * 7],
       radius: 1.1, side: sign });
   }
-  const pipes = [], dirt = [];
-  const candidates = ranges.filter(range => range.straight && range.s1 - range.s0 > 150);
-  const placements = candidates.flatMap(range => {
-    const count = Math.max(1, Math.floor((range.s1 - range.s0 - 70) / 72));
-    return Array.from({ length: count }, (_, index) => ({ range, s: range.s0 + 65 + index * (range.s1 - range.s0 - 110) / Math.max(1, count - 1) }));
-  });
-  for (const [index, { range, s }] of placements.entries()) {
-    if (pipes.length >= profile.pipes) break;
-    const { p, side, direction } = at(s), sign = index % 2 ? 1 : -1;
-    const height = p[1] + (sign > 0 ? 7 : -7), pipeRadius = difficulty === 'extreme' ? 2.4 : difficulty === 'hard' ? 2.1 : 1.7;
-    const a = p.map((v, i) => v - side[i] * (range.radius - 1)), b = p.map((v, i) => v + side[i] * (range.radius - 1));
-    a[1] = height; b[1] = height + (index % 3 === 0 ? 2.2 : 0);
-    pipes.push({ a, b, radius: pipeRadius, kind: index % 3 === 0 ? 'diagonal' : 'crossing', s });
-    // A circular return pipe follows one wall and turns into the ceiling. Its ends overlap so
-    // it reads as a continuous service pipe rather than a floating rectangular obstacle.
-    if (index % 3 === 1) {
-      const c = p.map((v, i) => v + side[i] * sign * (range.radius - 4) - direction[i] * 10);
-      c[1] = p[1] - 5;
-      const d = [...c]; d[1] = p[1] + 12;
-      pipes.push({ a: c, b: d, radius: 1.3, kind: 'riser', s });
+  const pipes = [], dirt = [], hazards = [], gateSpots = [];
+  const shuffle = list => {
+    for (let k = list.length - 1; k > 0; k--) { const j = r.int(0, k); [list[k], list[j]] = [list[j], list[k]]; }
+    return list;
+  };
+  for (const range of ranges) {
+    const count = range.kind === 'riser' || range.kind === 'drop' ? 4 : Math.max(1, Math.floor((range.s1 - range.s0) / 210));
+    for (let k = 1; k <= count; k++) gateSpots.push(range.s0 + (range.s1 - range.s0) * k / (count + 0.25));
+  }
+  const finishS = distance - 48;
+  // Seeded stations along straight tunnels, clear of the start, the finish and every ring.
+  const stations = [];
+  for (const range of ranges.filter(range => range.straight)) {
+    for (let s = range.s0 + 60 + r.range(0, 25); s <= range.s1 - 45; s += profile.spacing * r.range(0.8, 1.2)) {
+      if (s > 150 && s < finishS - 70 && gateSpots.every(g => Math.abs(g - s) > 26)) stations.push({ s, range });
     }
-    if (dirt.length < profile.dirt) {
-      const centre = p.map((v, i) => v + side[i] * (index % 2 ? 1 : -1) * range.radius * 0.45 + direction[i] * 28);
-      centre[1] = range.water + 1.5;
-      dirt.push({ centre, radii: [7 + r.range(0, 3), 6.5 + r.range(0, 1.5), 8 + r.range(0, 4)] });
+  }
+  shuffle(stations);
+  const BENDS = { grate: true, sluice: true, falls: true };
+  for (const [type, count] of Object.entries(profile.hazards)) {
+    let placed = 0;
+    for (const station of stations) {
+      if (placed >= count) break;
+      const reach = BENDS[type] ? 76 : 16, { s, range } = station;
+      if (station.used || hazards.some(h => Math.abs(h.s - s) < Math.max(h.reach, reach) + 10)) continue;
+      if (BENDS[type] && (s - reach < range.s0 || s + reach > range.s1)) continue;
+      station.used = true; placed++;
+      hazards.push({ type, s, range, reach, u: 0, v: 0 });
     }
+  }
+  hazards.sort((a, b) => a.s - b.s);
+  for (const h of hazards) {
+    const R = h.range.radius;
+    if (h.type === 'grate') { h.u = r.range(-0.26, 0.26) * R; h.v = r.range(-0.12, 0.2) * R; }
+    else if (h.type === 'sluice') { h.top = r.chance(0.55); h.v = (h.top ? -0.2 : 0.18) * R; }
+    else if (h.type === 'falls') { h.sign = r.chance(0.5) ? 1 : -1; h.u = -h.sign * 0.24 * R; }
+  }
+  // Bend the guide line through each opening: level for 14 units either side, eased over 60.
+  for (let k = 0; k < n; k++) {
+    const s = k * SAMPLE;
+    let du = 0, dv = 0;
+    for (const h of hazards) {
+      const d = Math.abs(s - h.s);
+      if ((!h.u && !h.v) || d >= 74) continue;
+      const w = d <= 14 ? 1 : 0.5 + 0.5 * Math.cos(Math.PI * (d - 14) / 60);
+      du += h.u * w; dv += h.v * w;
+    }
+    if (!du && !dv) continue;
+    const { side } = frame(base, s);
+    line.x[k] += side[0] * du; line.y[k] += dv; line.z[k] += side[2] * du;
+  }
+  const across = (c, side, u, y, direction = null, along = 0) => [c[0] + side[0] * u + (direction ? direction[0] * along : 0), y,
+    c[2] + side[2] * u + (direction ? direction[2] * along : 0)];
+  for (const h of hazards) {
+    const { p: c, side, direction } = frame(base, h.s), R = h.range.radius, water = h.range.water, s = h.s;
+    const ly = c[1] + h.v, lu = h.u, roof = u => c[1] + Math.sqrt(Math.max(0, R * R - u * u));
+    if (h.type === 'grate') {
+      // An iron grate fills the bore except for one seeded window on the guide line.
+      const bar = 0.55, pitch = 3.1, w = profile.gap / 2, high = profile.gap * 0.58, bottom = water - 1.2;
+      for (let u = -R + 1.2; u <= R - 1.2; u += pitch) {
+        const top = roof(u) + 0.6;
+        if (Math.abs(u - lu) >= w + bar) { pipes.push({ a: across(c, side, u, bottom), b: across(c, side, u, top), radius: bar, kind: 'grate', s }); continue; }
+        if (ly - high - bar > bottom) pipes.push({ a: across(c, side, u, bottom), b: across(c, side, u, ly - high - bar), radius: bar, kind: 'grate', s });
+        if (top > ly + high + bar) pipes.push({ a: across(c, side, u, ly + high + bar), b: across(c, side, u, top), radius: bar, kind: 'grate', s });
+      }
+      for (const y of [ly - high - bar * 1.3, ly + high + bar * 1.3]) if (y > water + 0.4) {
+        pipes.push({ a: across(c, side, lu - w - bar, y), b: across(c, side, lu + w + bar, y), radius: bar * 1.3, kind: 'grate', s });
+      }
+    } else if (h.type === 'sluice') {
+      // A half-raised timber sluice: either a shutter hanging from the roof or a weir from the water.
+      const plank = 1.15, step = 1.85, gap = profile.gap * 0.6;
+      const halfAt = y => Math.sqrt(Math.max(0, R * R - (Math.min(y, c[1] + R - 0.3) - c[1]) ** 2)) + 0.8;
+      if (h.top) for (let y = ly + gap + plank; y < c[1] + R + plank; y += step) {
+        pipes.push({ a: across(c, side, -halfAt(y), y), b: across(c, side, halfAt(y), y), radius: plank, kind: 'sluice', s });
+      } else for (let y = water - 0.6; y < ly - gap - plank; y += step) {
+        pipes.push({ a: across(c, side, -halfAt(y), y), b: across(c, side, halfAt(y), y), radius: plank, kind: 'sluice', s });
+      }
+    } else if (h.type === 'falls') {
+      // Runoff pours through a cracked roof; the guide swings to the other side of the bore.
+      const u = h.sign * 0.17 * R;
+      pipes.push({ a: across(c, side, u, water - 1.5), b: across(c, side, u, roof(u) + 1), radius: 2.3, kind: 'falls', s });
+    } else if (h.type === 'cable') {
+      // Roots and sagging cables hang from the roof; only those beside the line reach down low.
+      for (let j = r.int(5, 9); j > 0; j--) {
+        const root = r.chance(0.45), radius = root ? r.range(0.4, 0.7) : 0.28;
+        const u = r.range(-0.85, 0.85) * R, along = r.range(-7, 7), sway = root ? r.range(-2.5, 2.5) : 0;
+        const near = Math.abs(u - lu) < 5.5 + radius;
+        const bottom = Math.max(water + 1.2, near ? ly + 4.5 + radius + r.range(0, 4) : ly - r.range(-4, profile.cableLow * R));
+        const top = roof(u) + 0.5;
+        if (bottom >= top - 1) continue;
+        pipes.push({ a: across(c, side, u, top, direction, along), b: across(c, side, u + sway * 0.4, bottom, direction, along + sway),
+          radius, kind: root ? 'root' : 'cable', s });
+      }
+    } else {
+      const sign = r.chance(0.5) ? 1 : -1, diagonal = r.chance(0.33), height = ly + sign * 7;
+      pipes.push({ a: across(c, side, -(R - 1), height), b: across(c, side, R - 1, height + (diagonal ? 2.2 : 0)),
+        radius: profile.pipe, kind: diagonal ? 'diagonal' : 'crossing', s });
+      // A circular return pipe follows one wall and turns into the ceiling. Its ends overlap so
+      // it reads as a continuous service pipe rather than a floating rectangular obstacle.
+      if (r.chance(0.35)) {
+        const a = across(c, side, sign * (R - 4), c[1] - 5, direction, -10), b = [...a];
+        b[1] = c[1] + 12;
+        pipes.push({ a, b, radius: 1.3, kind: 'riser', s });
+      }
+    }
+  }
+  // Silt banks: low, wide mounds that barely break the waterline, ringed by smaller lumps.
+  const spots = [];
+  for (const range of ranges.filter(range => range.kind === 'main' || range.kind === 'side')) {
+    for (let s = range.s0 + 30 + r.range(0, 30); s < range.s1 - 20; s += profile.dirtSpacing * r.range(0.7, 1.3)) {
+      if (s > 70) spots.push({ s, range });
+    }
+  }
+  for (const { s, range } of shuffle(spots).slice(0, profile.dirt)) {
+    const { p: c, side, direction } = frame(base, s), R = range.radius, water = range.water;
+    const lengthwiseX = Math.abs(direction[0]) > Math.abs(direction[2]);
+    const mound = (u, along, long, wide, high, lift) => dirt.push({ centre: across(c, side, u, water + lift, direction, along),
+      radii: lengthwiseX ? [long, high, wide] : [wide, high, long] });
+    const u = (r.chance(0.5) ? 1 : -1) * r.range(0.15, 0.5) * R;
+    mound(u, 0, r.range(7, 13), r.range(5, 9), r.range(1.5, 2.8), r.range(0.1, 0.6));
+    for (let j = r.int(2, 4); j > 0; j--) mound(u + r.range(-7, 7), r.range(-12, 12), r.range(1.4, 3.6), r.range(1.2, 3.2), r.range(0.5, 1.3), 0.15);
   }
   const gates = [];
   // Gates at bends and shaft quarters make every connecting tunnel part of the ordered route.
@@ -5471,27 +5630,44 @@ function generate(seed, difficulty = 'medium') {
     const count = range.kind === 'riser' || range.kind === 'drop' ? 4 : Math.max(1, Math.floor((range.s1 - range.s0) / 210));
     for (let k = 1; k <= count; k++) {
       const s = range.s0 + (range.s1 - range.s0) * k / (count + 0.25), { p, direction } = at(s);
+      if (s > finishS - 30) continue;
       gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction, s: Math.round(s / SAMPLE) * SAMPLE,
         radius: profile.gate, finish: false });
     }
   }
-  const finishS = distance - 48, { p, direction } = at(finishS);
+  const { p, direction } = at(finishS);
   gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction,
     s: Math.round(finishS / SAMPLE) * SAMPLE, radius: profile.gate, finish: true });
   gates.sort((a, b) => a.s - b.s); gates.forEach((gate, index) => { gate.index = index; });
   const city = { environment: 'sewer', seed, difficulty, size: 4096, maxHeight: 260, obstacles: pipes,
-    sewer: { tunnels, pipes, dirt, inflows, shafts, startY: 80, minY: 80 - profile.main * 0.65 } };
+    sewer: { tunnels, pipes, dirt, inflows, shafts, startY: 80,
+      minY: Math.min(...tunnels.map(tube => tube.water ?? Infinity)) } };
+  const counts = {};
+  for (const h of hazards) counts[h.type] = (counts[h.type] || 0) + 1;
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
-    par: distance / GAME.flight.cruise(difficulty), attempt: 0, obstacles: pipes.length + dirt.length,
-    props: pipes.length, bridges: 0, version: 1 };
+    par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length,
+    props: pipes.length, bridges: 0, hazards: counts, version: 2 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
-    throw new Error(`unflyable sewer ${seed}/${difficulty}: ${JSON.stringify({ finished: course.proof.finished,
-      gate: course.proof.gate, crashes: course.proof.crashes, missed: course.proof.missed, last: course.proof.events.at(-1) })}`);
+    return { failure: JSON.stringify({ attempt, finished: course.proof.finished, gate: course.proof.gate,
+      crashes: course.proof.crashes, missed: course.proof.missed, last: course.proof.events.at(-1) }) };
   }
   return { city, course };
+}
+
+// A rejected layout (overlapping tunnels or a failed flight proof) moves on to the code's next
+// deterministic attempt, so every code still regenerates the identical course.
+function generate(seed, difficulty = 'medium') {
+  if (!PROFILES[difficulty]) throw new Error(`unknown sewer difficulty ${difficulty}`);
+  let failure = 'no layout fits';
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const world = build(seed, difficulty, attempt);
+    if (world?.course) return world;
+    if (world?.failure) failure = world.failure;
+  }
+  throw new Error(`unflyable sewer ${seed}/${difficulty}: ${failure}`);
 }
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
@@ -9661,4 +9837,4 @@ GAME.post = { init, defaults, present, status };
 })();
 
 return GAME;
-},{"revision":"056db7b167e5261be6cfb064f563dd4cb8e991ae","sourceSha256":"20f6e30e9357a074150cf76a305a9506378a1f47080d9e7602c8cd5934a70592"});</script>
+},{"diagnosticVersion":2,"revision":"6df5dfa1fe733f8d33e87d003c2edc8af62fffe9","sourceSha256":"8e90438af2e486a16171be07e4e4b409787eabc19b81ba9f67102b729641fe1a"});</script>

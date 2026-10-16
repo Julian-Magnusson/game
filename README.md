@@ -57,6 +57,10 @@ runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.ht
 checks the remaining failure: generate it in the development repository with
 `node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
 It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
+For a fresh test use [diagnostic 2, build 6df5dfa](https://julian-magnusson.github.io/game/graphics-check-6df5dfa1fe73.html).
+Its unique address, visible build and ISO run time distinguish the new attempt from an older
+loaded page or report. Copy and Save become available after completion or interruption;
+clipboard failure selects the report and explains how to copy it manually.
 A startup-resolution controller prototype is held back because it reduced image resolution too
 aggressively in browser validation. Neither is a confirmed Windows fix; stable AMD/Direct3D11
 gameplay still needs confirmation.
