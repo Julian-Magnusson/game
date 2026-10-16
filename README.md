@@ -126,6 +126,15 @@ the course or starting a new attempt.
 Course and flight summaries show collected slots without a lifetime “Stars saved” total.
 Shop shows the stars still available to spend after purchases.
 
+Shop has **Gear**, **Themes** and **Music** tabs. **Neon Night** and **Neon Flight** are included
+at the start. Other themes cost **4 stars each**; **Skyline Rush**, **Midnight Drift** and
+**Afterburn** cost **5 stars each**. Purchases are saved once per browser, and settings reset
+keeps ownership. Select owned items in Shop or Settings; locked Settings choices have dimmed
+icons and a lock. Random music plays only your owned surface songs. **Undertow** is free upon
+discovering The Sewer, plays exclusively underground, and is the Sewer's only song. Your
+surface music preference returns when you go back up. Existing boosts, keys, star claims and
+spending are preserved; cosmetic purchases do not change medals or count as assisted flights.
+
 The **Collapse Key** costs **10 stars**. Its mysterious **MM:SS** hint changes with the selected
 Hard/Extreme course and difficulty.
 

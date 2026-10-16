@@ -191,6 +191,12 @@
     border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 2px; cursor: pointer; }
   .set-option[aria-checked="true"] { color: #fff; background: rgba(95, 227, 255, 0.18); border-color: var(--cyan); box-shadow: 0 0 12px rgba(95, 227, 255, 0.35); }
   .set-option:hover { border-color: rgba(95, 227, 255, 0.7); }
+  .set-option-icon { display: inline-block; margin-right: 5px; color: var(--cyan); }
+  .set-option-lock { margin-left: 5px; font-size: 10px; }
+  .set-option.locked { color: #7c899a; border-color: #c2def51c; background: #0007; cursor: not-allowed; box-shadow: none; }
+  .set-option.locked .set-option-icon { opacity: 0.32; filter: grayscale(1); }
+  .set-option.locked .set-option-label { opacity: 0.65; }
+  .set-option.locked:hover { border-color: #c2def51c; }
   .graphics-report { margin-top: 10px; text-align: left; }
   .graphics-report[hidden], #overlay:not(.error) > .graphics-report { display: none; }
   .graphics-report .btn { min-height: 36px; padding: 8px 12px; font-size: 10px; letter-spacing: 0.12em; }
@@ -374,7 +380,7 @@
   .shop-sheet { width: min(880px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; box-sizing: border-box;
     padding: 26px; text-align: left; border: 1px solid #ffd45a55; border-radius: 8px;
     background: radial-gradient(ellipse at top left, #24303166, transparent 65%), #070e1b; box-shadow: 0 20px 100px #0009; }
-  .shop-head { display: flex; align-items: center; gap: 24px; }
+  .shop-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
   .shop-heading { flex: 1; }
   .shop-eyebrow { color: var(--gold); font-size: 11px; letter-spacing: 0.23em; text-transform: uppercase; }
   #shop-title { margin: 3px 0 0; font-size: 34px; font-weight: 300; letter-spacing: 0.17em; }
@@ -411,6 +417,7 @@
   .shop-inventory .shop-small { font-size: 12px; color: #92a6ba; }
   .shop-footer { margin-top: 18px; font-size: 12px; line-height: 1.5; color: #9bafc4; }
   #shop-message { min-height: 1.5em; margin: 7px 0 0; color: var(--green); font-size: 12px; }
+  #shop-message:empty { display: none; }
   #shop-storage { color: var(--amber); }
   .shop-key-item { display: flex; align-items: center; gap: 20px; margin-top: 14px; padding: 16px 20px;
     border: 1px solid #ff696a55; border-radius: 5px; background: linear-gradient(110deg, #ff46460b, #ffffff03); }
@@ -423,7 +430,24 @@
   #shop-key-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
   #shop-key-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
   #shop-key-buy:disabled { opacity: 0.55; }
-  .shop-head { position: sticky; top: -1px; z-index: 1; background: #07121fee; }
+  .shop-head { position: sticky; top: -1px; z-index: 1; padding-bottom: 8px; background: #07121f; }
+  .shop-tabs { display: flex; flex: 0 0 100%; gap: 8px; }
+  .shop-tabs button { flex: 1; min-height: 40px; padding: 8px 12px; color: #93a8bd; background: #ffffff05; border: 1px solid #c2def52b; border-radius: 4px; font: inherit; font-size: 12px; cursor: pointer; }
+  .shop-tabs [aria-selected="true"] { color: var(--gold); border-color: #ffd45a88; background: #ffd45a0f; }
+  .shop-section[hidden] { display: none; }
+  .shop-catalog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .shop-card { min-width: 0; padding: 12px; border: 1px solid #c2def52b; border-radius: 5px; background: #ffffff04; }
+  .shop-card.owned { border-color: #4dffc04d; }
+  .shop-card-art { height: 82px; overflow: hidden; border-radius: 3px; background: #061020; }
+  .shop-card-art svg { display: block; width: 100%; height: 100%; }
+  .shop-card h3 { margin: 10px 0 6px; font-size: 15px; font-weight: 500; }
+  .shop-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px; font-size: 11px; color: #91a6bb; }
+  .shop-card-price { color: var(--gold); white-space: nowrap; font-weight: 400; }
+  .shop-card button { width: 100%; min-height: 40px; margin-top: 10px; padding: 8px; font-size: 11px; color: #e8f8ff; border-color: #8bcce466; letter-spacing: 0.03em; }
+  .shop-card button:disabled { opacity: 0.55; cursor: default; }
+  #shop-message:not(:empty) { position: sticky; bottom: -1px; padding: 8px 10px; background: #07121ff5; border: 1px solid #4dffc044; border-radius: 3px; }
+  @media (max-width: 600px) { .shop-catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } }
+  @media (max-height: 500px) { .shop-tabs button { min-height: 36px; padding: 6px; } .shop-card-art { height: 64px; } }
   #environment-switch { margin-top: 16px; display: inline-flex; align-items: center; gap: 10px; min-height: 44px;
     padding: 10px 18px; border-color: #66b5a699; color: #b7e8db; background: #102f2a99; letter-spacing: 0.13em; }
   #environment-switch[hidden], #sewer-note[hidden] { display: none; }
@@ -646,7 +670,13 @@
       <div class="shop-heading"><div class="shop-eyebrow">Neon Flight / supply depot</div><h2 id="shop-title">STAR SHOP</h2></div>
       <div class="shop-wallet"><span>your wallet</span><strong id="shop-balance">★ 0</strong></div>
       <button id="shop-done" class="btn" type="button">back</button>
+    <div class="shop-tabs" role="tablist" aria-label="Shop sections">
+      <button id="shop-tab-gear" type="button" role="tab" aria-selected="true" aria-controls="shop-gear">Gear</button>
+      <button id="shop-tab-themes" type="button" role="tab" aria-selected="false" aria-controls="shop-themes" tabindex="-1">Themes</button>
+      <button id="shop-tab-music" type="button" role="tab" aria-selected="false" aria-controls="shop-music" tabindex="-1">Music</button>
+    </div>
     </header>
+    <section id="shop-gear" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-gear">
     <div class="shop-section-label"><span>Flight gear</span><span>Earn stars. Gear up.</span></div>
     <div class="shop-grid">
       <article class="shop-item">
@@ -676,13 +706,24 @@
       </aside>
     </div>
     <div class="shop-footer" id="shop-rules">Finish to save found stars. Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
-    <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
-    <div id="shop-message" role="status" aria-live="polite"></div>
     <article class="shop-key-item">
       <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
       <div class="shop-key-copy"><span class="shop-badge">Unlock</span><h3>Collapse Key</h3><p id="shop-key-hint">???</p><span id="shop-key-context"></span></div>
       <strong id="shop-key-price">★ 10</strong><button id="shop-key-buy" class="btn" type="button">unlock · 10 ★</button>
     </article>
+    </section>
+    <section id="shop-themes" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-themes" hidden>
+      <div class="shop-section-label"><span>City themes</span><span>4 ★ each</span></div>
+      <div id="shop-themes-grid" class="shop-catalog"></div>
+      <p class="shop-footer">Neon Night is included. Buy a theme once, then choose it here or in Settings.</p>
+    </section>
+    <section id="shop-music" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-music" hidden>
+      <div class="shop-section-label"><span>Soundtracks</span><span>5 ★ each</span></div>
+      <div id="shop-music-grid" class="shop-catalog"></div>
+      <p class="shop-footer">Neon Flight is included. Random in Settings plays your owned surface songs. Undertow is free in The Sewer.</p>
+    </section>
+    <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
+    <div id="shop-message" role="status" aria-live="polite"></div>
   </div>
 </div>
 <div id="settings" class="screen hidden">
@@ -9218,26 +9259,67 @@ const SCHEMA = {
   theme: { type: 'choice', default: 'neon', label: 'Theme', group: 'City', options: [] },
   masterVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 1, format: percent, label: 'Volume', group: 'Sound' },
   musicVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.8, format: percent, label: 'Music', group: 'Sound' },
-  musicTrack: { type: 'choice', default: 'random', label: 'Song', group: 'Sound',
-    note: 'Random picks a song for each new flight. Crashes and resumes keep the same song.',
-    options: [['random', 'Random'], ...GAME.songs.filter(s => !s.unlock || GAME.access?.sewerUnlocked()).map(s => [s.id, s.name])] },
+  musicTrack: { type: 'choice', default: 'neon-flight', label: 'Song', group: 'Sound',
+    note: 'Random picks from your owned surface songs for each new flight. Undertow plays only in the Sewer.',
+    options: [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])] },
   effectsVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, format: percent, label: 'Effects', group: 'Sound' },
 };
 
 let values = {};
 const listeners = new Set();
 const schemaListeners = new Set();
+let watchedShop = null;
+
+const inSewer = () => GAME.access?.environment() === 'sewer';
+const ownsTheme = id => GAME.shop?.ownsTheme ? GAME.shop.ownsTheme(id) : id === 'neon';
+const ownsMusic = id => GAME.shop?.ownsMusic ? GAME.shop.ownsMusic(id) : id === 'neon-flight';
+const THEME_ICONS = { neon: '◈', sunset: '☀', rain: '☂', toxic: '◉', arctic: '❄',
+  amber: '☀', overgrown: '❧', aurora: '✧', ember: '♨' };
+
+// Ownership controls saved surface preferences. The Sewer has its own song, so visiting it
+// never overwrites the surface choice that should return when the player goes back up.
+function ownedChoice(key, id) {
+  if (key === 'theme') return ownsTheme(id);
+  if (key === 'musicTrack') return id === 'random' || (id !== 'undertow' && ownsMusic(id));
+  return true;
+}
+function displayValue(key) {
+  return key === 'musicTrack' && inSewer() ? 'undertow' : get(key);
+}
+function choiceStatus(key, id) {
+  if (key === 'theme') {
+    const locked = !ownsTheme(id);
+    return { locked, available: !locked, icon: THEME_ICONS[id] || '◈',
+      note: locked ? `${GAME.shop?.THEME_PRICE ?? 4} stars in the shop` : '' };
+  }
+  if (key === 'musicTrack') {
+    if (id === 'undertow') {
+      const locked = !GAME.access?.sewerUnlocked();
+      return { locked, available: !locked && inSewer(), icon: '≈',
+        note: locked ? 'Discover the Sewer' : inSewer() ? 'Free in the Sewer' : 'The Sewer only' };
+    }
+    const locked = id !== 'random' && !ownsMusic(id);
+    return { locked, available: !locked && !inSewer(), icon: id === 'random' ? '⤨' : '♫',
+      note: locked ? `${GAME.shop?.MUSIC_PRICE ?? 5} stars in the shop` : inSewer() ? 'Surface music' : '' };
+  }
+  return { locked: false, available: true, icon: '', note: '' };
+}
+const choiceAvailable = (key, id) => choiceStatus(key, id).available;
 
 function valid(key, v) {
   const s = SCHEMA[key];
   if (s.type === 'number') return typeof v === 'number' && Number.isFinite(v) && v >= s.min && v <= s.max;
   if (s.type === 'bool') return typeof v === 'boolean';
-  return s.options.some(([id]) => id === v);
+  return s.options.some(([id]) => id === v) && ownedChoice(key, v);
 }
 
 // Reads what this browser stored. Values an older version stored in another shape are dropped
 // (with a warning) rather than trusted; storage may be unavailable (private mode): defaults then.
 function load() {
+  if (GAME.shop?.onChange && watchedShop !== GAME.shop) {
+    GAME.shop.onChange(refreshCosmetics);
+    watchedShop = GAME.shop;
+  }
   values = Object.fromEntries(Object.entries(SCHEMA).map(([k, s]) => [k, s.default]));
   let text, old = false;
   try {
@@ -9247,11 +9329,13 @@ function load() {
   if (text === null) return;
   let stored;
   try { stored = JSON.parse(text); } catch { console.warn(`[settings] ignoring unreadable stored settings ${text}`); return; }
+  let normalized = false;
   for (const [k, v] of Object.entries(stored)) {
     if (!(k in SCHEMA)) continue;
-    if (valid(k, v)) values[k] = v; else console.warn(`[settings] ignoring stored ${k}=${JSON.stringify(v)}`);
+    if (valid(k, v)) values[k] = v;
+    else { normalized = true; console.warn(`[settings] ignoring stored ${k}=${JSON.stringify(v)}`); }
   }
-  if (old) save();
+  if (old || normalized) save();
 }
 
 function save() {
@@ -9279,16 +9363,21 @@ function reset() {
 // Called by the theme catalogue: the theme setting's options are the available themes.
 function setThemeOptions(options) {
   SCHEMA.theme.options = options;
-  if (!valid('theme', values.theme)) values.theme = SCHEMA.theme.default;
+  refreshCosmetics();
 }
 function updateSongOptions() {
-  SCHEMA.musicTrack.options = [['random', 'Random'], ...GAME.songs
-    .filter(s => !s.unlock || GAME.access?.sewerUnlocked()).map(s => [s.id, s.name])];
-  if (values.musicTrack !== undefined && !valid('musicTrack', values.musicTrack)) set('musicTrack', 'random');
-  for (const fn of schemaListeners) fn('musicTrack');
+  SCHEMA.musicTrack.options = [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])];
+  refreshCosmetics();
+}
+function refreshCosmetics() {
+  for (const key of ['theme', 'musicTrack']) {
+    if (values[key] !== undefined && !valid(key, values[key])) set(key, SCHEMA[key].default);
+    for (const fn of schemaListeners) fn(key);
+  }
 }
 
 GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, updateSongOptions,
+  displayValue, choiceStatus, choiceAvailable, refreshCosmetics,
   onSchemaChange: fn => schemaListeners.add(fn), onChange: fn => listeners.add(fn), all: () => ({ ...values }) };
 
 })();
@@ -9382,19 +9471,35 @@ GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claim
 const KEY = 'neonflight.shop.v1';
 const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
 const COLLAPSE_KEY = Object.freeze({ price: 10 });
+const THEME_PRICE = 4, MUSIC_PRICE = 5;
+// Shop loads before the theme and audio modules. Keep only paid IDs here: the starting
+// theme/song and the Sewer's free Undertow are never entries in the spending ledger.
+const PAID_THEMES = Object.freeze(['sunset', 'rain', 'toxic', 'arctic', 'amber', 'overgrown', 'aurora', 'ember']);
+const PAID_MUSIC = Object.freeze(['skyline-rush', 'midnight-drift', 'afterburn']);
 const listeners = new Set();
-let ledger = { bought: 0, used: 0, collapseKey: false }, storageOK = true;
+const emptyLedger = () => ({ bought: 0, used: 0, collapseKey: false, themes: [], music: [] });
+let ledger = emptyLedger(), storageOK = true;
+const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0)
+  + save.themes.length * THEME_PRICE + save.music.length * MUSIC_PRICE;
+function ownedIds(value, catalog) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > catalog.length || new Set(value).size !== value.length
+      || !value.every(id => catalog.includes(id))) throw new Error('invalid shop ownership');
+  return value.slice();
+}
 function read() {
   const raw = localStorage.getItem(KEY);
-  if (raw === null) return { bought: 0, used: 0, collapseKey: false };
+  if (raw === null) return emptyLedger();
   const value = JSON.parse(raw);
   if (!value || !Number.isSafeInteger(value.bought) || !Number.isSafeInteger(value.used)
       || value.used < 0 || value.bought < value.used || value.bought > (Number.MAX_SAFE_INTEGER - COLLAPSE_KEY.price) / LIFT.price
       || value.bought - value.used > LIFT.capacity
       || (value.collapseKey !== undefined && typeof value.collapseKey !== 'boolean')) throw new Error('invalid shop save');
-  return { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true };
+  const save = { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true,
+    themes: ownedIds(value.themes, PAID_THEMES), music: ownedIds(value.music, PAID_MUSIC) };
+  if (!Number.isSafeInteger(spending(save))) throw new Error('invalid shop spending');
+  return save;
 }
-const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0);
 function refresh() {
   try { ledger = read(); GAME.starBank.savedTotal(); storageOK = true; }
   catch { storageOK = false; }
@@ -9403,6 +9508,7 @@ function refresh() {
 function state() {
   return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
     spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
+    themes: ledger.themes.slice(), music: ledger.music.slice(),
     available: storageOK && !!navigator.locks?.request };
 }
 async function transaction(change) {
@@ -9436,6 +9542,22 @@ function buyCollapseKey() {
     return { ok: true };
   });
 }
+function ownsTheme(id) { return id === 'neon' || ledger.themes.includes(id); }
+function ownsMusic(id) {
+  if (id === 'undertow') return GAME.access?.sewerUnlocked?.() === true;
+  return id === 'neon-flight' || ledger.music.includes(id);
+}
+function buyCatalogItem(kind, id, catalog, price) {
+  return transaction((next, earned) => {
+    if (!catalog.includes(id)) return { ok: false, message: 'This item is not for sale.' };
+    if (next[kind].includes(id)) return { ok: false, message: 'You already own this item.' };
+    if (earned - spending(next) < price) return { ok: false, message: 'Find more stars to unlock this item.' };
+    next[kind].push(id);
+    return { ok: true };
+  });
+}
+const buyTheme = id => buyCatalogItem('themes', id, PAID_THEMES, THEME_PRICE);
+const buyMusic = id => buyCatalogItem('music', id, PAID_MUSIC, MUSIC_PRICE);
 function useLift(canUse, activate) {
   return transaction(next => {
     if (!canUse() || next.bought <= next.used) return { ok: false };
@@ -9444,7 +9566,8 @@ function useLift(canUse, activate) {
   });
 }
 window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
-GAME.shop = { LIFT, COLLAPSE_KEY, state, refresh, buyLift, buyCollapseKey, useLift, onChange: fn => listeners.add(fn) };
+GAME.shop = { LIFT, COLLAPSE_KEY, THEME_PRICE, MUSIC_PRICE, state, refresh, buyLift, buyCollapseKey,
+  ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -10759,9 +10882,9 @@ let level = 0;                     // the level asked for; null while the finish
 let cutAt = null;                  // audio time of the finish cut, until a level brings the music back
 let drop = null;                   // the scheduled build and drop
 let volumes = { master: 1, music: 1, effects: 1 };
-let preference = 'random', requestedSong = null, renderController = null, songError = null;
+let preference = 'neon-flight', requestedSong = null, renderController = null, songError = null, watchedShop = null;
 let hasFlown = false;
-let environment = 'surface', environmentDefault = false, surfaceSong = null, surfaceSelectionChanged = false;
+let environment = 'surface', surfaceSong = null, surfaceSelectionChanged = false;
 let alarm = false, alarmBuffer = null, alarmTask = null, alarmSource = null;
 let sceneMuted = false, musicPaused = false;
 const plays = {};                  // effect name -> times played (tests read this)
@@ -10832,10 +10955,24 @@ async function renderSong(song, signal) {
       }
     }));
     if (signal.aborted) return;
+    // The replacement may reopen a music gain that hid the old environment or a revoked
+    // track. Silence those old source fades before reopening it; an ordinary song change
+    // still uses the musical crossfade below.
+    if (ctx && meta && !songAvailable(meta.song)) {
+      for (const set of sets) {
+        for (const fade of set.fades) {
+          fade.gain.cancelScheduledValues(ctx.currentTime);
+          fade.gain.setValueAtTime(0, ctx.currentTime);
+        }
+        for (const source of set.sources) source.stop(ctx.currentTime + 0.01);
+      }
+      sets = [];
+    }
     buffers = { stems, effects, pump: toBuffer(m.pump) };
     if (!alarmBuffer && effects.collapseAlarm) alarmBuffer = effects.collapseAlarm;
     delete m.pump;
     meta = m;
+    setVolumes(volumes);
     if (started && level !== null) {
       // The shared tempo/grid lets the replacement join the current bar without disturbing
       // a scheduled build, finish silence, pause filter or the countdown's next beat.
@@ -10852,18 +10989,28 @@ async function renderSong(song, signal) {
 }
 
 const songName = id => GAME.songs.find(s => s.id === id)?.name;
-const songAvailable = song => !song.unlock || (song.unlock === 'sewer' && GAME.access?.sewerUnlocked?.());
+const surfaceSongAvailable = song => !!song && !song.unlock &&
+  (song.id === 'neon-flight' || !!GAME.shop?.ownsMusic?.(song.id));
+const surfacePreferenceAvailable = value => value === 'random' || GAME.songs.some(s => s.id === value && surfaceSongAvailable(s));
+const songAvailable = id => environment === 'sewer'
+  ? id === 'undertow' && !!GAME.access?.sewerUnlocked?.()
+  : GAME.songs.some(s => s.id === id && surfaceSongAvailable(s));
 function randomSong() {
-  const available = GAME.songs.filter(songAvailable);
+  // Discovering the Sewer never adds Undertow to the surface shuffle.
+  const available = GAME.songs.filter(surfaceSongAvailable);
   const different = available.filter(s => s.id !== requestedSong && s.id !== meta?.song);
   const candidates = different.length ? different : available;
   return candidates[Math.floor(Math.random() * candidates.length)].id;
 }
 
 async function requestSong(song) {
+  if (!songAvailable(song)) throw new Error(`unavailable song "${song}"`);
   renderController?.abort();
   requestedSong = null;
   songError = null;
+  // During an environment swap the old buffers may still exist until workers finish. Keep
+  // those incompatible music buffers silent without silencing effects or the warning alarm.
+  setVolumes(volumes);
   if (meta?.song === song) { renderController = null; return true; }
   const controller = new AbortController();
   renderController = controller;
@@ -10883,24 +11030,43 @@ async function requestSong(song) {
 }
 
 function setSong(value) {
-  if (value !== 'random' && !GAME.songs.some(s => s.id === value && songAvailable(s))) throw new Error(`unavailable song "${value}"`);
+  if (value === 'undertow') {
+    if (!songAvailable(value)) throw new Error(`unavailable song "${value}"`);
+    return requestSong(value);
+  }
+  if (!surfacePreferenceAvailable(value)) throw new Error(`unavailable song "${value}"`);
+  const changed = value !== preference;
   preference = value;
-  if (environment === 'sewer') { environmentDefault = false; surfaceSelectionChanged = true; }
+  if (environment === 'sewer') {
+    surfaceSelectionChanged ||= changed;
+    return requestSong('undertow');
+  }
   return requestSong(value === 'random' ? randomSong() : value);
 }
 
-function load(value = 'random') {
-  prepareAlarm();
-  if (environment === 'sewer' && environmentDefault) {
-    if (value !== 'random' && !GAME.songs.some(s => s.id === value && songAvailable(s))) throw new Error(`unavailable song "${value}"`);
-    preference = value;
-    return requestSong('undertow');
+function load(value = 'neon-flight') {
+  if (GAME.shop?.onChange && watchedShop !== GAME.shop) {
+    GAME.shop.onChange(refreshOwnership);
+    watchedShop = GAME.shop;
   }
+  prepareAlarm();
   return setSong(value);
 }
 
-// The underground menu has its own song, without overwriting the saved surface selection.
-// A deliberate settings choice replaces that temporary default and follows the player outside.
+// A different tab can clear the inventory while Random remains a valid setting. Revalidate
+// its actual track too; purchasing something never changes a currently valid song.
+function refreshOwnership() {
+  if (!surfacePreferenceAvailable(preference)) preference = 'neon-flight';
+  if (surfaceSong && !GAME.songs.some(s => s.id === surfaceSong && surfaceSongAvailable(s))) surfaceSong = null;
+  setVolumes(volumes);
+  const current = requestedSong ?? meta?.song;
+  if (environment === 'surface' && current && !songAvailable(current)) {
+    requestSong(preference === 'random' ? randomSong() : preference);
+  }
+}
+
+// Undertow is exclusive to the underground environment. The surface preference and exact
+// current shuffle choice survive the visit, so returning does not start a different song.
 function setEnvironment(next) {
   if (!['surface', 'sewer'].includes(next)) throw new Error(`unknown audio environment "${next}"`);
   if (next === 'sewer' && !GAME.access?.sewerUnlocked?.()) throw new Error('Sewer music is locked');
@@ -10909,12 +11075,13 @@ function setEnvironment(next) {
   if (next === 'sewer') {
     surfaceSong = requestedSong ?? meta?.song ?? null;
     surfaceSelectionChanged = false;
-    environment = next; environmentDefault = true;
+    environment = next;
     return requestSong('undertow');
   }
-  environment = next; environmentDefault = false;
-  const selected = preference !== 'random' && GAME.songs.some(s => s.id === preference && songAvailable(s)) ? preference : randomSong();
-  const restore = !surfaceSelectionChanged && GAME.songs.some(s => s.id === surfaceSong && songAvailable(s))
+  environment = next;
+  if (!surfacePreferenceAvailable(preference)) preference = 'neon-flight';
+  const selected = preference !== 'random' ? preference : randomSong();
+  const restore = !surfaceSelectionChanged && songAvailable(surfaceSong)
     ? surfaceSong : selected;
   surfaceSong = null; surfaceSelectionChanged = false;
   return requestSong(restore);
@@ -10923,7 +11090,9 @@ function setEnvironment(next) {
 // The first flight uses the menu's freshly chosen song; retries and subsequent full flights
 // get a different random choice. Called by Fly only, never by crash recovery or resume.
 function prepareRun() {
-  if (preference === 'random' && hasFlown && !environmentDefault) requestSong(randomSong());
+  if (environment === 'sewer') {
+    if (requestedSong !== 'undertow' && meta?.song !== 'undertow') requestSong('undertow');
+  } else if (preference === 'random' && hasFlown) requestSong(randomSong());
   hasFlown = true;
 }
 
@@ -11249,7 +11418,7 @@ function setVolumes(v) {
   volumes = { ...v };
   if (!nodes) return;
   const now = ctx.currentTime, set = (p, x) => p.setTargetAtTime(x * x, now, 0.05);
-  set(nodes.master.gain, v.master); if (nodes.music) set(nodes.music.gain, v.music); set(nodes.fx.gain, v.effects);
+  set(nodes.master.gain, v.master); if (nodes.music) set(nodes.music.gain, songAvailable(meta?.song) ? v.music : 0); set(nodes.fx.gain, v.effects);
 }
 
 GAME.sound = {
@@ -18390,14 +18559,35 @@ function choiceRow(parent, key, s) {
       list.replaceChildren();
       list.style.gridTemplateColumns = `repeat(${s.options.length <= 4 ? s.options.length : 3}, 1fr)`;
       buttons = s.options.map(([id, label]) => {
-        const b = el('button', 'set-option', list, label);
+        const b = el('button', 'set-option', list);
+        if (key === 'theme' || key === 'musicTrack') {
+          const icon = el('span', 'set-option-icon', b);
+          icon.setAttribute('aria-hidden', 'true');
+          el('span', 'set-option-label', b, label);
+          const lock = el('span', 'set-option-lock', b);
+          lock.setAttribute('aria-hidden', 'true');
+        } else b.textContent = label;
         b.setAttribute('role', 'radio'); b.dataset.value = id;
-        b.addEventListener('click', () => GAME.settings.set(key, id));
+        b.addEventListener('click', () => {
+          if (GAME.settings.choiceAvailable(key, id) && GAME.settings.displayValue(key) !== id) GAME.settings.set(key, id);
+        });
         return b;
       });
       if (focused) buttons.find(b => b.dataset.value === v)?.focus();
     }
-    buttons.forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === v)));
+    buttons.forEach((b, i) => {
+      const status = GAME.settings.choiceStatus(key, b.dataset.value);
+      const label = s.options[i][1];
+      b.disabled = !status.available;
+      b.classList.toggle('locked', status.locked);
+      b.setAttribute('aria-disabled', String(!status.available));
+      b.setAttribute('aria-checked', String(b.dataset.value === v));
+      b.setAttribute('aria-label', [label, status.locked ? 'locked' : '', status.note].filter(Boolean).join(', '));
+      b.title = status.note ? `${label} · ${status.note}` : label;
+      const icon = b.querySelector('.set-option-icon'), lock = b.querySelector('.set-option-lock');
+      if (icon) icon.textContent = status.icon;
+      if (lock) lock.textContent = status.locked ? '🔒' : '';
+    });
   };
 }
 
@@ -18416,7 +18606,7 @@ function createSettingsPanel(panel, device) {
       groups.set(s.group, g);
     }
     const show = ROWS[s.type](groups.get(s.group), key, s);
-    show(settings.get(key));
+    show(settings.displayValue(key));
     rows.set(key, show);
   }
   // A live note on a choice row, such as the resolution a frame is drawn at right now.
@@ -18432,11 +18622,11 @@ function createSettingsPanel(panel, device) {
     }
   }
   updateVisibility();
-  settings.onChange((key, v) => {
-    if (rows.has(key)) rows.get(key)(v);
+  settings.onChange(key => {
+    if (rows.has(key)) rows.get(key)(settings.displayValue(key));
     updateVisibility();
   });
-  settings.onSchemaChange(key => rows.get(key)?.(settings.get(key)));
+  settings.onSchemaChange(key => rows.get(key)?.(settings.displayValue(key)));
 
   // Focus must not stay on a hidden button: Enter would go to it instead of the shown screen's main
   // button (main.js), so opening and closing leave nothing focused.
@@ -18480,7 +18670,67 @@ GAME.settingsPanel = { create: createSettingsPanel };
 // A focused shop overlay. Opening it from pause never resumes or recalibrates the flight.
 function create(panel, { touch, collapseHint = () => null }) {
   const q = selector => panel.querySelector(selector), buy = q('#shop-buy'), keyBuy = q('#shop-key-buy');
+  const { el } = GAME.hud;
   let origin = null, opener = null, busy = null;
+  const tabs = [...panel.querySelectorAll('[role="tab"]')];
+  function selectTab(id) {
+    for (const tab of tabs) {
+      const selected = tab.getAttribute('aria-controls') === id;
+      tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
+      q('#' + tab.getAttribute('aria-controls')).hidden = !selected;
+    }
+    q('#shop-message').textContent = '';
+    q('.shop-sheet').scrollTop = 0;
+  }
+  for (const [i, tab] of tabs.entries()) {
+    tab.addEventListener('click', () => selectTab(tab.getAttribute('aria-controls')));
+    tab.addEventListener('keydown', e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1
+        : (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      selectTab(next.getAttribute('aria-controls')); next.focus();
+    });
+  }
+  const rgb = value => `rgb(${value.map(c => Math.round(Math.min(1, c ** (1 / 2.2)) * 255)).join(',')})`;
+  function themeArt(theme) {
+    const sky = rgb(theme.sky.zenith), horizon = rgb(theme.sky.horizon), ink = rgb(theme.neon[0]), second = rgb(theme.neon[1]);
+    const plants = theme.growth ? '<path d="M14 85V48m0 13L3 49m11 17l15-17M139 86V46m0 16l-16-14m16 21l13-17" stroke="#88b95f" stroke-width="5"/>' : '';
+    const weather = theme.snow ? '<g fill="#e5f6ff"><circle cx="15" cy="13" r="1.4"/><circle cx="64" cy="24" r="1.6"/><circle cx="106" cy="12" r="1.4"/><circle cx="141" cy="31" r="1.8"/></g>'
+      : theme.rain ? '<path d="M12 5l-7 20m44-18l-7 20m43-24l-7 20m53-14l-7 20" stroke="#8de5f6" opacity=".6"/>' : '';
+    return `<svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="shop-sky-${theme.id}" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${horizon}"/></linearGradient></defs><path fill="url(#shop-sky-${theme.id})" d="M0 0h160v90H0z"/><circle cx="112" cy="24" r="${theme.sun ? 13 : 2}" fill="${ink}" opacity=".8"/><path d="M0 90V46h22V30h23v60m6 0V50h26V19h20v71m5 0V40h22v10h24v40" fill="#091321"/><path d="M25 38h16m-16 8h16m-16 8h16m39-24h12m-12 9h12m-12 9h12m14-1h12m-12 8h12" stroke="${ink}" stroke-width="3"/><path d="M56 58h16m-16 8h16m71-8h13m-13 8h13M0 83h160" stroke="${second}" stroke-width="2"/>${plants}${weather}</svg>`;
+  }
+  const musicColours = ['#83f7d2', '#67ceff', '#bd99ff', '#ffbc78', '#8ab79b'];
+  const cards = [];
+  function addCard(kind, item, index) {
+    const card = el('article', 'shop-card', q(kind === 'theme' ? '#shop-themes-grid' : '#shop-music-grid'));
+    card.dataset.kind = kind; card.dataset.item = item.id;
+    const art = el('div', 'shop-card-art', card);
+    if (kind === 'theme') art.innerHTML = themeArt(item);
+    else {
+      const bars = Array.from({ length: 17 }, (_, i) => {
+        const h = 10 + ((i * 13 + index * 9) % 47);
+        return `<path d="M${16 + i * 8} ${45 - h / 2}v${h}"/>`;
+      }).join('');
+      art.innerHTML = `<svg viewBox="0 0 160 90" aria-hidden="true"><circle cx="80" cy="45" r="39" fill="${musicColours[index]}" opacity=".07"/><g stroke="${musicColours[index]}" stroke-width="3" stroke-linecap="round">${bars}</g></svg>`;
+    }
+    el('h3', '', card, item.name);
+    const meta = el('div', 'shop-card-meta', card);
+    const status = el('span', '', meta), price = el('strong', 'shop-card-price', meta);
+    const button = el('button', 'btn', card); button.type = 'button';
+    button.addEventListener('click', () => {
+      const owned = kind === 'theme' ? GAME.shop.ownsTheme(item.id) : GAME.shop.ownsMusic(item.id);
+      if (!owned) purchase(kind, item.id);
+      else if (GAME.settings.choiceAvailable(kind === 'theme' ? 'theme' : 'musicTrack', item.id)) {
+        GAME.settings.set(kind === 'theme' ? 'theme' : 'musicTrack', item.id);
+        q('#shop-message').textContent = `${item.name} selected.`;
+      }
+      render();
+    });
+    cards.push({ kind, item, card, status, price, button });
+  }
+  GAME.themes.list.forEach((theme, index) => addCard('theme', theme, index));
+  GAME.songs.forEach((song, index) => addCard('music', song, index));
   q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
   function render() {
     const s = GAME.shop.state(), item = GAME.shop.LIFT;
@@ -18511,14 +18761,35 @@ function create(panel, { touch, collapseHint = () => null }) {
     keyBuy.textContent = busy === 'key' ? 'saving…' : s.collapseKey ? 'owned' : !s.available ? 'unavailable'
       : s.balance < key.price ? `need ${key.price - s.balance} more ★` : `buy key · ${key.price} ★`;
     q('#shop-storage').hidden = s.available;
+    for (const { kind, item, card, status, price, button } of cards) {
+      const isTheme = kind === 'theme', sewerSong = item.id === 'undertow';
+      const owned = isTheme ? GAME.shop.ownsTheme(item.id) : GAME.shop.ownsMusic(item.id);
+      const included = item.id === 'neon' || item.id === 'neon-flight';
+      const cost = isTheme ? GAME.shop.THEME_PRICE : GAME.shop.MUSIC_PRICE;
+      const key = isTheme ? 'theme' : 'musicTrack';
+      const usable = GAME.settings.choiceAvailable(key, item.id);
+      const selected = usable && GAME.settings.displayValue(key) === item.id;
+      card.classList.toggle('owned', owned);
+      status.textContent = included ? 'Included' : sewerSong ? 'Sewer soundtrack' : owned ? 'Owned' : '🔒 Locked';
+      price.textContent = included ? 'Free' : sewerSong ? 'Free in Sewer' : `★ ${cost}`;
+      button.disabled = !!busy || (owned ? !usable || selected : sewerSong || !s.available || s.balance < cost);
+      button.textContent = busy === `${kind}:${item.id}` ? 'saving…' : selected ? 'selected'
+        : owned ? usable ? isTheme ? 'use theme' : 'play song' : 'Sewer only'
+        : sewerSong ? 'discover The Sewer' : !s.available ? 'unavailable'
+        : s.balance < cost ? `need ${cost - s.balance} more ★` : `buy · ${cost} ★`;
+      if (owned && !usable && !sewerSong) button.textContent = 'Surface only';
+      button.setAttribute('aria-label', `${item.name}: ${button.textContent}`);
+    }
   }
-  async function purchase(kind) {
+  async function purchase(kind, id) {
     if (busy) return;
-    busy = kind; render();
+    busy = id ? `${kind}:${id}` : kind; render();
     try {
-      const result = await (kind === 'key' ? GAME.shop.buyCollapseKey() : GAME.shop.buyLift());
+      const result = await (kind === 'key' ? GAME.shop.buyCollapseKey() : kind === 'theme' ? GAME.shop.buyTheme(id)
+        : kind === 'music' ? GAME.shop.buyMusic(id) : GAME.shop.buyLift());
+      const name = cards.find(c => c.kind === kind && c.item.id === id)?.item.name;
       q('#shop-message').textContent = result.ok
-        ? kind === 'key' ? 'Collapse Key saved.' : 'Lift Boost added to your inventory.'
+        ? kind === 'key' ? 'Collapse Key saved.' : kind === 'lift' ? 'Lift Boost added to your inventory.' : `${name} unlocked.`
         : result.message;
     } catch { q('#shop-message').textContent = 'Could not save your purchase. Please try again.'; }
     finally { busy = null; render(); }
@@ -18538,7 +18809,7 @@ function create(panel, { touch, collapseHint = () => null }) {
   panel.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
     if (e.key === 'Tab') {
-      const buttons = [...panel.querySelectorAll('button:not(:disabled)')];
+      const buttons = [...panel.querySelectorAll('button:not(:disabled)')].filter(b => b.tabIndex >= 0 && b.getClientRects().length && !b.closest('[hidden]'));
       const first = buttons[0], last = buttons.at(-1);
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
@@ -18546,6 +18817,8 @@ function create(panel, { touch, collapseHint = () => null }) {
     e.stopPropagation();
   });
   GAME.shop.onChange(render);
+  GAME.settings.onChange(render);
+  GAME.access.onChange(render);
   return {
     open(button) {
       if (origin) return;
@@ -19545,7 +19818,7 @@ function openSettings(screen, showAgain) {
 const VOLUME_KEYS = ['masterVolume', 'musicVolume', 'effectsVolume'];
 const applyVolumes = () => GAME.sound.setVolumes({ master: GAME.settings.get('masterVolume'), music: GAME.settings.get('musicVolume'), effects: GAME.settings.get('effectsVolume') });
 function applyTheme(id) {
-  const theme = GAME.themes.theme(id);
+  const theme = GAME.themes.theme(GAME.shop.ownsTheme(id) ? id : GAME.settings.get('theme'));
   renderer.setTheme(theme);
   stage.style.setProperty('--star', `rgb(${theme.collectibleStar.map(v => Math.round(v ** (1 / 2.2) * 255)).join(', ')})`);
   if (course && graphics.compatibility && !isSewer()) prepareCourseGraphics().catch(fail);
@@ -20099,9 +20372,9 @@ $('rotate-sideways').addEventListener('click', action(playSideways));
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
   steadyLandscapeView();
-  GAME.settings.load();
   GAME.starBank.load();
   GAME.shop.refresh();
+  GAME.settings.load();
   hud = GAME.hud.create(stage, { touch: TOUCH, onPause: pause, onLift: () => useLift().catch(fail) });
   input = GAME.input.create(canvas);
   if (TOUCH) touchStick = GAME.touchStick.create(stage, (x, y) => input.setTouchStick(x, y));
