@@ -27,16 +27,24 @@ defect or specific failing draw.
 The player also reports failure at 640×360, so native pixel count alone is not an adequate
 explanation. ANGLE may compile another executable for the first draw's output-attachment layout;
 initial link readiness does not exclude this. It remains a possibility, not a confirmed cause.
+The standalone 64×36 report now shows GPU-fenced completion of every resource setup stage,
+then context loss during the first primary `city:trace` attempt with four RGBA32F outputs.
+That narrows the failing stage without distinguishing native compilation, trace execution or
+attachment writes as the underlying cause.
 The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
 building materials, street materials and composition. Reflected rays are computed once and
 cached so tracing and shading use the same direction. Each submitted fragment source is under
-30 KB, replacing the previous 106 KB combined city shader. They preserve the full graphics and
+36 KB, replacing the previous 106 KB combined city shader. They preserve the full graphics and
 reflections with the same 120/40-cell tracing budgets. Eight draws per horizontal band reuse
-eight full-precision RGBA32F scratch textures, capped at 32 MiB (33.6 MB) in steady use and
-64 MiB (67.1 MB) briefly during resize. Final-image and post-processing targets are additional;
+four RGBA32F and two D32F scratch textures, capped at 18 MiB (18.9 MB) in steady use and
+36 MiB (37.7 MB) briefly during resize. Each trace uses one color output for glow and the exact
+winning primitive ID, with full-precision distance stored separately. Materials recover the
+original attributes and analytic normal from that selected primitive without another city walk.
+This avoids the failing four-color-output trace path while retaining the full scene.
+Final-image and post-processing targets are additional;
 output resolution is preserved.
 New reports distinguish observed context loss from timeout recovery. A [standalone per-draw
-runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.html?v=4fa453b)
+runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.html)
 checks the remaining failure: generate it in the development repository with
 `node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
 It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
@@ -45,9 +53,8 @@ aggressively in browser validation. Neither is a confirmed Windows fix; stable A
 gameplay still needs confirmation.
 A standalone city compiler probe is available in the development repository for isolating
 shader preparation from the rest of startup.
-Nine local scene comparisons against the original renderer with a shared reflection ray retain
-at least 99% identical display channels; differences are at most three 8-bit code values, confined
-to three isolated Arctic Dawn pixels above one code. The raw original comparison also preserves
+Nine local 640×480 scene comparisons against the original renderer with a shared reflection ray
+differ by at most one 8-bit color value per channel. The raw original comparison also preserves
 the same visible detail and features, with small floating-point differences in its rain ripples.
 This checks graphics locally; Windows AMD runtime stability still needs confirmation.
 Use the ordinary play URL for the same full renderer everywhere.

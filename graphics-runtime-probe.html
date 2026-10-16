@@ -50,7 +50,7 @@
       if (now() - start > 20000) throw error('PROBE_STEP_TIMEOUT', 'GPU completion took longer than 20 seconds for ' + record.name + '.');
       // Never wait on the CPU or enqueue the next draw until the previous operation finishes.
       const result = gl.clientWaitSync(sync, 0, 0); polls++;
-      if (state.contextLost) throw error('GFX_CONTEXT_LOST', 'The graphics context was lost during ' + record.name + '.');
+      if (state.contextLost || driver.contextLost()) throw error('GFX_CONTEXT_LOST', 'The graphics context was lost during ' + record.name + '.');
       if (result === gl.ALREADY_SIGNALED || result === gl.CONDITION_SATISFIED) break;
       if (result !== gl.TIMEOUT_EXPIRED) throw error('GFX_RESOURCE_FAILED', 'The driver could not confirm completion of ' + record.name + '.');
       await new Promise(requestAnimationFrame);
@@ -80,14 +80,16 @@
     let capturing = false, viewport = [0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight];
     let scissor = [0, 0, ...viewport.slice(2)], scissorOn = false, blendOn = false;
     let blend = [gl.ONE, gl.ZERO], clearColor = [0, 0, 0, 0], boundTexture = null, nextTexture = 0;
+    let depthOn = false, depthFunc = gl.LESS, depthMask = true, clearDepth = 1;
     const original = Object.fromEntries(['bindTexture', 'texImage2D', 'viewport', 'scissor', 'enable', 'disable',
-      'blendFunc', 'clearColor', 'clear'].map(name => [name, gl[name].bind(gl)]));
+      'blendFunc', 'clearColor', 'depthFunc', 'depthMask', 'clearDepth', 'clear'].map(name => [name, gl[name].bind(gl)]));
     const originalFullscreen = gfx.fullscreen, originalPass = gfx.pass;
-    const format = value => value === gl.RGBA32F ? 'rgba32f' : value === gl.RGBA16F ? 'rgba16f' : value === gl.RGBA8 ? 'rgba8' : '0x' + value.toString(16);
+    const format = value => value === gl.RGBA32F ? 'rgba32f' : value === gl.RGBA16F ? 'rgba16f' : value === gl.RGBA8 ? 'rgba8' : value === gl.DEPTH_COMPONENT32F ? 'depth32f' : '0x' + value.toString(16);
     function targetInfo(target) {
       if (!target) return { kind: 'default framebuffer', width: gfx.canvas.width, height: gfx.canvas.height, attachments: [{ format: 'default' }], outputs: 1 };
       const attachments = (target.textures || [target.tex]).map(texture => ({ ...(textures.get(texture) || { format: 'unknown' }) }));
-      return { kind: target.textures ? 'MRT view' : 'render target', width: target.w, height: target.h, attachments, outputs: attachments.length };
+      const depthAttachment = target.depthTexture ? { ...(textures.get(target.depthTexture) || { format: 'unknown' }) } : null;
+      return { kind: target.textures ? 'framebuffer view' : 'render target', width: target.w, height: target.h, attachments, outputs: attachments.length, depthAttachment };
     }
     gl.bindTexture = function(kind, texture) { if (kind === gl.TEXTURE_2D) boundTexture = texture; return original.bindTexture(kind, texture); };
     gl.texImage2D = function(...args) {
@@ -96,19 +98,23 @@
     };
     gl.viewport = (...args) => { viewport = [...args]; return original.viewport(...args); };
     gl.scissor = (...args) => { scissor = [...args]; return original.scissor(...args); };
-    gl.enable = capability => { if (capability === gl.SCISSOR_TEST) scissorOn = true; if (capability === gl.BLEND) blendOn = true; return original.enable(capability); };
-    gl.disable = capability => { if (capability === gl.SCISSOR_TEST) scissorOn = false; if (capability === gl.BLEND) blendOn = false; return original.disable(capability); };
+    gl.enable = capability => { if (capability === gl.SCISSOR_TEST) scissorOn = true; if (capability === gl.BLEND) blendOn = true; if (capability === gl.DEPTH_TEST) depthOn = true; return original.enable(capability); };
+    gl.disable = capability => { if (capability === gl.SCISSOR_TEST) scissorOn = false; if (capability === gl.BLEND) blendOn = false; if (capability === gl.DEPTH_TEST) depthOn = false; return original.disable(capability); };
     gl.blendFunc = (...args) => { blend = [...args]; return original.blendFunc(...args); };
     gl.clearColor = (...args) => { clearColor = [...args]; return original.clearColor(...args); };
+    gl.depthFunc = value => { depthFunc = value; return original.depthFunc(value); };
+    gl.depthMask = value => { depthMask = value; return original.depthMask(value); };
+    gl.clearDepth = value => { clearDepth = value; return original.clearDepth(value); };
     function record(kind, program, uniforms, mask) {
       const target = gfx.target, output = targetInfo(target), passMode = uniforms?.uPassMode;
       let name = kind === 'clear' ? 'clear surface' : program.name;
       if (passMode !== undefined) name += passMode ? ' reflected' : ' primary';
       if (program?.name === 'post:down' || program?.name === 'post:up') name += ' ' + output.width + 'x' + output.height;
       jobs.push({ kind, name, program, uniforms: uniforms && { ...uniforms }, mask, target,
-        state: { viewport: [...viewport], scissor: [...scissor], scissorOn, blendOn, blend: [...blend], clearColor: [...clearColor] },
+        state: { viewport: [...viewport], scissor: [...scissor], scissorOn, blendOn, blend: [...blend], clearColor: [...clearColor], depthOn, depthFunc, depthMask, clearDepth },
         detail: { operation: kind, program: program?.name || null, passMode: passMode ?? null, output,
           viewport: [...viewport], scissor: scissorOn ? [...scissor] : null, additiveBlend: blendOn,
+          depth: { enabled: depthOn, func: depthFunc === gl.ALWAYS ? 'always' : depthFunc === gl.LESS ? 'less' : '0x' + depthFunc.toString(16), write: depthMask, clear: clearDepth },
           traceCells: uniforms?.uTraceCells || null } });
     }
     gl.clear = mask => { if (capturing) record('clear', null, null, mask); else return original.clear(mask); };
@@ -120,7 +126,8 @@
       original.viewport(...s.viewport); original.scissor(...s.scissor); original.clearColor(...s.clearColor);
       (s.scissorOn ? original.enable : original.disable)(gl.SCISSOR_TEST);
       (s.blendOn ? original.enable : original.disable)(gl.BLEND); original.blendFunc(...s.blend);
-      gl.disable(gl.DEPTH_TEST);
+      (s.depthOn ? original.enable : original.disable)(gl.DEPTH_TEST);
+      original.depthFunc(s.depthFunc); original.depthMask(s.depthMask); original.clearDepth(s.clearDepth);
       if (job.kind === 'clear') original.clear(job.mask);
       else (job.kind === 'post' ? originalPass : originalFullscreen)(job.program, job.uniforms);
     }
@@ -157,7 +164,7 @@
         scene.setWorld(city, []); scene.setTheme(game.themes.theme('neon'));
         output = driver.createTarget(width, height); driver.setFrame({ width, height, t: now() / 1000 });
       });
-      await operation('city RGBA32F MRT resource setup', () => hooks.capture(() => {
+      await operation('city color and depth resource setup', () => hooks.capture(() => {
         driver.bindTarget(output);
         const pose = { x: 1536, y: 8, z: 1100, yaw: 0, gamma: -.07, bank: 0, speed: 0 };
         scene.draw(game.camera.fromFlight(pose, width / height), [{ x: 1536, y: 14, z: 1180, n: [0, 0, 1], radius: 12, kind: 'next', flare: .3, xray: 0 }], [], []);
@@ -6053,6 +6060,7 @@ const FORMATS = {
   rg16f: [gl.RG16F, gl.RG, gl.HALF_FLOAT],
   r16f: [gl.R16F, gl.RED, gl.HALF_FLOAT],
   rgba8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE],
+  depth32f: [gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT],
 };
 
 function createTexture(w, h, { format = 'rgba16f', filter = 'linear', wrap = 'clamp', data = null } = {}) {
@@ -6118,10 +6126,11 @@ let drawBufferLimits = null;
 // A non-owning framebuffer view lets the city reuse large hit-data textures between passes.
 // Texture allocation and its budget belong to the renderer; disposing a view only deletes its
 // framebuffer. Limits are checked once, while construction always validates completeness.
-function createTargetView(w, h, textures) {
+function createTargetView(w, h, textures, { depthTexture = null } = {}) {
   requireContext('creating framebuffer view');
   if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0
-      || !Array.isArray(textures) || !textures.length || textures.some(tex => !tex) || new Set(textures).size !== textures.length)
+      || !Array.isArray(textures) || !textures.length || textures.some(tex => !tex) || new Set(textures).size !== textures.length
+      || (depthTexture && textures.includes(depthTexture)))
     throw gfxError('GFX_RESOURCE_FAILED', 'Framebuffer view requires positive dimensions and color textures.', { resource: 'framebuffer view', stage: 'validation', width: w, height: h });
   if (!drawBufferLimits) {
     const maxDrawBuffers = gl.getParameter(gl.MAX_DRAW_BUFFERS);
@@ -6143,6 +6152,10 @@ function createTargetView(w, h, textures) {
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + index, gl.TEXTURE_2D, tex, 0);
       requireContext(`attaching framebuffer output ${index}`);
     });
+    if (depthTexture) {
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTexture, 0);
+      requireContext('attaching framebuffer depth texture');
+    }
     gl.drawBuffers(attachments.map((_, index) => gl.COLOR_ATTACHMENT0 + index));
     requireContext('configuring framebuffer outputs');
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
@@ -6150,7 +6163,7 @@ function createTargetView(w, h, textures) {
     if (status !== gl.FRAMEBUFFER_COMPLETE)
       throw gfxError('GFX_RESOURCE_FAILED', `Framebuffer view incomplete (0x${Number(status || 0).toString(16)}) for ${textures.length} outputs at ${w}x${h}.`,
         { resource: 'framebuffer view', stage: 'completeness', status, outputs: textures.length, width: w, height: h });
-    const view = { fb, w, h, tex: attachments[0], textures: attachments };
+    const view = { fb, w, h, tex: attachments[0], textures: attachments, depthTexture };
     let disposed = false;
     view.dispose = () => {
       if (disposed) return;
@@ -7575,34 +7588,35 @@ float portalPeak(vec3 ro,vec3 rd,int index,out vec3 normal) {
   if(far>0.001&&!portalVoid(ro+rd*far)) {normal=farNormal;return far;}
   return 1e9;
 }
-float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material) {
-  float hit=1e9;material=0;
+// Source IDs: rocks 0..11, peaks 12..17, lining 18, bars 19..42, stone rim 43.
+float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material,out int primitive) {
+  float hit=1e9;material=0;primitive=0;
   if(uCollapsePortalActive<0.5)return hit;
   for(int i=0;i<uCollapseRockCount;i++) {
     vec3 n;float t=portalEllipsoid(ro,rd,uCollapseRockCentre[i],uCollapseRockRadii[i],n);
-    if(t<hit) {hit=t;normal=n;material=0;}
+    if(t<hit) {hit=t;normal=n;material=0;primitive=i;}
   }
   for(int i=0;i<uCollapsePeakCount;i++) {
     vec3 n;float t=portalPeak(ro,rd,i,n);
-    if(t<hit) {hit=t;normal=n;material=0;}
+    if(t<hit) {hit=t;normal=n;material=0;primitive=12+i;}
   }
   vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
   float A=dot(d.xy,d.xy),B=dot(q.xy,d.xy),C=dot(q.xy,q.xy)-uCollapsePortalOrigin.w*uCollapsePortalOrigin.w,D=B*B-A*C;
   if(A>1e-7&&D>=0.0)for(int side=0;side<2;side++) {
     float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A,s=q.z+d.z*t;
     if(t>0.001&&t<hit&&s>=0.0&&s<=uCollapsePortalAxis.w) {
-      vec2 radial=q.xy+d.xy*t;hit=t;normal=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);material=1;
+      vec2 radial=q.xy+d.xy*t;hit=t;normal=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);material=1;primitive=18;
     }
   }
   for(int i=0;i<uCollapseBarCount;i++) {
     vec3 n;float t=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,n);
-    if(t>0.001&&t<hit) {hit=t;normal=n;material=2;}
+    if(t>0.001&&t<hit) {hit=t;normal=n;material=2;primitive=19+i;}
   }
   if(abs(d.z)>1e-7) {
     float t=(-0.08-q.z)/d.z;vec2 radial=q.xy+d.xy*t;
     float r=length(radial);
     if(t>0.001&&t<hit&&r>=uCollapsePortalOrigin.w&&r<=uCollapsePortalOrigin.w+1.2) {
-      hit=t;normal=-uCollapsePortalAxis.xyz;material=3;
+      hit=t;normal=-uCollapsePortalAxis.xyz;material=3;primitive=43;
     }
   }
   return hit;
@@ -7637,6 +7651,7 @@ GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunn
 // The full city picture, divided into small programs. Canonical material/geometry functions
 // remain in city.js; selecting their dependency closures prevents duplicate visual definitions.
 // Horizontal bands keep exact float intermediates bounded independently of screen resolution.
+// Four RGBA32F textures plus two D32F textures: 72 bytes per pixel, at most 18 MiB.
 const BAND_PIXELS = 262144;
 
 function functionParts(source) {
@@ -7695,11 +7710,7 @@ vec3 cityDirection() {
   vec2 ndc = vUv * 2.0 - 1.0;
   return normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
 }
-void cityMetadata(float metadataValue, out int kind, out int moving, out ivec2 cell) {
-  int value = int(metadataValue), n = int(uN), index = value >> 8;
-  kind = value & 7; moving = (value >> 3) & 31;
-  cell = index < n * n ? ivec2(index % n, index / n) : ivec2(-1);
-}
+void cityMetadata(float value, out int kind, out int moving, out ivec2 cell) { cityDecodeId(int(value), kind, moving, cell); }
 struct CityRay { vec3 origin; vec3 direction; float pixelBase; float fresnel; float gloss; bool enabled; };
 CityRay cityPrimary(vec3 rd) {
   CityRay ray; ray.origin = uCamPos; ray.direction = rd; ray.pixelBase = 0.0;
@@ -7708,14 +7719,14 @@ CityRay cityPrimary(vec3 rd) {
 `;
 
 const REFLECTION_BUILD = `
-uniform highp sampler2D uPrimaryG0;
+uniform highp sampler2D uPrimaryHit, uPrimaryDepth;
 CityRay cityBuildReflection(ivec2 pixel, vec3 rd, float pixAngle) {
   CityRay ray = cityPrimary(rd); ray.enabled = false;
-  vec4 primary = texelFetch(uPrimaryG0, pixel, 0);
-  int kind, moving; ivec2 cell; cityMetadata(primary.y, kind, moving, cell);
+  vec4 primary = texelFetch(uPrimaryHit, pixel, 0); float primaryT = texelFetch(uPrimaryDepth, pixel, 0).r * 65536.0;
+  int kind, moving; ivec2 cell; cityMetadata(primary.w, kind, moving, cell);
   if (kind != GROUND) return ray;
-  vec3 p = uCamPos + rd * primary.x;
-  float pix = primary.x * pixAngle;
+  vec3 p = uCamPos + rd * primaryT;
+  float pix = primaryT * pixAngle;
   bool inCity = all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, ivec2(int(uN))));
   float gloss = inCity && texelFetch(uStreetInfo, cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
   if (gloss <= 0.01) return ray;
@@ -7748,54 +7759,43 @@ CityRay cityReflection(ivec2 pixel, vec3 rd, float pixAngle) {
 
 const REFLECTION_MAIN = `
 void main() {
-  ivec2 pixel = cityPixel(); vec4 primary = texelFetch(uPrimaryG0, pixel, 0);
-  int kind, moving; ivec2 cell; cityMetadata(primary.y, kind, moving, cell);
+  ivec2 pixel = cityPixel(); vec4 primary = texelFetch(uPrimaryHit, pixel, 0); float primaryT = texelFetch(uPrimaryDepth, pixel, 0).r * 65536.0;
+  int kind, moving; ivec2 cell; cityMetadata(primary.w, kind, moving, cell);
   // Object RGB is already shaded. Its alpha is -1, marking it as an inactive ray packet.
   if (kind == TOWER || kind == PROP || kind == BRIDGE || kind == STREET || kind == PORTAL) discard;
   // Write the sentinel in the shader: clearColor may clamp negative clear components.
   if (kind != GROUND) { fragColor = vec4(0.0, 0.0, 0.0, -1.0); return; }
   CityRay ray = cityBuildReflection(pixel, cityDirection(), 2.0 * uTanHalf.y / uRes.y);
-  fragColor = ray.enabled ? vec4(ray.direction, primary.x) : vec4(0.0, 0.0, 0.0, -1.0);
+  fragColor = ray.enabled ? vec4(ray.direction, primaryT) : vec4(0.0, 0.0, 0.0, -1.0);
 }
 `;
 
 const READ_HIT = `
-uniform highp sampler2D uHit0, uHitA, uHitB, uHitGlow;
+uniform highp sampler2D uHitData, uHitDepth;
 uniform int uPassMode;
 Hit cityReadHit(ivec2 pixel) {
-  vec4 first = texelFetch(uHit0, pixel, 0), last = texelFetch(uHitGlow, pixel, 0);
-  Hit h; h.t = first.x; h.n = vec3(first.zw, last.w);
-  cityMetadata(first.y, h.kind, h.moving, h.cell);
-  h.a = texelFetch(uHitA, pixel, 0); h.b = texelFetch(uHitB, pixel, 0); return h;
+  vec4 first = texelFetch(uHitData, pixel, 0);
+  Hit h; h.t = texelFetch(uHitDepth, pixel, 0).r * 65536.0; h.n = vec3(0.0);
+  cityMetadata(first.w, h.kind, h.moving, h.cell);
+  h.primitive = int(first.w); h.a=vec4(0.0); h.b=vec4(0.0); return h;
 }
 `;
 
 const TRACE_MAIN = `
 uniform int uPassMode;
-void cityWriteHit(Hit h, vec3 glow) {
-  // Fields unused by a material are made explicit before storing the complete packet.
-  if (h.kind == SKY) { h.n = vec3(0.0); h.cell = ivec2(-1); h.a = vec4(0.0); h.b = vec4(0.0); h.moving = 0; }
-  if (h.kind == GROUND || h.kind == SEWER) { h.a = vec4(0.0); h.b = vec4(0.0); }
-  if (h.kind == BRIDGE || h.kind == PORTAL) h.b = vec4(0.0);
-  int n = int(uN), index = n * n;
-  if (all(greaterThanEqual(h.cell, ivec2(0))) && all(lessThan(h.cell, ivec2(n)))) index = h.cell.x + n * h.cell.y;
-  float metadata = float(h.kind + 8 * h.moving + 256 * index);
-  gHit = vec4(h.t, metadata, h.n.xy); gA = h.a; gB = h.b; gGlow = vec4(glow, h.n.z);
-}
 void main() {
   ivec2 pixel = cityPixel(); vec3 rd = cityDirection();
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   bool reflected = uPassMode > 0;
-  CityRay ray = cityPrimary(rd);
-  if (reflected) ray = cityReflection(pixel, rd, pixAngle);
+  CityRay ray = cityPrimary(rd); if (reflected) ray = cityReflection(pixel,rd,pixAngle);
   vec3 glow = vec3(0.0);
-  Hit h; h.kind = SKY; h.t = FAR; h.n = vec3(0.0); h.cell = ivec2(-1);
-  h.a = vec4(0.0); h.b = vec4(0.0); h.moving = 0;
+  Hit h; h.kind=SKY;h.t=FAR;h.primitive=citySpecialId(0);
   if (ray.enabled) {
-    vec3 origin = reflected ? ray.origin + vec3(0.0, 0.01, 0.0) : ray.origin;
-    h = trace(origin, ray.direction, reflected ? uTraceCells.y : uTraceCells.x, pixAngle, glow);
+    vec3 origin = reflected ? ray.origin+vec3(0.0,0.01,0.0) : ray.origin;
+    h=trace(origin,ray.direction,reflected?uTraceCells.y:uTraceCells.x,pixAngle,glow);
   }
-  cityWriteHit(h, glow);
+  fragColor=vec4(glow,float(h.primitive));
+  gl_FragDepth=h.t*(1.0/65536.0);
 }
 `;
 
@@ -7805,6 +7805,8 @@ void main() {
   if (h.kind != TOWER && h.kind != PROP && h.kind != BRIDGE) discard;
   vec3 rd = cityDirection(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   CityRay ray = cityPrimary(rd); if (uPassMode > 0) ray = cityReflection(pixel, rd, pixAngle);
+  vec3 traceOrigin = uPassMode > 0 ? ray.origin + vec3(0.0,0.01,0.0) : ray.origin;
+  h = cityResolveTower(h, traceOrigin, ray.direction);
   vec3 p = ray.origin + ray.direction * h.t; rd = ray.direction;
   float pix = ray.pixelBase + h.t * pixAngle;
   if (h.moving > 0) {
@@ -7825,6 +7827,8 @@ void main() {
   if (h.kind != STREET && h.kind != PORTAL) discard;
   vec3 rd = cityDirection(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   CityRay ray = cityPrimary(rd); if (uPassMode > 0) ray = cityReflection(pixel, rd, pixAngle);
+  vec3 traceOrigin = uPassMode > 0 ? ray.origin + vec3(0.0,0.01,0.0) : ray.origin;
+  h = cityResolveStreet(h, traceOrigin, ray.direction);
   vec3 worldP = ray.origin + ray.direction * h.t, p = worldP; rd = ray.direction;
   float pix = ray.pixelBase + h.t * pixAngle;
   // Moving foliage keeps its world-space normal/view, matching shadeObject's original rule.
@@ -7844,19 +7848,19 @@ void main() {
 `;
 
 const COMPOSE_MAIN = `
-uniform highp sampler2D uPrimaryG0, uPrimaryG3, uReflectionG0, uReflectionG3, uPrimarySurface, uReflectionSurface;
+uniform highp sampler2D uPrimaryHit, uPrimaryDepth, uReflectedHit, uReflectedDepth, uPrimarySurface, uReflectionSurface;
 bool cityObject(int kind) { return kind == TOWER || kind == PROP || kind == BRIDGE || kind == STREET || kind == PORTAL; }
 void main() {
   ivec2 pixel = cityPixel(); vec3 rd = cityDirection(); vec3 ro = uCamPos;
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
-  vec4 first = texelFetch(uPrimaryG0, pixel, 0), last = texelFetch(uPrimaryG3, pixel, 0);
-  int kind, moving; ivec2 cell; cityMetadata(first.y, kind, moving, cell);
-  float t = first.x; vec3 p = ro + rd * t; float pix = t * pixAngle;
+  vec4 first = texelFetch(uPrimaryHit, pixel, 0), last = texelFetch(uPrimaryDepth, pixel, 0);
+  int kind, moving; ivec2 cell; cityMetadata(first.w, kind, moving, cell);
+  float t = last.r * 65536.0; vec3 p = ro + rd * t; float pix = t * pixAngle;
   vec3 col;
   if (cityObject(kind)) col = texelFetch(uPrimarySurface, pixel, 0).rgb;
   else if (kind == SKY) col = sky(rd, pixAngle);
   else if (kind == SEWER) {
-    vec3 n = vec3(first.zw, last.w);
+    vec3 n; vec3 traceRd = mix(rd,vec3(1e-6),lessThan(abs(rd),vec3(1e-6))); float unusedSewerT = sewerHit(ro,traceRd,n);
     vec2 uv = abs(n.y) > 0.5 ? p.xz : vec2(atan(p.z - uCollapseHole.y, p.x - uCollapseHole.x) * uCollapseHole.z, p.y);
     float joints = max(pulseAA((uv.x + floor(uv.y / 1.5) * 1.5) / 3.0, 0.05, pix / 3.0), pulseAA(uv.y / 1.5, 0.06, pix / 1.5));
     col = vec3(0.035, 0.055, 0.041) * (0.8 + tnoise(p * 0.7) * 0.4) * (1.0 - joints * 0.6);
@@ -7865,11 +7869,11 @@ void main() {
   if (kind == GROUND) {
     CityRay ray = cityReflection(pixel, rd, pixAngle);
     if (ray.enabled) {
-      vec4 reflected = texelFetch(uReflectionG0, pixel, 0);
+      vec4 reflected = texelFetch(uReflectedHit, pixel, 0);
       int reflectedKind, reflectedMoving; ivec2 reflectedCell;
-      cityMetadata(reflected.y, reflectedKind, reflectedMoving, reflectedCell);
+      cityMetadata(reflected.w, reflectedKind, reflectedMoving, reflectedCell);
       vec3 refl = cityObject(reflectedKind) ? texelFetch(uReflectionSurface, pixel, 0).rgb : sky(ray.direction, pixAngle);
-      refl = applyFog(refl + texelFetch(uReflectionG3, pixel, 0).rgb, p, ray.direction, reflected.x);
+      refl = applyFog(refl + reflected.rgb, p, ray.direction, texelFetch(uReflectedDepth, pixel, 0).r * 65536.0);
       bool inCity = all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, ivec2(int(uN))));
       float gloss = inCity && texelFetch(uStreetInfo, cell, 0).z > 0.5 ? 0.0 : groundGloss(p);
       float fres = (0.25 + 0.55 * pow(1.0 - max(-rd.y, 0.0), 5.0)) * (1.0 + 0.6 * uRain);
@@ -7880,23 +7884,109 @@ void main() {
   if (uRain > 0.0) col += rainLight(rd, t, pixAngle);
   if (uSnowfall > 0.0) col += snowLight(rd, t, pixAngle);
   col += ambientMotes(ro, rd, t, pixAngle);
-  fragColor = vec4(overScene(col, courseLight(ro, rd, t, pixAngle) + last.rgb), 1.0);
+  fragColor = vec4(overScene(col, courseLight(ro, rd, t, pixAngle) + first.rgb), 1.0);
+}
+`;
+
+
+// IDs refer to the exact winning primitive. Materials fetch only that primitive and
+// recover its original analytic normal, avoiding a second walk through the city.
+const SOURCE_RECORDS = `
+void cityDecodeId(int id,out int kind,out int moving,out ivec2 cell) {
+  int n=int(uN),base=n*n*32; moving=0;cell=ivec2(-1);
+  if(id<base) {
+    int at=id/32,slot=id%32;cell=ivec2(at%n,at/n);
+    kind=slot<3?TOWER:slot<7?PROP:slot<9?BRIDGE:slot<25?STREET:slot==25?GROUND:SEWER;
+  } else if(id<base+1536) {
+    int code=id-base,category=code%4;moving=code/64+1;
+    kind=category==0?TOWER:category==1?PROP:category==2?BRIDGE:STREET;
+  } else if(id<base+1580) kind=PORTAL;
+  else kind=id==base+1580?SKY:id==base+1581?GROUND:SEWER;
+}
+vec3 cityTraceDirection(vec3 rd) { return mix(rd,vec3(1e-6),lessThan(abs(rd),vec3(1e-6))); }
+Hit cityResolveMoving(Hit h,vec3 ro,vec3 rd) {
+  int code=h.primitive-int(uN)*int(uN)*32,group=code/64,part=(code/4)%16;
+  ivec2 at=ivec2(group*16+part,0);
+  vec4 pivot=texelFetch(uCollapseMotion,ivec2(group,0),0),turn=texelFetch(uCollapseMotion,ivec2(group,1),0),object=texelFetch(uCollapseMotion,ivec2(group,2),0);
+  vec3 localRo=collapseRotate(ro-pivot.xyz+vec3(0.0,pivot.w,0.0),turn,true)+pivot.xyz;
+  vec3 localRd=collapseRotate(rd,turn,true),inv=1.0/mix(localRd,vec3(1e-6),lessThan(abs(localRd),vec3(1e-6)));
+  vec4 lo=texelFetch(uCollapseSolids,at,0),hi=texelFetch(uCollapseSolids,at+ivec2(0,1),0);
+  vec3 normal;float unused=lo.w>1.5?capsuleHit(localRo,localRd,lo.xyz,hi.xyz,lo.w,normal):lo.w>0.5?ellipsoidHit(localRo,localRd,lo.xyz,hi.xyz,normal):boxHit(localRo,inv,lo.xyz,hi.xyz,normal);
+  h.n=collapseRotate(normal,turn,false);h.cell=ivec2(int(object.x)%int(uN),int(object.x)/int(uN));
+  h.a=texelFetch(uCollapseSolids,at+ivec2(0,2),0);h.b=texelFetch(uCollapseSolids,at+ivec2(0,3),0);return h;
+}
+Hit cityResolveTower(Hit h,vec3 ro,vec3 rd) {
+  rd=cityTraceDirection(rd);
+  if(h.moving>0)return cityResolveMoving(h,ro,rd);
+  vec3 inv=1.0/rd;ivec2 cell=h.cell;int slot=h.primitive%32;float fall=collapseFall(cell);
+  if(h.kind==TOWER) {
+    int part=slot;vec4 P=texelFetch(uBoxA,cell,0),Q=texelFetch(uBoxB,cell,0);
+    if(part>0) {ivec2 at=cell+ivec2(0,(part-1)*2*int(uN));P=texelFetch(uStructure,at,0);Q=texelFetch(uStructure,at+ivec2(0,int(uN)),0);}
+    Q.xy-=vec2(fall);float unused=boxHit(ro,inv,vec3(P.x,Q.x,P.y),vec3(P.z,Q.y,P.w),h.n);
+    h.a=vec4((P.xy+P.zw)*0.5-(vec2(cell)+0.5)*uCell,(P.zw-P.xy)*0.5);h.b=Q;
+  } else if(h.kind==PROP) {
+    vec4 P=texelFetch(uPropA,cell,0),Q=texelFetch(uPropB,cell,0);Q.xy-=vec2(fall);
+    vec2 pc=(vec2(cell)+0.5)*uCell+P.xy;vec3 lo,hi;
+    if(Q.z>2.5) {
+      int j=slot-3;bool alongZ=P.w>P.z;float alongHalf=alongZ?P.w:P.z,depthHalf=alongZ?P.z:P.w;
+      float py=0.5*(Q.x+Q.y),spread=(Q.y-Q.x)*0.24,railHalf=(Q.y-Q.x)*0.1,supportHalf=(Q.y-Q.x)*0.38;
+      float outer=(alongZ?pc.x:pc.y)-Q.w*(depthHalf-0.17);
+      if(j<2) {
+        float cy=py+(j==0?-spread:spread);
+        lo=alongZ?vec3(outer-0.17,cy-railHalf,pc.y-alongHalf):vec3(pc.x-alongHalf,cy-railHalf,outer-0.17);
+        hi=alongZ?vec3(outer+0.17,cy+railHalf,pc.y+alongHalf):vec3(pc.x+alongHalf,cy+railHalf,outer+0.17);
+      } else {
+        float offset=(j==2?-1.0:1.0)*(alongHalf-0.85);
+        lo=alongZ?vec3(pc.x-depthHalf,py-supportHalf,pc.y+offset-0.22):vec3(pc.x+offset-0.22,py-supportHalf,pc.y-depthHalf);
+        hi=alongZ?vec3(pc.x+depthHalf,py+supportHalf,pc.y+offset+0.22):vec3(pc.x+offset+0.22,py+supportHalf,pc.y+depthHalf);
+      }
+    } else {lo=vec3(pc.x-P.z,Q.x,pc.y-P.w);hi=vec3(pc.x+P.z,Q.y,pc.y+P.w);}
+    float unused=boxHit(ro,inv,lo,hi,h.n);h.a=P;h.b=Q;
+  } else {
+    int j=slot-7;vec4 C=j==0?texelFetch(uBridgeA,cell,0):texelFetch(uBridgeB,cell,0);C.y-=fall;
+    vec2 cc=(vec2(cell)+0.5)*uCell;bool alongZ=abs(C.w)<1.5;
+    float face=(alongZ?cc.x:cc.y)+C.z,end=(alongZ?cc.x:cc.y)+sign(C.w)*uCell*0.5,along=(alongZ?cc.y:cc.x)+C.x;
+    vec3 lo=alongZ?vec3(min(face,end),C.y-0.75,along-0.7):vec3(along-0.7,C.y-0.75,min(face,end));
+    vec3 hi=alongZ?vec3(max(face,end),C.y+0.75,along+0.7):vec3(along+0.7,C.y+0.75,max(face,end));
+    float unused=boxHit(ro,inv,lo,hi,h.n);h.a=C;h.b=vec4(0.0);
+  }
+  return h;
+}
+Hit cityResolveStreet(Hit h,vec3 ro,vec3 rd) {
+  rd=cityTraceDirection(rd);
+  if(h.moving>0)return cityResolveMoving(h,ro,rd);
+  if(h.kind==STREET) {
+    int part=h.primitive%32-9;ivec2 at=h.cell+ivec2(0,part*2*int(uN));
+    vec4 P=texelFetch(uStreet,at,0),Q=texelFetch(uStreet,at+ivec2(0,int(uN)),0);
+    vec3 lo=vec3(P.x,Q.x,P.y),hi=vec3(P.z,Q.y,P.w),inv=1.0/rd;
+    float unused=Q.w>1.5?capsuleHit(ro,rd,lo,hi,Q.w,h.n):Q.w>0.5?ellipsoidHit(ro,rd,lo,hi,h.n):boxHit(ro,inv,lo,hi,h.n);
+    h.a=P;h.b=Q;return h;
+  }
+  int part=h.primitive-int(uN)*int(uN)*32-1536;float unused;
+  if(part<12) {unused=portalEllipsoid(ro,rd,uCollapseRockCentre[part],uCollapseRockRadii[part],h.n);h.a=vec4(0.0);}
+  else if(part<18) {unused=portalPeak(ro,rd,part-12,h.n);h.a=vec4(0.0);}
+  else if(part==18) {
+    vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
+    vec2 radial=q.xy+d.xy*h.t;h.n=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);h.a=vec4(1.0,0.0,0.0,0.0);
+  } else if(part<43) {int i=part-19;unused=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,h.n);h.a=vec4(2.0,0.0,0.0,0.0);}
+  else {h.n=-uCollapsePortalAxis.xyz;h.a=vec4(3.0,0.0,0.0,0.0);}
+  h.b=vec4(0.0);return h;
 }
 `;
 
 function sources(canonical) {
   // Include the shared library in the same reachability pass instead of prepending all of
   // its unused functions separately to every shader. The standard uniforms stay in glsl.js.
-  const { select } = functionParts(GAME.glsl.LIB + '\n' + canonical);
-  const reflectionRoots = ['groundGloss', 'rainRipple', 'noise', 'saturate'];
+  const { select } = functionParts(GAME.glsl.LIB + '\n' + canonical + '\n' + SOURCE_RECORDS);
+  const reflectionRoots = ['groundGloss', 'rainRipple', 'noise', 'saturate', 'cityDecodeId'];
   const result = {
-    trace: select(['trace']) + BAND + REFLECTION + TRACE_MAIN,
-    towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector'])
+    trace: select(['trace', 'cityDecodeId']) + BAND + REFLECTION + TRACE_MAIN,
+    towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveTower'])
       + BAND + REFLECTION + READ_HIT + TOWER_MAIN,
-    street: select(['shadeStreet', 'shadePortal', 'collapseLocalPoint', 'collapseLocalVector'])
+    street: select(['shadeStreet', 'shadePortal', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveStreet'])
       + BAND + REFLECTION + READ_HIT + STREET_MAIN,
     reflection: select(reflectionRoots) + BAND + REFLECTION_BUILD + REFLECTION_MAIN,
-    compose: select(['shadeGround', 'sky', 'applyFog', 'rainLight', 'snowLight', 'ambientMotes', 'courseLight', 'overScene', 'groundGloss'])
+    compose: select(['shadeGround', 'sky', 'applyFog', 'rainLight', 'snowLight', 'ambientMotes', 'courseLight', 'overScene', 'groundGloss', 'cityDecodeId', 'sewerHit'])
       + BAND + REFLECTION + COMPOSE_MAIN,
   };
   // Comments remain readable in the canonical sources, without inflating driver uploads.
@@ -7907,7 +7997,7 @@ function sources(canonical) {
 
 function create(gfx, canonical) {
   const { gl } = gfx, bodies = sources(canonical);
-  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false, outputs: ['gHit', 'gA', 'gB', 'gGlow'] });
+  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false });
   const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false });
   const street = gfx.program('city:street', bodies.street, undefined, { library: false });
   const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false });
@@ -7924,13 +8014,19 @@ function create(gfx, canonical) {
     const next = { w, h, views: [], textures: [] }, saved = gfx.target;
     const viewport = Array.from(gl.getParameter(gl.VIEWPORT));
     try {
-      for (let i = 0; i < 8; i++) next.textures.push(gfx.createTexture(w, h, { format: 'rgba32f', filter: 'nearest' }));
-      const [p0, a, b, p3, r0, r3, pSurface, rSurface] = next.textures;
-      function view(textures) {
-        const target = gfx.createTargetView(w, h, textures); next.views.push(target); return target;
+      for (let i = 0; i < 4; i++) next.textures.push(gfx.createTexture(w, h, { format: 'rgba32f', filter: 'nearest' }));
+      const [primaryHit, reflectedHit, pSurface, rSurface] = next.textures;
+      const depth = () => {
+        const texture = gfx.createTexture(w, h, { format: 'depth32f', filter: 'nearest' });
+        next.textures.push(texture); return texture;
+      };
+      const primaryDepth = depth(), reflectedDepth = depth();
+      function view(textures, depthTexture = null) {
+        const target = gfx.createTargetView(w, h, textures, { depthTexture });
+        next.views.push(target); return target;
       }
-      Object.assign(next, { p0, a, b, p3, r0, r3, pSurface, rSurface,
-        primary: view([p0, a, b, p3]), reflection: view([r0, a, b, r3]),
+      Object.assign(next, { primaryHit, primaryDepth, reflectedHit, reflectedDepth, pSurface, rSurface,
+        primary: view([primaryHit],primaryDepth), reflection: view([reflectedHit],reflectedDepth),
         primarySurface: view([pSurface]), reflectionSurface: view([rSurface]) });
       return next;
     } catch (error) { free(next); throw error; }
@@ -7959,31 +8055,35 @@ function create(gfx, canonical) {
           // physical bounds clip the band while preserving the original global vUv/rays.
           gfx.bindTarget(target); gl.viewport(0, -y, w, height);
           if (clear) gl.clear(gl.COLOR_BUFFER_BIT);
+          if (program === trace) {
+            // Depth stores the exact float hit distance, scaled by a binary power. ALWAYS
+            // writes each ray, including SKY and inactive reflections, without a depth clear.
+            gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.ALWAYS); gl.depthMask(true);
+          } else gl.disable(gl.DEPTH_TEST);
           gfx.fullscreen(program, { ...band, ...extra });
         }
         // Primary material output later becomes the ray cache. Bind a safe dummy until that
         // output is complete: WebGL checks feedback even inside an untaken shader branch.
         pass(trace, s.primary, { uPassMode: 0, uReflectionRay: gfx.noiseTex });
-        const primary = { uPassMode: 0, uReflectionRay: gfx.noiseTex, uHit0: s.p0, uHitA: s.a, uHitB: s.b, uHitGlow: s.p3 };
+        const primary = { uPassMode: 0, uReflectionRay: gfx.noiseTex, uHitData: s.primaryHit, uHitDepth: s.primaryDepth };
         pass(towers, s.primarySurface, primary, true);
         pass(street, s.primarySurface, primary);
         // Ground does not use primary object RGB, so its surface texel can hold a shared ray.
         // Non-ground object texels retain their color and the explicit inactive alpha sentinel.
-        pass(reflection, s.primarySurface, { uPrimaryG0: s.p0 });
-        // Original a/b data is no longer needed after both primary material passes, so
-        // the reflected hit packet reuses those two full precision textures.
+        pass(reflection, s.primarySurface, { uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth });
+        // Reflected rays use their own exact hit records; all stages share the cached direction.
         pass(trace, s.reflection, { uPassMode: 1, uReflectionRay: s.pSurface });
-        const reflected = { uPassMode: 1, uReflectionRay: s.pSurface, uHit0: s.r0, uHitA: s.a, uHitB: s.b, uHitGlow: s.r3 };
+        const reflected = { uPassMode: 1, uReflectionRay: s.pSurface, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth };
         pass(towers, s.reflectionSurface, reflected, true);
         pass(street, s.reflectionSurface, reflected);
-        gfx.bindTarget(output); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, y, w, h);
-        gfx.fullscreen(compose, { ...band, uReflectionRay: s.pSurface, uPrimaryG0: s.p0, uPrimaryG3: s.p3,
-          uReflectionG0: s.r0, uReflectionG3: s.r3, uPrimarySurface: s.pSurface, uReflectionSurface: s.rSurface });
+        gfx.bindTarget(output); gl.disable(gl.DEPTH_TEST); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, y, w, h);
+        gfx.fullscreen(compose, { ...band, uReflectionRay: s.pSurface, uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth,
+          uReflectedHit: s.reflectedHit, uReflectedDepth: s.reflectedDepth, uPrimarySurface: s.pSurface, uReflectionSurface: s.rSurface });
       }
     } finally {
       // Full city drawing owns fullscreen state; callers resume at the complete output target.
       // No driver state queries are needed in the frame loop.
-      gl.disable(gl.SCISSOR_TEST);
+      gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST);
       gfx.bindTarget(output);
     }
   }
@@ -8051,7 +8151,22 @@ const float FAR = 2800.0;
 const float FLOOR_BANDS = 4.0;                 // floors between neon bands on banded towers
 
 const int SKY = 0, TOWER = 1, GROUND = 2, PROP = 3, BRIDGE = 4, STREET = 5, SEWER = 6, PORTAL = 7;
-struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; int moving; };
+struct Hit { int kind; float t; vec3 n; ivec2 cell; vec4 a; vec4 b; int moving; int primitive; };
+
+// A source cell has 32 primitive slots: towers 0..2, props 3..6, bridges 7..8,
+// street pieces 9..24, ground 25 and Sewer 26. Following the cell IDs are
+// 24 * 16 moving parts with four material kinds, 44 portal parts, then sentinels.
+// These integers remain exact in float32 for every supported grid (N <= 255).
+int citySpecialId(int which) { return int(uN)*int(uN)*32+1580+which; }
+int cityStaticId(ivec2 cell,int slot) {
+  int n=int(uN);
+  if(any(lessThan(cell,ivec2(0)))||any(greaterThanEqual(cell,ivec2(n)))) return citySpecialId(slot==25?1:2);
+  return (cell.x+cell.y*n)*32+slot;
+}
+int cityMovingId(int group,int part,int kind) {
+  int category=kind==TOWER?0:kind==PROP?1:kind==BRIDGE?2:3;
+  return int(uN)*int(uN)*32+(group*16+part)*4+category;
+}
 
 vec3 neon(float h) {
   return h < 0.3 ? uNeon[0] : h < 0.55 ? uNeon[1] : h < 0.8 ? uNeon[2] : uNeon[3];
@@ -8241,7 +8356,7 @@ vec3 collapseFire(vec3 ro, vec3 rd, vec3 centre, float top, float tMax, float pi
 }
 
 Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) {
-  Hit hit; hit.kind = SKY; hit.t = min(limit, FAR); hit.moving = 0;
+  Hit hit; hit.kind = SKY; hit.t = min(limit, FAR); hit.moving = 0; hit.primitive = citySpecialId(0);
   for (int group = 0; group < uCollapseMoverCount; group++) {
     vec4 bound = uCollapseMoverBounds[group];
     vec3 delta = bound.xyz - ro;
@@ -8261,7 +8376,7 @@ Hit traceMoving(vec3 ro, vec3 rd, float limit, float pixAngle, inout vec3 glow) 
         : lo.w > 0.5 ? ellipsoidHit(localRo, localRd, lo.xyz, hi.xyz, normal)
           : boxHit(localRo, inv, lo.xyz, hi.xyz, normal);
       if (t >= hit.t) continue;
-      hit.kind = int(hi.w); hit.t = t; hit.n = collapseRotate(normal, turn, false);
+      hit.kind = int(hi.w); hit.t = t; hit.n = collapseRotate(normal, turn, false); hit.primitive = cityMovingId(group, part, hit.kind);
       hit.cell = ivec2(int(object.x) % int(uN), int(object.x) / int(uN)); hit.moving = group + 1;
       hit.a = texelFetch(uCollapseSolids, at + ivec2(0, 2), 0);
       hit.b = texelFetch(uCollapseSolids, at + ivec2(0, 3), 0);
@@ -8284,7 +8399,7 @@ Hit finishTrace(Hit fixedHit, Hit movingHit, vec3 ro, vec3 rd, float pixAngle, i
 }
 
 Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
-  Hit h; h.kind = SKY; h.t = FAR; h.moving = 0;
+  Hit h; h.kind = SKY; h.t = FAR; h.moving = 0; h.primitive = citySpecialId(0);
   rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
   vec3 inv = 1.0 / rd;
   float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
@@ -8298,9 +8413,9 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
   }
   Hit moved = traceMoving(ro, rd, tGround, pixAngle, glow);
   if (uCollapsePortalActive > 0.5) {
-    vec3 normal;int material;float t=portalHit(ro,rd,normal,material);
+    vec3 normal;int material;int primitive;float t=portalHit(ro,rd,normal,material,primitive);
     if(t>0.0&&t<moved.t) {
-      moved.kind=PORTAL;moved.t=t;moved.n=normal;moved.moving=0;moved.a=vec4(float(material),0.0,0.0,0.0);
+      moved.kind=PORTAL;moved.t=t;moved.n=normal;moved.moving=0;moved.a=vec4(float(material),0.0,0.0,0.0); moved.primitive = int(uN)*int(uN)*32+1536+primitive;
       moved.cell=ivec2(floor((ro.xz+rd.xz*t)/uCell));
     }
   }
@@ -8323,7 +8438,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       float fall = collapseFall(cell);
       float tStreet = 1e9;
       vec3 nStreet;
-      vec4 streetA, streetB;
+      vec4 streetA, streetB; int streetPart = 0;
       // High rays skip all street data; lower rays fetch bounds only in occupied cells.
       float lowY = min(ro.y + rd.y * t, ro.y + rd.y * min(tExit, span.y));
       if (lowY < uStreetMaxH && t < 640.0) {
@@ -8339,7 +8454,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           }
           float tp = Q.w > 1.5 ? capsuleHit(ro, rd, lo, hi, Q.w, normal)
             : Q.w > 0.5 ? ellipsoidHit(ro, rd, lo, hi, normal) : boxHit(ro, inv, lo, hi, normal);
-          if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; }
+          if (tp < tStreet) { tStreet = tp; nStreet = normal; streetA = P; streetB = Q; streetPart = part; }
         }
       }
       if (uCollapseActive > 0.5 && t < 440.0 && max(moveMap.y, max(moveMap.z, moveMap.w)) < 0.5) {
@@ -8349,7 +8464,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       }
       float tBridge = 1e9;
       vec3 nBridge;
-      vec4 bridgeData;
+      vec4 bridgeData; int bridgePart = 0;
       for (int j = 0; j < uBridgePieceLimit; j++) {
         vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
         if (moveMap.x > 0.5) continue;
@@ -8366,12 +8481,12 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           : vec3(along + 0.7, C.y + 0.75, max(face, end));
         vec3 nPipe;
         float tp = boxHit(ro, inv, lo, hi, nPipe);
-        if (tp < tBridge) { tBridge = tp; nBridge = nPipe; bridgeData = C; }
+        if (tp < tBridge) { tBridge = tp; nBridge = nPipe; bridgeData = C; bridgePart = j; }
       }
       if (A.z > A.x) {
         vec4 B = texelFetch(uBoxB, cell, 0);
         bool hasProp = B.w > 0.5;
-        vec4 towerA, towerB;
+        vec4 towerA, towerB; int towerPart = 0;
         vec3 towerN;
         float tb = 1e9;
         // Up to three pieces, already assembled from the collision geometry at upload time.
@@ -8389,7 +8504,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           if (tPiece < tb) {
             tb = tPiece; towerN = nPiece;
             towerA = vec4((P.xy + P.zw) * 0.5 - (vec2(cell) + 0.5) * uCell, (P.zw - P.xy) * 0.5);
-            towerB = Q;
+            towerB = Q; towerPart = part;
           }
         }
         if (hasProp) {
@@ -8397,7 +8512,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
           Q.xy -= vec2(fall);
           vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
           vec3 np;
-          float tp = 1e9;
+          float tp = 1e9; int propPart = 0;
           if (Q.z > 2.5) {
             bool alongZ = P.w > P.z;
             float alongHalf = alongZ ? P.w : P.z;
@@ -8424,19 +8539,19 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
               }
               vec3 nPiece;
               float tPiece = boxHit(ro, inv, lo, hi, nPiece);
-              if (tPiece < tp) { tp = tPiece; np = nPiece; }
+              if (tPiece < tp) { tp = tPiece; np = nPiece; propPart = j; }
             }
           } else {
             tp = boxHit(ro, inv, vec3(pc.x - P.z, Q.x, pc.y - P.w),
               vec3(pc.x + P.z, Q.y, pc.y + P.w), np);
           }
           if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
-            h.kind = PROP; h.t = tp; h.n = np; h.cell = cell; h.a = P; h.b = Q;
+            h.kind = PROP; h.t = tp; h.n = np; h.cell = cell; h.a = P; h.b = Q; h.primitive = cityStaticId(cell,3+propPart);
             return finishTrace(h, moved, ro, rd, pixAngle, glow);
           }
         }
         if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
-          h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB;
+          h.kind = TOWER; h.t = tb; h.n = towerN; h.cell = cell; h.a = towerA; h.b = towerB; h.primitive = cityStaticId(cell,towerPart);
           return finishTrace(h, moved, ro, rd, pixAngle, glow);
         }
       } else {
@@ -8445,11 +8560,11 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
         if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
       }
       if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
-        h.kind = STREET; h.t = tStreet; h.n = nStreet; h.cell = cell; h.a = streetA; h.b = streetB;
+        h.kind = STREET; h.t = tStreet; h.n = nStreet; h.cell = cell; h.a = streetA; h.b = streetB; h.primitive = cityStaticId(cell,9+streetPart);
         return finishTrace(h, moved, ro, rd, pixAngle, glow);
       }
       if (tBridge < tGround && tBridge < 1e8) {
-        h.kind = BRIDGE; h.t = tBridge; h.n = nBridge; h.cell = cell; h.a = bridgeData;
+        h.kind = BRIDGE; h.t = tBridge; h.n = nBridge; h.cell = cell; h.a = bridgeData; h.primitive = cityStaticId(cell,7+bridgePart);
         return finishTrace(h, moved, ro, rd, pixAngle, glow);
       }
       if (moved.kind != SKY && moved.t <= tExit) return finishTrace(h, moved, ro, rd, pixAngle, glow);
@@ -8461,7 +8576,7 @@ Hit trace(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
       if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(int(uN))))) break;
     }
   }
-  if (tGround >= 0.0 && tGround < FAR) { h.kind = shaft ? SEWER : GROUND; h.t = tGround; h.n = shaft ? shaftNormal : vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); }
+  if (tGround >= 0.0 && tGround < FAR) { h.kind = shaft ? SEWER : GROUND; h.t = tGround; h.n = shaft ? shaftNormal : vec3(0.0, 1.0, 0.0); h.cell = ivec2(floor((ro.xz + rd.xz * tGround) / uCell)); h.primitive = cityStaticId(h.cell,shaft?26:25); }
   return finishTrace(h, moved, ro, rd, pixAngle, glow);
 }
 
@@ -9107,8 +9222,9 @@ function create(gfx) {
   }
 
   function setWorld(city, pads) {
-    // Hit metadata uses one exact float32 integer: cell*256 + mover*8 + kind.
-    // Reserve cell N*N for sky/outside-ground; the current city is 96 by 96.
+    // Primitive IDs reserve 32 slots per cell, followed by moving/portal pieces and sentinels.
+    // The complete range remains an exact float32 integer at this grid limit.
+    // The current city is 96 by 96.
     if (!Number.isInteger(city.n) || city.n < 1 || city.n > 255)
       throw new Error('city grid exceeds the exact graphics metadata range');
     if (world) Object.values(world.textures).forEach(t => gl.deleteTexture(t));
@@ -9495,4 +9611,4 @@ GAME.post = { init, defaults, present, status };
 })();
 
 return GAME;
-},{"revision":"4ce04d137e4695f118469bbd469eb71d7104623c","sourceSha256":"7f2ec611c4493331d7a8785a7f25e422dba65625997aa299f9138c156e5a6bd7"});</script>
+},{"revision":"a6f3d8cc0f06fb9c3872a0e103034e626fa90324","sourceSha256":"4a7ca3ebe06e1e9c242aaef9426d18d9352a44e478c1d3c0a180daeb92bbdca3"});</script>
