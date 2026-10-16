@@ -31,6 +31,10 @@ The standalone 64×36 report now shows GPU-fenced completion of every resource s
 then context loss during the first primary `city:trace` attempt with four RGBA32F outputs.
 That narrows the failing stage without distinguishing native compilation, trace execution or
 attachment writes as the underlying cause.
+The next compact-hit report stops before creating any shader or resource because WebGL2 is
+unavailable. It does not test that renderer. A fresh full browser restart is needed for the next
+check; repeated-loss blocking is one possible cause. The diagnostic captures the browser's
+context-creation error message when available.
 The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
 building materials, street materials and composition. Reflected rays are computed once and
 cached so tracing and shading use the same direction. Each submitted fragment source is under

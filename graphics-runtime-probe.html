@@ -7,7 +7,7 @@
 <script>(function runtimePage(loadModules, build) {
   const $ = id => document.getElementById(id), now = () => performance.now();
   const state = window.__runtimeProbe = { version: 1, build, started: false, done: false,
-    contextLost: false, contextRestored: false, size: null, phase: 'idle', lastSubmitted: null,
+    contextLost: false, contextRestored: false, contextCreationError: null, size: null, phase: 'idle', lastSubmitted: null,
     lastCompleted: null, steps: [], resources: [], failure: null, report: null };
   let game = null, driver = null, hooks = null, pending = null;
   const error = (code, message) => Object.assign(new Error(message), { code });
@@ -147,6 +147,11 @@
     state.started = true; state.startedAt = now(); $('run').disabled = $('size').disabled = true;
     state.size = $('size').value.split('x').map(Number); const [width, height] = state.size;
     $('c').width = width; $('c').height = height;
+    // The browser can refuse a context after prior resets. Capture its reason before the
+    // module requests WebGL; no renderer or driver-report module exists if that request fails.
+    $('c').addEventListener('webglcontextcreationerror', event => {
+      state.contextCreationError = String(event.statusMessage || 'No context-creation details supplied.').slice(0, 800);
+    });
     $('c').addEventListener('webglcontextlost', event => { event.preventDefault(); state.contextLost = true; stop(error('GFX_CONTEXT_LOST', 'The graphics context was lost.')); queueMicrotask(refresh); });
     $('c').addEventListener('webglcontextrestored', () => { state.contextRestored = true; queueMicrotask(refresh); });
     try {
@@ -9611,4 +9616,4 @@ GAME.post = { init, defaults, present, status };
 })();
 
 return GAME;
-},{"revision":"a6f3d8cc0f06fb9c3872a0e103034e626fa90324","sourceSha256":"4a7ca3ebe06e1e9c242aaef9426d18d9352a44e478c1d3c0a180daeb92bbdca3"});</script>
+},{"revision":"c171567d0d8d4ee5b597fbbf2f548132608815bb","sourceSha256":"4a7ca3ebe06e1e9c242aaef9426d18d9352a44e478c1d3c0a180daeb92bbdca3"});</script>
