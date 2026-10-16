@@ -56,6 +56,24 @@ streaks. All nine 640×480 displayed captures are identical to the preceding rel
 preserve graphics locally; Radeon/Direct3D11 stability still needs confirmation. Full-HD
 seam/resize/failure cleanup and complete-game startup/flight also pass locally; interrupted
 reports remain copyable without querying the lost driver.
+The next fresh Windows report (build `a894c3b`) still interrupts while preparing only the
+11,349-byte light program (`e87eeed4`) after 1,234.6 ms. Geometry and the new color-only
+distance writer are ready, with all later city programs queued and no world resources or draws.
+Removing fragment-depth output did not resolve this failure. The player reports that the
+smaller graphics option runs without freezing; full graphics remain unresolved on this PC.
+
+For the current investigation use [Diagnostic 3, build d6001ce — lighting candidate](https://julian-magnusson.github.io/game/graphics-light-check-d6001ce6a4ab.html?variant=state-machine).
+This separate page compiles exactly one selected program when **Run once** is pressed, without
+generating a city or drawing frames. It never retries automatically. Copy/Save reports include
+the selected source hash, transformations, build and run time; no report controls are added to
+the game's menu. Individual selections also isolate beam, fire and traversal work, and the full
+control is byte-identical to the failing production light program.
+The candidate rewrites lighting into seven ordered phases per visited cell. Its exact source
+(`6d9cd023`) passes 871 canonical GPU ray comparisons and produces nine PNG-identical local
+scene captures, while leaving the other nine production program sources unchanged. All ten
+diagnostic selections prepare locally; simulated loss and unavailable WebGL stop with cached,
+copyable reports. The diagnostic does not change the game. Windows compilation must be verified
+before adopting the candidate; these local checks do not establish a fix for AMD/Direct3D11.
 The full city renderer uses ten separate programs: six intersection/light/distance stages, cached
 reflected-ray preparation, building materials, street materials and composition. Fragment sources
 range from 600 to 35,719 bytes. Eighteen draws per horizontal band reuse four RGBA32F and two R32F
