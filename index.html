@@ -12820,98 +12820,127 @@ vec4 cityTracePortalAux(vec3 ro, vec3 rd, vec4 aux) {
   return aux;
 }
 
-TraceHit cityTraceStatic(vec3 ro, vec3 rd, int maxCells, float pixAngle, vec4 aux, inout vec3 glow) {
+// IDs occupy 21 bits and the visited-cell count occupies seven. The 0x2 tag keeps
+// every packet in the finite NORMAL float32 range, so RGBA32F storage preserves
+// all 28 payload bits without NaN canonicalization or subnormal flushing.
+float cityTracePack(int primitive, int cells) {
+  return uintBitsToFloat(0x20000000u | (uint(primitive) << 7) | uint(cells));
+}
+
+void cityTraceUnpack(float encoded, out int primitive, out int cells) {
+  uint payload = floatBitsToUint(encoded) & 0x0fffffffu;
+  primitive = int(payload >> 7);
+  cells = int(payload & 127u);
+}
+
+// One loop carries both DDA traversal and primitive iteration. Keeping the phases
+// flat prevents a driver from expanding all cell geometry inside a nested DDA.
+// At the upload maxima a cell needs at most 31 microsteps: LOAD, 16 STREET plus
+// transition, two BRIDGE plus transition, three TOWER plus transition, four PROP
+// plus transition, and RESOLVE. The separate cell counter retains the 120/40 limit.
+vec4 cityTraceStatic(vec3 ro, vec3 rd, int maxCells, vec4 aux) {
   TraceHit h; h.t = FAR; h.primitive = citySpecialId(0);
-  vec3 inv = 1.0 / rd;
-  float tGround = aux.z; bool shaft = aux.w > 0.5;
   TraceHit moved; moved.t = aux.x; moved.primitive = int(aux.y);
+  vec3 inv = 1.0 / rd;
+  float tGround = aux.z;
   float lowest=uCollapsePortalActive>0.5?uCollapsePortalOrigin.y+uCollapsePortalAxis.y*uCollapsePortalAxis.w-uCollapsePortalOrigin.w
     :uCollapseActive>0.5?uCollapseHole.w:-1.0;
   vec2 span = cityTraceSlab(ro, inv, vec3(0.0,lowest,0.0), vec3(uSize, uMaxH, uSize));
-  if (span.x <= span.y && span.y > 0.0) {
-    float t = max(span.x, 0.0);
-    vec3 p = ro + rd * (t + 1e-3);
-    ivec2 cell = clamp(ivec2(floor(p.xz / uCell)), ivec2(0), ivec2(int(uN) - 1));
-    vec2 stepv = sign(rd.xz);
-    vec2 tDelta = abs(uCell * inv.xz);
-    vec2 tMax = ((vec2(cell) + max(stepv, 0.0)) * uCell - ro.xz) * inv.xz;
-    for (int i = 0; i < maxCells; i++) {
-      float tExit = min(tMax.x, tMax.y);
-      vec4 A = texelFetch(uBoxA, cell, 0);
-      vec4 moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
+  float t = max(span.x, 0.0);
+  vec3 p = ro + rd * (t + 1e-3);
+  ivec2 cell = clamp(ivec2(floor(p.xz / uCell)), ivec2(0), ivec2(int(uN) - 1));
+  vec2 stepv = sign(rd.xz);
+  vec2 tDelta = abs(uCell * inv.xz);
+  vec2 tMax = ((vec2(cell) + max(stepv, 0.0)) * uCell - ro.xz) * inv.xz;
+  int phase = 0, part = 0, cells = 0, streetCount = 0;
+  int streetPart = 0, bridgePart = 0, towerPart = 0, propPart = 0;
+  float tExit = 0.0, fall = 0.0, tStreet = 1e9, tBridge = 1e9, tb = 1e9, tp = 1e9;
+  float lastStreet = 1e9;
+  vec4 A = vec4(0.0), B = vec4(0.0), moveMap = vec4(0.0);
+  bool done = !(span.x <= span.y && span.y > 0.0), groundFallback = true;
+  for (int microstep = 0; microstep < maxCells * 32; microstep++) {
+    if (done) break;
+    if (phase == 0) { // LOAD
+      cells++;
+      tExit = min(tMax.x, tMax.y);
+      A = texelFetch(uBoxA, cell, 0);
+      moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
       if (moveMap.x > 0.5) A = vec4(0.0);
-      float fall = collapseFall(cell);
-      float tStreet = 1e9;
-      int streetPart = 0;
-      // High rays skip all street data; lower rays fetch bounds only in occupied cells.
+      fall = collapseFall(cell);
+      tStreet = 1e9; tBridge = 1e9; tb = 1e9; tp = 1e9;
+      streetPart = 0; bridgePart = 0; towerPart = 0; propPart = 0;
+      streetCount = 0;
       float lowY = min(ro.y + rd.y * t, ro.y + rd.y * min(tExit, span.y));
       if (lowY < uStreetMaxH && t < 640.0) {
         vec4 info = texelFetch(uStreetInfo, cell, 0);
-        if (lowY < info.y) for (int part = 0; part < int(info.x); part++) {
-          if (movingStreetPart(moveMap, part)) continue;
+        if (lowY < info.y) streetCount = int(info.x);
+      }
+      part = 0; phase = 1;
+    } else if (phase == 1) { // STREET
+      if (part < streetCount) {
+        if (!movingStreetPart(moveMap, part)) {
           ivec2 at = cell + ivec2(0, part * 2 * int(uN));
           vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
           vec3 lo = vec3(P.x, Q.x, P.y), hi = vec3(P.z, Q.y, P.w);
+          bool testPiece = true;
           if (Q.w > 1.5) {
             vec2 bounds = cityTraceSlab(ro, inv, lo, hi);
-            if (bounds.x > bounds.y || bounds.y < 0.0 || bounds.x > tStreet) continue;
+            if (bounds.x > bounds.y || bounds.y < 0.0 || bounds.x > tStreet) testPiece = false;
           }
-          float tp = Q.w > 1.5 ? cityTraceCapsule(ro, rd, lo, hi, Q.w)
-            : Q.w > 0.5 ? cityTraceEllipsoid(ro, rd, lo, hi) : cityTraceBox(ro, inv, lo, hi);
-          if (tp < tStreet) { tStreet = tp; streetPart = part; }
-        }
-      }
-      if (uCollapseActive > 0.5 && t < 440.0 && max(moveMap.y, max(moveMap.z, moveMap.w)) < 0.5) {
-        vec4 info = texelFetch(uStreetInfo, cell, 0);
-        glow += collapseFire(ro, rd, vec3((vec2(cell) + 0.5).x * uCell, 0.0, (vec2(cell) + 0.5).y * uCell),
-          info.w, min(tExit, min(tGround, tStreet)), pixAngle);
-      }
-      float tBridge = 1e9;
-      int bridgePart = 0;
-      for (int j = 0; j < uBridgePieceLimit; j++) {
-        vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
-        if (moveMap.x > 0.5) continue;
-        C.y -= fall;
-        if (abs(C.w) < 0.5) continue;
-        vec2 cc = (vec2(cell) + 0.5) * uCell;
-        bool alongZ = abs(C.w) < 1.5;
-        float face = (alongZ ? cc.x : cc.y) + C.z;
-        float end = (alongZ ? cc.x : cc.y) + sign(C.w) * uCell * 0.5;
-        float along = (alongZ ? cc.y : cc.x) + C.x;
-        vec3 lo = alongZ ? vec3(min(face, end), C.y - 0.75, along - 0.7)
-          : vec3(along - 0.7, C.y - 0.75, min(face, end));
-        vec3 hi = alongZ ? vec3(max(face, end), C.y + 0.75, along + 0.7)
-          : vec3(along + 0.7, C.y + 0.75, max(face, end));
-        float tp = cityTraceBox(ro, inv, lo, hi);
-        if (tp < tBridge) { tBridge = tp; bridgePart = j; }
-      }
-      if (A.z > A.x) {
-        vec4 B = texelFetch(uBoxB, cell, 0);
-        bool hasProp = B.w > 0.5;
-        int towerPart = 0;
-        float tb = 1e9;
-        // Up to three pieces, already assembled from the collision geometry at upload time.
-        // Only composite buildings fetch extra bounds; no per-ray architecture/rotation work.
-        for (int part = 0; part < int(B.z); part++) {
-          vec4 P = A, Q = B;
-          if (part > 0) {
-            ivec2 at = cell + ivec2(0, (part - 1) * 2 * int(uN));
-            P = texelFetch(uStructure, at, 0);
-            Q = texelFetch(uStructure, at + ivec2(0, int(uN)), 0);
-          }
-          Q.xy -= vec2(fall);
-          float tPiece = cityTraceBox(ro, inv, vec3(P.x, Q.x, P.y), vec3(P.z, Q.y, P.w));
-          if (tPiece < tb) {
-            tb = tPiece;
-            towerPart = part;
+          if (testPiece) {
+            float tPiece = Q.w > 1.5 ? cityTraceCapsule(ro, rd, lo, hi, Q.w)
+              : Q.w > 0.5 ? cityTraceEllipsoid(ro, rd, lo, hi) : cityTraceBox(ro, inv, lo, hi);
+            if (tPiece < tStreet) { tStreet = tPiece; streetPart = part; }
           }
         }
-        if (hasProp) {
-          vec4 P = texelFetch(uPropA, cell, 0), Q = texelFetch(uPropB, cell, 0);
-          Q.xy -= vec2(fall);
-          vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
-          float tp = 1e9; int propPart = 0;
-          if (Q.z > 2.5) {
+        part++;
+      } else { part = 0; phase = 2; }
+    } else if (phase == 2) { // BRIDGE
+      if (part < uBridgePieceLimit) {
+        vec4 C = part == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
+        if (!(moveMap.x > 0.5)) {
+          C.y -= fall;
+          if (!(abs(C.w) < 0.5)) {
+            vec2 cc = (vec2(cell) + 0.5) * uCell;
+            bool alongZ = abs(C.w) < 1.5;
+            float face = (alongZ ? cc.x : cc.y) + C.z;
+            float end = (alongZ ? cc.x : cc.y) + sign(C.w) * uCell * 0.5;
+            float along = (alongZ ? cc.y : cc.x) + C.x;
+            vec3 lo = alongZ ? vec3(min(face, end), C.y - 0.75, along - 0.7)
+              : vec3(along - 0.7, C.y - 0.75, min(face, end));
+            vec3 hi = alongZ ? vec3(max(face, end), C.y + 0.75, along + 0.7)
+              : vec3(along + 0.7, C.y + 0.75, max(face, end));
+            float tPiece = cityTraceBox(ro, inv, lo, hi);
+            if (tPiece < tBridge) { tBridge = tPiece; bridgePart = part; }
+          }
+        }
+        part++;
+      } else {
+        part = 0;
+        if (A.z > A.x) { B = texelFetch(uBoxB, cell, 0); phase = 3; }
+        else phase = 5;
+      }
+    } else if (phase == 3) { // TOWER
+      if (part < int(B.z)) {
+        vec4 P = A, Q = B;
+        if (part > 0) {
+          ivec2 at = cell + ivec2(0, (part - 1) * 2 * int(uN));
+          P = texelFetch(uStructure, at, 0);
+          Q = texelFetch(uStructure, at + ivec2(0, int(uN)), 0);
+        }
+        Q.xy -= vec2(fall);
+        float tPiece = cityTraceBox(ro, inv, vec3(P.x, Q.x, P.y), vec3(P.z, Q.y, P.w));
+        if (tPiece < tb) { tb = tPiece; towerPart = part; }
+        part++;
+      } else { part = 0; phase = 4; }
+    } else if (phase == 4) { // PROP
+      if (!(B.w > 0.5)) phase = 5;
+      else {
+        vec4 P = texelFetch(uPropA, cell, 0), Q = texelFetch(uPropB, cell, 0);
+        Q.xy -= vec2(fall);
+        vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
+        if (Q.z > 2.5) {
+          if (part < uPropPieceLimit) {
             bool alongZ = P.w > P.z;
             float alongHalf = alongZ ? P.w : P.z;
             float depthHalf = alongZ ? P.z : P.w;
@@ -12920,61 +12949,108 @@ TraceHit cityTraceStatic(vec3 ro, vec3 rd, int maxCells, float pixAngle, vec4 au
             float railHalf = (Q.y - Q.x) * 0.1;
             float supportHalf = (Q.y - Q.x) * 0.38;
             float outer = (alongZ ? pc.x : pc.y) - Q.w * (depthHalf - 0.17);
-            for (int j = 0; j < uPropPieceLimit; j++) {
-              vec3 lo, hi;
-              if (j < 2) {
-                float cy = py + (j == 0 ? -spread : spread);
-                lo = alongZ ? vec3(outer - 0.17, cy - railHalf, pc.y - alongHalf)
-                  : vec3(pc.x - alongHalf, cy - railHalf, outer - 0.17);
-                hi = alongZ ? vec3(outer + 0.17, cy + railHalf, pc.y + alongHalf)
-                  : vec3(pc.x + alongHalf, cy + railHalf, outer + 0.17);
-              } else {
-                float offset = (j == 2 ? -1.0 : 1.0) * (alongHalf - 0.85);
-                lo = alongZ ? vec3(pc.x - depthHalf, py - supportHalf, pc.y + offset - 0.22)
-                  : vec3(pc.x + offset - 0.22, py - supportHalf, pc.y - depthHalf);
-                hi = alongZ ? vec3(pc.x + depthHalf, py + supportHalf, pc.y + offset + 0.22)
-                  : vec3(pc.x + offset + 0.22, py + supportHalf, pc.y + depthHalf);
-              }
-              float tPiece = cityTraceBox(ro, inv, lo, hi);
-              if (tPiece < tp) { tp = tPiece; propPart = j; }
+            vec3 lo, hi;
+            if (part < 2) {
+              float cy = py + (part == 0 ? -spread : spread);
+              lo = alongZ ? vec3(outer - 0.17, cy - railHalf, pc.y - alongHalf)
+                : vec3(pc.x - alongHalf, cy - railHalf, outer - 0.17);
+              hi = alongZ ? vec3(outer + 0.17, cy + railHalf, pc.y + alongHalf)
+                : vec3(pc.x + alongHalf, cy + railHalf, outer + 0.17);
+            } else {
+              float offset = (part == 2 ? -1.0 : 1.0) * (alongHalf - 0.85);
+              lo = alongZ ? vec3(pc.x - depthHalf, py - supportHalf, pc.y + offset - 0.22)
+                : vec3(pc.x + offset - 0.22, py - supportHalf, pc.y - depthHalf);
+              hi = alongZ ? vec3(pc.x + depthHalf, py + supportHalf, pc.y + offset + 0.22)
+                : vec3(pc.x + offset + 0.22, py + supportHalf, pc.y + depthHalf);
             }
-          } else {
-            tp = cityTraceBox(ro, inv, vec3(pc.x - P.z, Q.x, pc.y - P.w),
-              vec3(pc.x + P.z, Q.y, pc.y + P.w));
-          }
-          if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
-            h.t = tp; h.primitive = cityStaticId(cell,3+propPart);
-            return cityTraceCloser(h, moved);
-          }
+            float tPiece = cityTraceBox(ro, inv, lo, hi);
+            if (tPiece < tp) { tp = tPiece; propPart = part; }
+            part++;
+          } else phase = 5;
+        } else {
+          tp = cityTraceBox(ro, inv, vec3(pc.x - P.z, Q.x, pc.y - P.w),
+            vec3(pc.x + P.z, Q.y, pc.y + P.w));
+          phase = 5;
         }
-        if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
-          h.t = tb; h.primitive = cityStaticId(cell,towerPart);
-          return cityTraceCloser(h, moved);
-        }
-      } else {
-        // Empty cell: a booster's light column stands wholly inside it, so only the ground can hide it.
-        vec4 pad = texelFetch(uPads, cell, 0);
-        if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
       }
-      if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
+    } else { // RESOLVE
+      lastStreet = tStreet;
+      if (A.z > A.x && B.w > 0.5 && tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
+        h.t = tp; h.primitive = cityStaticId(cell,3+propPart);
+        groundFallback = false; done = true;
+      } else if (A.z > A.x && tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
+        h.t = tb; h.primitive = cityStaticId(cell,towerPart);
+        groundFallback = false; done = true;
+      } else if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
         h.t = tStreet; h.primitive = cityStaticId(cell,9+streetPart);
-        return cityTraceCloser(h, moved);
-      }
-      if (tBridge < tGround && tBridge < 1e8) {
+        groundFallback = false; done = true;
+      } else if (tBridge < tGround && tBridge < 1e8) {
         h.t = tBridge; h.primitive = cityStaticId(cell,7+bridgePart);
-        return cityTraceCloser(h, moved);
+        groundFallback = false; done = true;
+      } else if (moved.primitive != citySpecialId(0) && moved.t <= tExit) {
+        groundFallback = false; done = true;
+      } else if (tGround <= tExit || tExit > span.y || tExit > FAR) done = true;
+      else {
+        t = tExit;
+        if (tMax.x < tMax.y) { tMax.x += tDelta.x; cell.x += int(stepv.x); }
+        else { tMax.y += tDelta.y; cell.y += int(stepv.y); }
+        if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(int(uN)))) || cells >= maxCells) done = true;
+        else phase = 0;
       }
-      if (moved.primitive != citySpecialId(0) && moved.t <= tExit) return cityTraceCloser(h, moved);
-      if (tGround <= tExit) break;
-      if (tExit > span.y || tExit > FAR) break;
+    }
+  }
+  if (groundFallback && tGround >= 0.0 && tGround < FAR) {
+    h.t = tGround;
+    h.primitive = cityStaticId(ivec2(floor((ro.xz + rd.xz * tGround) / uCell)),aux.w > 0.5?26:25);
+  }
+  h = cityTraceCloser(h, moved);
+  return vec4(h.t, cityTracePack(h.primitive, cells), lastStreet, tGround);
+}
+
+// Geometry records how many cells the original ordered traversal visited. Every
+// cell before its last has tStreet >= tGround (or >=1e8): otherwise that cell
+// would already have returned a street/bridge/tower/prop hit. Its tExit is also
+// <=FAR, so replacing that tStreet by 1e9 cannot change min(tExit,tGround,tStreet).
+// Only the final cell needs its exact tStreet. Replaying these cells therefore
+// retains every stationary-fire/empty-cell-beam addition, in the original order,
+// without bringing any shape intersections into the light shader.
+vec3 cityTraceStaticLight(vec3 ro, vec3 rd, float pixAngle, vec4 geometry) {
+  int primitive, cells;
+  cityTraceUnpack(geometry.y, primitive, cells);
+  vec3 glow = vec3(0.0);
+  vec3 inv = 1.0 / rd;
+  float tGround = geometry.w;
+  float lowest=uCollapsePortalActive>0.5?uCollapsePortalOrigin.y+uCollapsePortalAxis.y*uCollapsePortalAxis.w-uCollapsePortalOrigin.w
+    :uCollapseActive>0.5?uCollapseHole.w:-1.0;
+  vec2 span = cityTraceSlab(ro, inv, vec3(0.0,lowest,0.0), vec3(uSize, uMaxH, uSize));
+  float t = max(span.x, 0.0);
+  vec3 p = ro + rd * (t + 1e-3);
+  ivec2 cell = clamp(ivec2(floor(p.xz / uCell)), ivec2(0), ivec2(int(uN) - 1));
+  vec2 stepv = sign(rd.xz);
+  vec2 tDelta = abs(uCell * inv.xz);
+  vec2 tMax = ((vec2(cell) + max(stepv, 0.0)) * uCell - ro.xz) * inv.xz;
+  for (int i = 0; i < cells; i++) {
+    float tExit = min(tMax.x, tMax.y);
+    vec4 A = texelFetch(uBoxA, cell, 0);
+    vec4 moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
+    if (moveMap.x > 0.5) A = vec4(0.0);
+    float tStreet = i == cells - 1 ? geometry.z : 1e9;
+    if (uCollapseActive > 0.5 && t < 440.0 && max(moveMap.y, max(moveMap.z, moveMap.w)) < 0.5) {
+      vec4 info = texelFetch(uStreetInfo, cell, 0);
+      glow += collapseFire(ro, rd, vec3((vec2(cell) + 0.5).x * uCell, 0.0, (vec2(cell) + 0.5).y * uCell),
+        info.w, min(tExit, min(tGround, tStreet)), pixAngle);
+    }
+    if (!(A.z > A.x)) {
+      vec4 pad = texelFetch(uPads, cell, 0);
+      if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
+    }
+    if (i + 1 < cells) {
       t = tExit;
       if (tMax.x < tMax.y) { tMax.x += tDelta.x; cell.x += int(stepv.x); }
       else { tMax.y += tDelta.y; cell.y += int(stepv.y); }
-      if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(int(uN))))) break;
     }
   }
-  if (tGround >= 0.0 && tGround < FAR) { h.t = tGround; h.primitive = cityStaticId(ivec2(floor((ro.xz + rd.xz * tGround) / uCell)),shaft?26:25); }
-  return cityTraceCloser(h, moved);
+  return glow;
 }
 
 `;
@@ -13156,13 +13232,22 @@ void main() {
   ivec2 pixel = cityPixel(); vec3 rd = cityDirection();
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   CityRay ray = cityTraceRay(pixel,rd,pixAngle);
-  vec3 glow = vec3(0.0);
-  TraceHit h; h.t=FAR;h.primitive=citySpecialId(0);
-  if (ray.enabled) {
-    h=cityTraceStatic(ray.origin,ray.direction,uPassMode>0?uTraceCells.y:uTraceCells.x,pixAngle,texelFetch(uTraceAux,pixel,0),glow);
-  }
-  fragColor=vec4(glow,float(h.primitive));
-  gl_FragDepth=h.t*(1.0/65536.0);
+  fragColor = ray.enabled
+    ? cityTraceStatic(ray.origin,ray.direction,uPassMode>0?uTraceCells.y:uTraceCells.x,texelFetch(uTraceAux,pixel,0))
+    : vec4(FAR,cityTracePack(citySpecialId(0),0),1e9,FAR);
+}
+`;
+
+const STATIC_LIGHT_MAIN = `
+uniform highp sampler2D uTraceGeometry;
+void main() {
+  ivec2 pixel = cityPixel(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityTraceRay(pixel,cityDirection(),pixAngle);
+  vec4 geometry = texelFetch(uTraceGeometry,pixel,0);
+  int primitive, cells; cityTraceUnpack(geometry.y,primitive,cells);
+  vec3 glow = ray.enabled ? cityTraceStaticLight(ray.origin,ray.direction,pixAngle,geometry) : vec3(0.0);
+  fragColor = vec4(glow,float(primitive));
+  gl_FragDepth = geometry.x*(1.0/65536.0);
 }
 `;
 
@@ -13362,7 +13447,8 @@ function sources(canonical) {
   const result = {
     traceMovers: traceSelect(['cityTraceAux', 'citySpecialId', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + MOVERS_MAIN,
     tracePortal: traceSelect(['cityTracePortalAux', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + PORTAL_MAIN,
-    traceStatic: traceSelect(['cityTraceStatic', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_MAIN,
+    traceStatic: traceSelect(['cityTraceStatic', 'cityTracePack', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_MAIN,
+    traceStaticLight: traceSelect(['cityTraceStaticLight', 'cityTraceUnpack', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_LIGHT_MAIN,
     traceFire: traceSelect(['cityTraceMovingFire', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + FIRE_MAIN,
     towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveTower'])
       + BAND + REFLECTION + READ_HIT + TOWER_MAIN,
@@ -13383,12 +13469,13 @@ function create(gfx, canonical) {
   const movers = gfx.program('city:trace-movers', bodies.traceMovers, undefined, { library: false, deferred: true });
   const portal = gfx.program('city:trace-portal', bodies.tracePortal, undefined, { library: false, deferred: true });
   const trace = gfx.program('city:trace-static', bodies.traceStatic, undefined, { library: false, deferred: true });
+  const staticLight = gfx.program('city:trace-static-light', bodies.traceStaticLight, undefined, { library: false, deferred: true });
   const fire = gfx.program('city:trace-fire', bodies.traceFire, undefined, { library: false, deferred: true });
   const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false, deferred: true });
   const street = gfx.program('city:street', bodies.street, undefined, { library: false, deferred: true });
   const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false, deferred: true });
   const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false, deferred: true });
-  const programs = [movers, portal, trace, fire, towers, street, reflection, compose];
+  const programs = [movers, portal, trace, staticLight, fire, towers, street, reflection, compose];
   let scratch = null;
 
   function free(value) {
@@ -13412,7 +13499,7 @@ function create(gfx, canonical) {
         next.views.push(target); return target;
       }
       Object.assign(next, { primaryHit, primaryDepth, reflectedHit, reflectedDepth, pSurface, rSurface,
-        primary: view([primaryHit],primaryDepth), reflection: view([reflectedHit],reflectedDepth),
+        primary: view([pSurface],primaryDepth), reflection: view([rSurface],reflectedDepth),
         primaryColor: view([primaryHit]), reflectionColor: view([reflectedHit]),
         primarySurface: view([pSurface]), reflectionSurface: view([rSurface]) });
       return next;
@@ -13442,7 +13529,7 @@ function create(gfx, canonical) {
           // physical bounds clip the band while preserving the original global vUv/rays.
           gfx.bindTarget(target); gl.viewport(0, -y, w, height);
           if (clear) gl.clear(gl.COLOR_BUFFER_BIT);
-          if (program === trace) {
+          if (program === staticLight) {
             // Depth stores the exact float hit distance, scaled by a binary power. ALWAYS
             // writes each ray, including SKY and inactive reflections, without a depth clear.
             gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.ALWAYS); gl.depthMask(true);
@@ -13454,28 +13541,31 @@ function create(gfx, canonical) {
         const primaryRay = { uPassMode: 0, uReflectionRay: gfx.noiseTex };
         pass(movers, s.primaryColor, primaryRay);
         pass(portal, s.primarySurface, { ...primaryRay, uTraceAux: s.primaryHit });
-        pass(trace, s.primary, { ...primaryRay, uTraceAux: s.pSurface });
-        pass(fire, s.primarySurface, { ...primaryRay, uHitData: s.primaryHit, uHitDepth: s.primaryDepth });
-        // Final glow/ID now lives in pSurface. Material color uses the former hit color,
-        // through a color-only view so sampling its separate depth cannot cause feedback.
-        const primary = { ...primaryRay, uHitData: s.pSurface, uHitDepth: s.primaryDepth };
-        pass(towers, s.primaryColor, primary, true);
-        pass(street, s.primaryColor, primary);
+        pass(trace, s.primaryColor, { ...primaryRay, uTraceAux: s.pSurface });
+        pass(staticLight, s.primary, { ...primaryRay, uTraceGeometry: s.primaryHit });
+        pass(fire, s.primaryColor, { ...primaryRay, uHitData: s.pSurface, uHitDepth: s.primaryDepth });
+        // Geometry and lights have independent programs. Once final glow/ID lives in
+        // primaryHit, reuse pSurface for materials, then the cached reflection direction.
+        // Its color-only view avoids feedback while materials read the separate depth.
+        const primary = { ...primaryRay, uHitData: s.primaryHit, uHitDepth: s.primaryDepth };
+        pass(towers, s.primarySurface, primary, true);
+        pass(street, s.primarySurface, primary);
         // Ground does not use primary object RGB, so its surface texel can hold a shared ray.
         // Non-ground object texels retain their color and the explicit inactive alpha sentinel.
-        pass(reflection, s.primaryColor, { uPrimaryHit: s.pSurface, uPrimaryDepth: s.primaryDepth });
+        pass(reflection, s.primarySurface, { uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth });
         // Reflected rays use their own exact hit records; all stages share the cached direction.
-        const reflectedRay = { uPassMode: 1, uReflectionRay: s.primaryHit };
+        const reflectedRay = { uPassMode: 1, uReflectionRay: s.pSurface };
         pass(movers, s.reflectionColor, reflectedRay);
         pass(portal, s.reflectionSurface, { ...reflectedRay, uTraceAux: s.reflectedHit });
-        pass(trace, s.reflection, { ...reflectedRay, uTraceAux: s.rSurface });
-        pass(fire, s.reflectionSurface, { ...reflectedRay, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth });
-        const reflected = { ...reflectedRay, uHitData: s.rSurface, uHitDepth: s.reflectedDepth };
-        pass(towers, s.reflectionColor, reflected, true);
-        pass(street, s.reflectionColor, reflected);
+        pass(trace, s.reflectionColor, { ...reflectedRay, uTraceAux: s.rSurface });
+        pass(staticLight, s.reflection, { ...reflectedRay, uTraceGeometry: s.reflectedHit });
+        pass(fire, s.reflectionColor, { ...reflectedRay, uHitData: s.rSurface, uHitDepth: s.reflectedDepth });
+        const reflected = { ...reflectedRay, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth };
+        pass(towers, s.reflectionSurface, reflected, true);
+        pass(street, s.reflectionSurface, reflected);
         gfx.bindTarget(output); gl.disable(gl.DEPTH_TEST); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, y, w, h);
-        gfx.fullscreen(compose, { ...band, uReflectionRay: s.primaryHit, uPrimaryHit: s.pSurface, uPrimaryDepth: s.primaryDepth,
-          uReflectedHit: s.rSurface, uReflectedDepth: s.reflectedDepth, uPrimarySurface: s.primaryHit, uReflectionSurface: s.reflectedHit });
+        gfx.fullscreen(compose, { ...band, uReflectionRay: s.pSurface, uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth,
+          uReflectedHit: s.reflectedHit, uReflectedDepth: s.reflectedDepth, uPrimarySurface: s.pSurface, uReflectionSurface: s.rSurface });
       }
     } finally {
       // Full city drawing owns fullscreen state; callers resume at the complete output target.
