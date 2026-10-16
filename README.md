@@ -40,6 +40,14 @@ during shader preparation around 2.95 seconds. Several city programs are pending
 does not identify which compiler job caused the reset. City programs now prepare one at a time,
 with later sources queued, and the moving-fire calculation is invoked once after tracing instead
 of through repeated early-return calls. Full graphics remain; Windows stability still needs confirmation.
+A fresh versioned report now isolates the sole active `city:trace` during preparation, with
+context loss after about 1.85 seconds and all other city programs still queued. No city textures
+or draws have started. The trace now carries only distance and primitive ID through its
+intersections and omits unused normal/material calculations. A combined mask removes an
+inner street-piece loop. The four other city shader sources remain identical; all tracing
+budgets, geometry and glow rules are retained. Nine displayed scene captures are identical to
+the prior release, and 850 old/new GPU rays match distance, ID and glow exactly. Local full-game
+startup/flight and fenced runtime drawing pass; Radeon/Direct3D11 confirmation is still needed.
 The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
 building materials, street materials and composition. Reflected rays are computed once and
 cached so tracing and shading use the same direction. Each submitted fragment source is under
@@ -57,7 +65,7 @@ runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.ht
 checks the remaining failure: generate it in the development repository with
 `node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
 It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
-For a fresh test use [diagnostic 2, build 6df5dfa](https://julian-magnusson.github.io/game/graphics-check-6df5dfa1fe73.html).
+For a fresh test use [diagnostic 2, build 3ae951a](https://julian-magnusson.github.io/game/graphics-check-3ae951ad9c84.html).
 Its unique address, visible build and ISO run time distinguish the new attempt from an older
 loaded page or report. Copy and Save become available after completion or interruption;
 clipboard failure selects the report and explains how to copy it manually.

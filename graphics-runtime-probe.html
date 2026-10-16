@@ -1,6 +1,6 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neon Flight graphics check 6df5dfa</title>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neon Flight graphics check 3ae951a</title>
 <style>body{font:16px system-ui;background:#111921;color:#f2f6ff;max-width:52rem;margin:2rem auto;padding:1rem}button,select,textarea{font:inherit}button,select{padding:.6rem;margin:.3rem}textarea{box-sizing:border-box;display:block;width:100%;height:24rem}canvas{display:block;width:320px;max-width:100%;height:auto;margin:1rem 0;background:#000;image-rendering:pixelated}#status{min-height:3rem}</style>
-<h1>Graphics runtime probe</h1><p id="build">Diagnostic 2 · Build <strong>6df5dfa</strong></p><p>This checks the game's actual drawing stages one at a time. It runs once after you press Run. Nothing is sent automatically.</p>
+<h1>Graphics runtime probe</h1><p id="build">Diagnostic 2 · Build <strong>3ae951a</strong></p><p>This checks the game's actual drawing stages one at a time. It runs once after you press Run. Nothing is sent automatically.</p>
 <label>Drawing size <select id="size"><option>64x36</option><option>320x180</option></select></label><button id="run">Run</button>
 <p id="attempt" hidden></p><p id="status" role="status">Ready. Choose a size and press Run.</p><canvas id="c" width="64" height="36"></canvas>
 <button id="copy" disabled>Copy report</button><button id="save" disabled>Save report</button><span id="copy-note" role="status"></span><textarea id="report" readonly aria-label="Graphics runtime report"></textarea>
@@ -7867,6 +7867,402 @@ GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunn
 
 ;(function () {
 'use strict';
+// ---- src/render/city-trace.js ----
+// Compact trace geometry intentionally mirrors the canonical intersections in city.js and
+// collapse-portal.js. Keep root math, branch order, primitive IDs and glow occlusion identical;
+// the packet equivalence test compares this path with those canonical functions on the GPU.
+// Carrying only distance and source ID removes material/normal state before driver translation.
+const GLSL = `
+struct TraceHit { float t; int primitive; };
+
+vec2 cityTraceSlab(vec3 ro, vec3 inv, vec3 bmin, vec3 bmax) {
+  vec3 t0 = (bmin - ro) * inv, t1 = (bmax - ro) * inv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  float tn = max(max(tmin.x, tmin.y), tmin.z), tf = min(min(tmax.x, tmax.y), tmax.z);
+  return vec2(tn, tf);
+}
+
+float cityTraceBox(vec3 ro, vec3 inv, vec3 bmin, vec3 bmax) {
+  vec2 s = cityTraceSlab(ro, inv, bmin, bmax);
+  return s.x <= s.y && s.y > 0.0 ? max(s.x, 0.0) : 1e9;
+}
+
+float cityTraceEllipsoid(vec3 ro, vec3 rd, vec3 lo, vec3 hi) {
+  vec3 c = 0.5 * (lo + hi), r = 0.5 * (hi - lo);
+  vec3 q = (ro - c) / r, d = rd / r;
+  float a = dot(d, d), b = dot(q, d), disc = b * b - a * (dot(q, q) - 1.0);
+  if (disc < 0.0) return 1e9;
+  float t = (-b - sqrt(disc)) / a;
+  if (t < 0.0) t = (-b + sqrt(disc)) / a;
+  if (t < 0.0) return 1e9;
+  return t;
+}
+
+float cityTraceCapsule(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape) {
+  bool alongX = shape < 3.5;
+  float radius = 0.5 * (alongX ? hi.z - lo.z : hi.x - lo.x);
+  vec3 a = (lo + hi) * 0.5, b = a;
+  a.y = lo.y + radius; b.y = hi.y - radius;
+  if (shape < 5.5) {
+    bool positive = shape < 2.5 || (shape > 3.5 && shape < 4.5);
+    if (alongX) { a.x = positive ? lo.x + radius : hi.x - radius; b.x = positive ? hi.x - radius : lo.x + radius; }
+    else { a.z = positive ? lo.z + radius : hi.z - radius; b.z = positive ? hi.z - radius : lo.z + radius; }
+  }
+  vec3 ba = b - a, oa = ro - a;
+  float rr = dot(rd, rd), baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), hit = 1e9;
+  float A = baba * rr - bard * bard, B = baba * dot(rd, oa) - baoa * bard;
+  float C = baba * (dot(oa, oa) - radius * radius) - baoa * baoa, disc = B * B - A * C;
+  if (A > 1e-6 && disc >= 0.0) {
+    float root = sqrt(disc);
+    for (int j = 0; j < 2; j++) {
+      float t = (-B + (j == 0 ? -root : root)) / A, y = baoa + t * bard;
+      if (t >= 0.0 && t < hit && y >= 0.0 && y <= baba) {
+        hit = t;
+        // A valid entry on the cylinder is already the first surface. From inside its body,
+        // a valid exit is first too; avoid tracing the caps across most trunk pixels.
+        if (j == 0 || (baoa >= 0.0 && baoa <= baba)) return hit;
+      }
+    }
+  }
+  for (int cap = 0; cap < 2; cap++) {
+    vec3 centre = cap == 0 ? a : b, oc = ro - centre;
+    float B = dot(oc, rd), disc = B * B - rr * (dot(oc, oc) - radius * radius);
+    if (disc < 0.0) continue;
+    float root = sqrt(disc);
+    for (int j = 0; j < 2; j++) {
+      float t = (-B + (j == 0 ? -root : root)) / rr, y = baoa + t * bard;
+      if (t >= 0.0 && t < hit && (cap == 0 ? y <= 0.0 : y >= baba)) {
+        hit = t;
+      }
+    }
+  }
+  return hit;
+}
+
+float cityTracePortalBar(vec3 ro,vec3 rd,vec3 a,vec3 b,float radius) {
+  vec3 ba=b-a,oa=ro-a;
+  float baba=dot(ba,ba),bard=dot(ba,rd),baoa=dot(ba,oa),rr=dot(rd,rd),
+    A=baba*rr-bard*bard,B=baba*dot(rd,oa)-baoa*bard,C=baba*(dot(oa,oa)-radius*radius)-baoa*baoa,
+    D=B*B-A*C,hit=1e9;
+  if(A>1e-7&&D>=0.0)for(int side=0;side<2;side++) {
+    float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A,s=baoa+t*bard;
+    if(t>0.001&&t<hit&&s>=0.0&&s<=baba) {hit=t;}
+  }
+  for(int cap=0;cap<2;cap++) {
+    vec3 c=cap==0?a:b,q=ro-c;float B=dot(q,rd),D=B*B-rr*(dot(q,q)-radius*radius);
+    if(D<0.0)continue;
+    float t=(-B-sqrt(D))/rr;
+    if(t>0.001&&t<hit) {hit=t;}
+  }
+  return hit;
+}
+
+float cityTracePortalRock(vec3 ro,vec3 rd,vec3 centre,vec3 radii) {
+  vec3 q=(ro-centre)/radii,d=rd/radii;
+  float A=dot(d,d),B=dot(q,d),C=dot(q,q)-1.0,D=B*B-A*C,hit=1e9;
+  if(D<0.0)return hit;
+  for(int side=0;side<2;side++) {
+    float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A;
+    vec3 p=ro+rd*t;
+    if(t>0.001&&t<hit&&!portalVoid(p)) {hit=t;}
+  }
+  return hit;
+}
+
+float cityTracePortalPeak(vec3 ro,vec3 rd,int index) {
+  float near=-1e9,far=1e9;
+  for(int face=0;face<uCollapsePeakFaces[index];face++) {
+    vec4 plane=uCollapsePeakPlanes[index*${GAME.collapsePortalRender.PEAK_FACES}+face];
+    float value=dot(plane.xyz,ro)+plane.w,speed=dot(plane.xyz,rd);
+    if(abs(speed)<1e-7) {if(value>0.0)return 1e9;continue;}
+    float t=-value/speed;
+    if(speed<0.0&&t>near) {near=t;}
+    if(speed>0.0&&t<far) {far=t;}
+    if(near>far)return 1e9;
+  }
+  if(near>0.001&&!portalVoid(ro+rd*near)) {return near;}
+  if(far>0.001&&!portalVoid(ro+rd*far)) {return far;}
+  return 1e9;
+}
+
+float cityTracePortal(vec3 ro,vec3 rd,out int primitive) {
+  float hit=1e9;primitive=0;
+  if(uCollapsePortalActive<0.5)return hit;
+  for(int i=0;i<uCollapseRockCount;i++) {
+    float t=cityTracePortalRock(ro,rd,uCollapseRockCentre[i],uCollapseRockRadii[i]);
+    if(t<hit) {hit=t;primitive=i;}
+  }
+  for(int i=0;i<uCollapsePeakCount;i++) {
+    float t=cityTracePortalPeak(ro,rd,i);
+    if(t<hit) {hit=t;primitive=12+i;}
+  }
+  vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
+  float A=dot(d.xy,d.xy),B=dot(q.xy,d.xy),C=dot(q.xy,q.xy)-uCollapsePortalOrigin.w*uCollapsePortalOrigin.w,D=B*B-A*C;
+  if(A>1e-7&&D>=0.0)for(int side=0;side<2;side++) {
+    float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A,s=q.z+d.z*t;
+    if(t>0.001&&t<hit&&s>=0.0&&s<=uCollapsePortalAxis.w) {
+      hit=t;primitive=18;
+    }
+  }
+  for(int i=0;i<uCollapseBarCount;i++) {
+    float t=cityTracePortalBar(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w);
+    if(t>0.001&&t<hit) {hit=t;primitive=19+i;}
+  }
+  if(abs(d.z)>1e-7) {
+    float t=(-0.08-q.z)/d.z;vec2 radial=q.xy+d.xy*t;
+    float r=length(radial);
+    if(t>0.001&&t<hit&&r>=uCollapsePortalOrigin.w&&r<=uCollapsePortalOrigin.w+1.2) {
+      hit=t;primitive=43;
+    }
+  }
+  return hit;
+}
+
+float cityTraceSewer(vec3 ro, vec3 rd) {
+  float hit = 1e9;
+  vec2 q = ro.xz - uCollapseHole.xy;
+  float A = dot(rd.xz, rd.xz), B = dot(q, rd.xz);
+  float C = dot(q, q) - uCollapseHole.z * uCollapseHole.z, D = B * B - A * C;
+  if (A > 1e-7 && D >= 0.0) for (int i = 0; i < 2; i++) {
+    float t = (-B + (i == 0 ? -sqrt(D) : sqrt(D))) / A;
+    float y = ro.y + rd.y * t;
+    if (t > 0.0 && t < hit && y < 0.001 && y > uCollapseHole.w) {
+      hit = t;
+    }
+  }
+  if (rd.y < -1e-5) {
+    float t = (uCollapseHole.w - ro.y) / rd.y;
+    if (t > 0.0 && t < hit && length(q + rd.xz * t) < uCollapseHole.z) { hit = t; }
+  }
+  return hit;
+}
+
+TraceHit cityTraceMoving(vec3 ro, vec3 rd, float limit) {
+  TraceHit hit; hit.t = min(limit, FAR); hit.primitive = citySpecialId(0);
+  for (int group = 0; group < uCollapseMoverCount; group++) {
+    vec4 bound = uCollapseMoverBounds[group];
+    vec3 delta = bound.xyz - ro;
+    float along = dot(delta, rd);
+    if (dot(delta, delta) - along * along > bound.w * bound.w || along + bound.w < 0.0 || along - bound.w > hit.t) continue;
+    vec4 pivot = texelFetch(uCollapseMotion, ivec2(group, 0), 0);
+    vec4 turn = texelFetch(uCollapseMotion, ivec2(group, 1), 0);
+    vec4 object = texelFetch(uCollapseMotion, ivec2(group, 2), 0);
+    vec3 localRo = collapseRotate(ro - pivot.xyz + vec3(0.0, pivot.w, 0.0), turn, true) + pivot.xyz;
+    vec3 localRd = collapseRotate(rd, turn, true);
+    vec3 inv = 1.0 / mix(localRd, vec3(1e-6), lessThan(abs(localRd), vec3(1e-6)));
+    for (int part = 0; part < int(object.w); part++) {
+      ivec2 at = ivec2(group * 16 + part, 0);
+      vec4 lo = texelFetch(uCollapseSolids, at, 0), hi = texelFetch(uCollapseSolids, at + ivec2(0, 1), 0);
+      float t = lo.w > 1.5 ? cityTraceCapsule(localRo, localRd, lo.xyz, hi.xyz, lo.w)
+        : lo.w > 0.5 ? cityTraceEllipsoid(localRo, localRd, lo.xyz, hi.xyz)
+          : cityTraceBox(localRo, inv, lo.xyz, hi.xyz);
+      if (t >= hit.t) continue;
+      hit.t = t; hit.primitive = cityMovingId(group, part, int(hi.w));
+    }
+  }
+  return hit;
+}
+
+TraceHit cityTraceCloser(TraceHit fixedHit, TraceHit movingHit) {
+  if (movingHit.primitive != citySpecialId(0) && movingHit.t < fixedHit.t) return movingHit;
+  return fixedHit;
+}
+
+void cityTraceMovingFire(float nearestT, vec3 ro, vec3 rd, float pixAngle, inout vec3 glow) {
+  // Moving flames are resolved after the nearest static/moving surface is known, so they
+  // cling to the rotated crown without shining through a nearer intact building.
+  for (int group = 0; group < uCollapseMoverCount; group++) {
+    vec4 object = texelFetch(uCollapseMotion, ivec2(group, 2), 0);
+    if (object.y < 0.5) continue;
+    vec3 crown = texelFetch(uCollapseMotion, ivec2(group, 3), 0).xyz;
+    glow += collapseFire(ro, rd, crown, crown.y, nearestT, pixAngle);
+  }
+}
+
+TraceHit cityTraceNearest(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
+  TraceHit h; h.t = FAR; h.primitive = citySpecialId(0);
+  vec3 inv = 1.0 / rd;
+  float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
+  if (uCollapsePortalActive > 0.5 && tGround <= 0.0) tGround = 1e9;
+  bool shaft = false;
+  if (uCollapsePortalActive > 0.5 && tGround > 0.0 && portalVoid(ro + rd * tGround)) tGround = 1e9;
+  if (uCollapsePortalActive < 0.5 && uCollapseActive > 0.5 && ((tGround > 0.0 && length((ro + rd * tGround).xz - uCollapseHole.xy) < uCollapseHole.z)
+    || (ro.y < 0.0 && length(ro.xz - uCollapseHole.xy) < uCollapseHole.z))) {
+    shaft = true; tGround = cityTraceSewer(ro, rd);
+  }
+  TraceHit moved = cityTraceMoving(ro, rd, tGround);
+  if (uCollapsePortalActive > 0.5) {
+    int primitive;float t=cityTracePortal(ro,rd,primitive);
+    if(t>0.0&&t<moved.t) {
+      moved.t=t; moved.primitive = int(uN)*int(uN)*32+1536+primitive;
+    }
+  }
+  float lowest=uCollapsePortalActive>0.5?uCollapsePortalOrigin.y+uCollapsePortalAxis.y*uCollapsePortalAxis.w-uCollapsePortalOrigin.w
+    :uCollapseActive>0.5?uCollapseHole.w:-1.0;
+  vec2 span = cityTraceSlab(ro, inv, vec3(0.0,lowest,0.0), vec3(uSize, uMaxH, uSize));
+  if (span.x <= span.y && span.y > 0.0) {
+    float t = max(span.x, 0.0);
+    vec3 p = ro + rd * (t + 1e-3);
+    ivec2 cell = clamp(ivec2(floor(p.xz / uCell)), ivec2(0), ivec2(int(uN) - 1));
+    vec2 stepv = sign(rd.xz);
+    vec2 tDelta = abs(uCell * inv.xz);
+    vec2 tMax = ((vec2(cell) + max(stepv, 0.0)) * uCell - ro.xz) * inv.xz;
+    for (int i = 0; i < maxCells; i++) {
+      float tExit = min(tMax.x, tMax.y);
+      vec4 A = texelFetch(uBoxA, cell, 0);
+      vec4 moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
+      if (moveMap.x > 0.5) A = vec4(0.0);
+      float fall = collapseFall(cell);
+      float tStreet = 1e9;
+      int streetPart = 0;
+      // High rays skip all street data; lower rays fetch bounds only in occupied cells.
+      float lowY = min(ro.y + rd.y * t, ro.y + rd.y * min(tExit, span.y));
+      if (lowY < uStreetMaxH && t < 640.0) {
+        vec4 info = texelFetch(uStreetInfo, cell, 0);
+        if (lowY < info.y) for (int part = 0; part < int(info.x); part++) {
+          if (movingStreetPart(moveMap, part)) continue;
+          ivec2 at = cell + ivec2(0, part * 2 * int(uN));
+          vec4 P = texelFetch(uStreet, at, 0), Q = texelFetch(uStreet, at + ivec2(0, int(uN)), 0);
+          vec3 lo = vec3(P.x, Q.x, P.y), hi = vec3(P.z, Q.y, P.w);
+          if (Q.w > 1.5) {
+            vec2 bounds = cityTraceSlab(ro, inv, lo, hi);
+            if (bounds.x > bounds.y || bounds.y < 0.0 || bounds.x > tStreet) continue;
+          }
+          float tp = Q.w > 1.5 ? cityTraceCapsule(ro, rd, lo, hi, Q.w)
+            : Q.w > 0.5 ? cityTraceEllipsoid(ro, rd, lo, hi) : cityTraceBox(ro, inv, lo, hi);
+          if (tp < tStreet) { tStreet = tp; streetPart = part; }
+        }
+      }
+      if (uCollapseActive > 0.5 && t < 440.0 && max(moveMap.y, max(moveMap.z, moveMap.w)) < 0.5) {
+        vec4 info = texelFetch(uStreetInfo, cell, 0);
+        glow += collapseFire(ro, rd, vec3((vec2(cell) + 0.5).x * uCell, 0.0, (vec2(cell) + 0.5).y * uCell),
+          info.w, min(tExit, min(tGround, tStreet)), pixAngle);
+      }
+      float tBridge = 1e9;
+      int bridgePart = 0;
+      for (int j = 0; j < uBridgePieceLimit; j++) {
+        vec4 C = j == 0 ? texelFetch(uBridgeA, cell, 0) : texelFetch(uBridgeB, cell, 0);
+        if (moveMap.x > 0.5) continue;
+        C.y -= fall;
+        if (abs(C.w) < 0.5) continue;
+        vec2 cc = (vec2(cell) + 0.5) * uCell;
+        bool alongZ = abs(C.w) < 1.5;
+        float face = (alongZ ? cc.x : cc.y) + C.z;
+        float end = (alongZ ? cc.x : cc.y) + sign(C.w) * uCell * 0.5;
+        float along = (alongZ ? cc.y : cc.x) + C.x;
+        vec3 lo = alongZ ? vec3(min(face, end), C.y - 0.75, along - 0.7)
+          : vec3(along - 0.7, C.y - 0.75, min(face, end));
+        vec3 hi = alongZ ? vec3(max(face, end), C.y + 0.75, along + 0.7)
+          : vec3(along + 0.7, C.y + 0.75, max(face, end));
+        float tp = cityTraceBox(ro, inv, lo, hi);
+        if (tp < tBridge) { tBridge = tp; bridgePart = j; }
+      }
+      if (A.z > A.x) {
+        vec4 B = texelFetch(uBoxB, cell, 0);
+        bool hasProp = B.w > 0.5;
+        int towerPart = 0;
+        float tb = 1e9;
+        // Up to three pieces, already assembled from the collision geometry at upload time.
+        // Only composite buildings fetch extra bounds; no per-ray architecture/rotation work.
+        for (int part = 0; part < int(B.z); part++) {
+          vec4 P = A, Q = B;
+          if (part > 0) {
+            ivec2 at = cell + ivec2(0, (part - 1) * 2 * int(uN));
+            P = texelFetch(uStructure, at, 0);
+            Q = texelFetch(uStructure, at + ivec2(0, int(uN)), 0);
+          }
+          Q.xy -= vec2(fall);
+          float tPiece = cityTraceBox(ro, inv, vec3(P.x, Q.x, P.y), vec3(P.z, Q.y, P.w));
+          if (tPiece < tb) {
+            tb = tPiece;
+            towerPart = part;
+          }
+        }
+        if (hasProp) {
+          vec4 P = texelFetch(uPropA, cell, 0), Q = texelFetch(uPropB, cell, 0);
+          Q.xy -= vec2(fall);
+          vec2 pc = (vec2(cell) + 0.5) * uCell + P.xy;
+          float tp = 1e9; int propPart = 0;
+          if (Q.z > 2.5) {
+            bool alongZ = P.w > P.z;
+            float alongHalf = alongZ ? P.w : P.z;
+            float depthHalf = alongZ ? P.z : P.w;
+            float py = 0.5 * (Q.x + Q.y);
+            float spread = (Q.y - Q.x) * 0.24;
+            float railHalf = (Q.y - Q.x) * 0.1;
+            float supportHalf = (Q.y - Q.x) * 0.38;
+            float outer = (alongZ ? pc.x : pc.y) - Q.w * (depthHalf - 0.17);
+            for (int j = 0; j < uPropPieceLimit; j++) {
+              vec3 lo, hi;
+              if (j < 2) {
+                float cy = py + (j == 0 ? -spread : spread);
+                lo = alongZ ? vec3(outer - 0.17, cy - railHalf, pc.y - alongHalf)
+                  : vec3(pc.x - alongHalf, cy - railHalf, outer - 0.17);
+                hi = alongZ ? vec3(outer + 0.17, cy + railHalf, pc.y + alongHalf)
+                  : vec3(pc.x + alongHalf, cy + railHalf, outer + 0.17);
+              } else {
+                float offset = (j == 2 ? -1.0 : 1.0) * (alongHalf - 0.85);
+                lo = alongZ ? vec3(pc.x - depthHalf, py - supportHalf, pc.y + offset - 0.22)
+                  : vec3(pc.x + offset - 0.22, py - supportHalf, pc.y - depthHalf);
+                hi = alongZ ? vec3(pc.x + depthHalf, py + supportHalf, pc.y + offset + 0.22)
+                  : vec3(pc.x + offset + 0.22, py + supportHalf, pc.y + depthHalf);
+              }
+              float tPiece = cityTraceBox(ro, inv, lo, hi);
+              if (tPiece < tp) { tp = tPiece; propPart = j; }
+            }
+          } else {
+            tp = cityTraceBox(ro, inv, vec3(pc.x - P.z, Q.x, pc.y - P.w),
+              vec3(pc.x + P.z, Q.y, pc.y + P.w));
+          }
+          if (tp < tb && tp < tBridge && tp < tStreet && tp < tGround && tp < 1e8) {
+            h.t = tp; h.primitive = cityStaticId(cell,3+propPart);
+            return cityTraceCloser(h, moved);
+          }
+        }
+        if (tb < tBridge && tb < tStreet && tb < tGround && tb < 1e8) {
+          h.t = tb; h.primitive = cityStaticId(cell,towerPart);
+          return cityTraceCloser(h, moved);
+        }
+      } else {
+        // Empty cell: a booster's light column stands wholly inside it, so only the ground can hide it.
+        vec4 pad = texelFetch(uPads, cell, 0);
+        if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
+      }
+      if (tStreet < tBridge && tStreet < tGround && tStreet < 1e8) {
+        h.t = tStreet; h.primitive = cityStaticId(cell,9+streetPart);
+        return cityTraceCloser(h, moved);
+      }
+      if (tBridge < tGround && tBridge < 1e8) {
+        h.t = tBridge; h.primitive = cityStaticId(cell,7+bridgePart);
+        return cityTraceCloser(h, moved);
+      }
+      if (moved.primitive != citySpecialId(0) && moved.t <= tExit) return cityTraceCloser(h, moved);
+      if (tGround <= tExit) break;
+      if (tExit > span.y || tExit > FAR) break;
+      t = tExit;
+      if (tMax.x < tMax.y) { tMax.x += tDelta.x; cell.x += int(stepv.x); }
+      else { tMax.y += tDelta.y; cell.y += int(stepv.y); }
+      if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(int(uN))))) break;
+    }
+  }
+  if (tGround >= 0.0 && tGround < FAR) { h.t = tGround; h.primitive = cityStaticId(ivec2(floor((ro.xz + rd.xz * tGround) / uCell)),shaft?26:25); }
+  return cityTraceCloser(h, moved);
+}
+
+TraceHit cityTracePacket(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
+  rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
+  TraceHit near = cityTraceNearest(ro, rd, maxCells, pixAngle, glow);
+  cityTraceMovingFire(near.t, ro, rd, pixAngle, glow);
+  return near;
+}
+`;
+
+GAME.cityTrace = { GLSL };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/city-passes.js ----
 // The full city picture, divided into small programs. Canonical material/geometry functions
 // remain in city.js; selecting their dependency closures prevents duplicate visual definitions.
@@ -7879,7 +8275,7 @@ function functionParts(source) {
   // the parser. GLSL has no string literals in these bodies.
   const masked = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, comment => comment.replace(/[^\n]/g, ' '));
   const definitions = [];
-  const header = /^(?:(?:lowp|mediump|highp)\s+)?(?:float|vec[234]|ivec[234]|uvec[234]|bool|int|uint|Hit|void|mat[234])\s+(\w+)\s*\([^;{}]*\)\s*\{/gm;
+  const header = /^(?:(?:lowp|mediump|highp)\s+)?(?:float|vec[234]|ivec[234]|uvec[234]|bool|int|uint|Hit|TraceHit|void|mat[234])\s+(\w+)\s*\([^;{}]*\)\s*\{/gm;
   let match;
   while ((match = header.exec(masked))) {
     let end = header.lastIndex, depth = 1;
@@ -8009,10 +8405,10 @@ void main() {
   bool reflected = uPassMode > 0;
   CityRay ray = cityPrimary(rd); if (reflected) ray = cityReflection(pixel,rd,pixAngle);
   vec3 glow = vec3(0.0);
-  Hit h; h.kind=SKY;h.t=FAR;h.primitive=citySpecialId(0);
+  TraceHit h; h.t=FAR;h.primitive=citySpecialId(0);
   if (ray.enabled) {
     vec3 origin = reflected ? ray.origin+vec3(0.0,0.01,0.0) : ray.origin;
-    h=trace(origin,ray.direction,reflected?uTraceCells.y:uTraceCells.x,pixAngle,glow);
+    h=cityTracePacket(origin,ray.direction,reflected?uTraceCells.y:uTraceCells.x,pixAngle,glow);
   }
   fragColor=vec4(glow,float(h.primitive));
   gl_FragDepth=h.t*(1.0/65536.0);
@@ -8197,10 +8593,12 @@ Hit cityResolveStreet(Hit h,vec3 ro,vec3 rd) {
 function sources(canonical) {
   // Include the shared library in the same reachability pass instead of prepending all of
   // its unused functions separately to every shader. The standard uniforms stay in glsl.js.
-  const { select } = functionParts(GAME.glsl.LIB + '\n' + canonical + '\n' + SOURCE_RECORDS);
+  const shared = GAME.glsl.LIB + '\n' + canonical + '\n' + SOURCE_RECORDS;
+  const { select } = functionParts(shared);
+  const traceSelect = functionParts(shared + '\n' + GAME.cityTrace.GLSL).select;
   const reflectionRoots = ['groundGloss', 'rainRipple', 'noise', 'saturate', 'cityDecodeId'];
   const result = {
-    trace: select(['trace', 'cityDecodeId']) + BAND + REFLECTION + TRACE_MAIN,
+    trace: traceSelect(['cityTracePacket', 'cityDecodeId']) + BAND + REFLECTION + TRACE_MAIN,
     towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveTower'])
       + BAND + REFLECTION + READ_HIT + TOWER_MAIN,
     street: select(['shadeStreet', 'shadePortal', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveStreet'])
@@ -8517,11 +8915,10 @@ vec3 surfaceWorldVector(Hit h, vec3 v) {
 }
 
 bool movingStreetPart(vec4 map, int part) {
-  for (int i = 1; i < 4; i++) {
-    int mask = int(map[i]) & 65535;
-    if ((mask & (1 << part)) != 0) return true;
-  }
-  return false;
+  // Each channel is a 16-bit piece mask. Combine them before testing this part,
+  // avoiding another loop and dynamic vector index inside the per-cell street walk.
+  int mask = (int(map.y) | int(map.z) | int(map.w)) & 65535;
+  return (mask & (1 << part)) != 0;
 }
 
 Hit closerHit(Hit fixedHit, Hit movingHit) {
@@ -9837,4 +10234,4 @@ GAME.post = { init, defaults, present, status };
 })();
 
 return GAME;
-},{"diagnosticVersion":2,"revision":"6df5dfa1fe733f8d33e87d003c2edc8af62fffe9","sourceSha256":"8e90438af2e486a16171be07e4e4b409787eabc19b81ba9f67102b729641fe1a"});</script>
+},{"diagnosticVersion":2,"revision":"3ae951ad9c849afd37463d38f66a14c7970d54eb","sourceSha256":"42af4c84984e1e9a03e4d089c561e79da2a13920c16366d6abd3c5e5213b1ab1"});</script>
