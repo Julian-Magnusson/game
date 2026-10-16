@@ -62,18 +62,27 @@ distance writer are ready, with all later city programs queued and no world reso
 Removing fragment-depth output did not resolve this failure. The player reports that the
 smaller graphics option runs without freezing; full graphics remain unresolved on this PC.
 
-For the current investigation use [Diagnostic 3, build d6001ce — lighting candidate](https://julian-magnusson.github.io/game/graphics-light-check-d6001ce6a4ab.html?variant=state-machine).
+The fresh Windows [Diagnostic 3, build d6001ce — lighting state machine](https://julian-magnusson.github.io/game/graphics-light-check-d6001ce6a4ab.html?variant=state-machine)
+prepares the new light in 233.7 ms, with no context loss and verified source identity on the
+reported RX 5700 XT / ANGLE Direct3D11 backend.
 This separate page compiles exactly one selected program when **Run once** is pressed, without
 generating a city or drawing frames. It never retries automatically. Copy/Save reports include
 the selected source hash, transformations, build and run time; no report controls are added to
-the game's menu. Individual selections also isolate beam, fire and traversal work, and the full
-control is byte-identical to the failing production light program.
-The candidate rewrites lighting into seven ordered phases per visited cell. Its exact source
-(`6d9cd023`) passes 871 canonical GPU ray comparisons and produces nine PNG-identical local
-scene captures, while leaving the other nine production program sources unchanged. All ten
-diagnostic selections prepare locally; simulated loss and unavailable WebGL stop with cached,
-copyable reports. The diagnostic does not change the game. Windows compilation must be verified
-before adopting the candidate; these local checks do not establish a fix for AMD/Direct3D11.
+the game's menu. Individual selections also isolate beam, fire and traversal work; the full
+control retains the failing historical `a894c3b` light source.
+The full game now uses the exact light source that passed on Windows: 11,858 bytes / `6d9cd023` /
+SHA-256 `f1894d61438178141d927db6c3866274c92dcc3bbd73c666fa19cc47a0d279ce`.
+It rewrites the unchanged light math into seven ordered phases per visited cell. All other
+nine city program sources, tracing budgets, detail, textures and draw counts remain unchanged.
+The exact candidate passes 871 canonical GPU ray comparisons and produces nine PNG-identical
+local scene captures. Full-HD rendering, all seven band seams, transactional resizing/failure
+cleanup and complete-game startup/flight also pass locally. The 1080p PNG matches the preceding
+release. Windows and Mac browser profiles upload identical shaders, and interrupted reports
+remain copyable without driver reads. These local profiles use Intel/ANGLE OpenGL.
+The standalone test establishes Windows compilation of this one program; full-game Windows
+startup, drawing and flight still need player verification. The diagnostic page itself never
+changes the game or retries automatically. Its controls remain pinned to historical sources
+after the production light is adopted.
 The full city renderer uses ten separate programs: six intersection/light/distance stages, cached
 reflected-ray preparation, building materials, street materials and composition. Fragment sources
 range from 600 to 35,719 bytes. Eighteen draws per horizontal band reuse four RGBA32F and two R32F
@@ -88,7 +97,7 @@ runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.ht
 checks the remaining failure: generate it in the development repository with
 `node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
 It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
-For a fresh test use [diagnostic 2, build a894c3b](https://julian-magnusson.github.io/game/graphics-check-a894c3b53398.html).
+For a fresh full-pipeline test use [diagnostic 2, build f0a4e89](https://julian-magnusson.github.io/game/graphics-check-f0a4e8916c2a.html).
 Its unique address, visible build and ISO run time distinguish the new attempt from an older
 loaded page or report. Copy and Save become available after completion or interruption;
 clipboard failure selects the report and explains how to copy it manually.
