@@ -10057,6 +10057,7 @@ class Program {
 const FORMATS = {
   rgba16f: [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT],
   rgba32f: [gl.RGBA32F, gl.RGBA, gl.FLOAT],
+  r32f: [gl.R32F, gl.RED, gl.FLOAT],
   rg16f: [gl.RG16F, gl.RG, gl.HALF_FLOAT],
   r16f: [gl.R16F, gl.RED, gl.HALF_FLOAT],
   rgba8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE],
@@ -13007,6 +13008,55 @@ vec4 cityTraceStatic(vec3 ro, vec3 rd, int maxCells, vec4 aux) {
   return vec4(h.t, cityTracePack(h.primitive, cells), lastStreet, tGround);
 }
 
+// This is canonical overlay.beamLight with its two wall roots written explicitly.
+// Keep the same scalar expressions, skip predicate and near-then-far additions;
+// removing the nested fixed loop avoids expanding it inside the light replay loop.
+vec3 cityTraceBeamLight(vec3 ro, vec3 rd, vec2 centre, vec4 pad, float tMax, float pixAngle) {
+  vec2 o = ro.xz - centre;
+  float R = pad.y, H = pad.z;
+  float a = max(dot(rd.xz, rd.xz), 1e-6), b = dot(o, rd.xz);
+  float disc = b * b - a * (dot(o, o) - R * R);
+  if (disc <= 0.0) return vec3(0.0);
+  float sq = sqrt(disc);
+  float tIn = (-b - sq) / a, tOut = (-b + sq) / a;
+  float t0 = max(tIn, 0.0), t1 = min(tOut, tMax);
+  if (t1 <= t0) return vec3(0.0);
+  float imp = sqrt(max(dot(o, o) - b * b / a, 0.0)) / R;
+  float y = ro.y + rd.y * 0.5 * (t0 + t1);
+  float fade = smoothstep(H, H * 0.3, y) * smoothstep(-1.0, 2.0, y);
+  float chord = min((t1 - t0) / (2.0 * R), 1.5);
+  float outside = smoothstep(0.5, 1.4, length(o) / R);
+  vec3 col = (uBoost * (0.07 + 0.55 * exp(-imp * imp * 14.0)) + mix(uBoost, vec3(1.0), 0.5) * exp(-imp * imp * 90.0) * 0.8) * chord * fade * outside;
+  {
+    float ts = tIn;
+    if (!(ts <= 0.0 || ts >= tMax)) {
+      float ys = ro.y + rd.y * ts;
+      float d = (fract((ys - uTime * 40.0) / 32.0 + pad.w) - 0.5) * 32.0;
+      float pix = ts * pixAngle / max(sqrt(1.0 - imp * imp), 0.2);
+      float back = 1.0;
+      col += uBoost * tube(d, 0.4, pix) * 2.2 * smoothstep(H * 0.75, 8.0, ys) * smoothstep(-1.0, 2.0, ys) * back;
+    }
+  }
+  {
+    float ts = tOut;
+    if (!(ts <= 0.0 || ts >= tMax)) {
+      float ys = ro.y + rd.y * ts;
+      float d = (fract((ys - uTime * 40.0) / 32.0 + pad.w) - 0.5) * 32.0;
+      float pix = ts * pixAngle / max(sqrt(1.0 - imp * imp), 0.2);
+      float back = tIn > 0.0 ? 0.5 : 1.0;
+      col += uBoost * tube(d, 0.4, pix) * 2.2 * smoothstep(H * 0.75, 8.0, ys) * smoothstep(-1.0, 2.0, ys) * back;
+    }
+  }
+  if (outside < 1.0 && tOut < tMax) {
+    vec3 w = ro + rd * tOut;
+    float lane = atan(w.z - centre.y, w.x - centre.x) / TAU * 40.0;
+    float streak = pulseAA(lane, 0.05, tOut * pixAngle * 40.0 / (TAU * R))
+                 * pow(fract((w.y - uTime * 140.0) / 14.0 + hash11(floor(lane) + pad.w * 64.0)), 4.0);
+    col += uBoost * streak * 2.5 * (1.0 - outside) * smoothstep(H * 0.75, 8.0, w.y) * smoothstep(-1.0, 2.0, w.y);
+  }
+  return col;
+}
+
 // Geometry records how many cells the original ordered traversal visited. Every
 // cell before its last has tStreet >= tGround (or >=1e8): otherwise that cell
 // would already have returned a street/bridge/tower/prop hit. Its tExit is also
@@ -13014,7 +13064,7 @@ vec4 cityTraceStatic(vec3 ro, vec3 rd, int maxCells, vec4 aux) {
 // Only the final cell needs its exact tStreet. Replaying these cells therefore
 // retains every stationary-fire/empty-cell-beam addition, in the original order,
 // without bringing any shape intersections into the light shader.
-vec3 cityTraceStaticLight(vec3 ro, vec3 rd, float pixAngle, vec4 geometry) {
+vec3 cityTraceStaticLight(vec3 ro, vec3 rd, int maxCells, float pixAngle, vec4 geometry) {
   int primitive, cells;
   cityTraceUnpack(geometry.y, primitive, cells);
   vec3 glow = vec3(0.0);
@@ -13029,7 +13079,10 @@ vec3 cityTraceStaticLight(vec3 ro, vec3 rd, float pixAngle, vec4 geometry) {
   vec2 stepv = sign(rd.xz);
   vec2 tDelta = abs(uCell * inv.xz);
   vec2 tMax = ((vec2(cell) + max(stepv, 0.0)) * uCell - ro.xz) * inv.xz;
-  for (int i = 0; i < cells; i++) {
+  // The producer guarantees cells <= the unchanged 120/40 uniform budget. Keep
+  // that opaque bound rather than inviting static expansion of the seven-bit count.
+  for (int i = 0; i < maxCells; i++) {
+    if (i >= cells) break;
     float tExit = min(tMax.x, tMax.y);
     vec4 A = texelFetch(uBoxA, cell, 0);
     vec4 moveMap = uCollapseMoverCount > 0 ? texelFetch(uCollapseMotionMap, cell, 0) : vec4(0.0);
@@ -13042,7 +13095,7 @@ vec3 cityTraceStaticLight(vec3 ro, vec3 rd, float pixAngle, vec4 geometry) {
     }
     if (!(A.z > A.x)) {
       vec4 pad = texelFetch(uPads, cell, 0);
-      if (pad.x > 0.0) glow += beamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
+      if (pad.x > 0.0) glow += cityTraceBeamLight(ro, rd, (vec2(cell) + 0.5) * uCell, pad, tGround, pixAngle);
     }
     if (i + 1 < cells) {
       t = tExit;
@@ -13065,7 +13118,7 @@ GAME.cityTrace = { GLSL };
 // The full city picture, divided into small programs. Materials/normals stay in city.js;
 // city-trace.js supplies distance-only counterparts checked against the canonical geometry.
 // Horizontal bands keep exact float intermediates bounded independently of screen resolution.
-// Four RGBA32F textures plus two D32F textures: 72 bytes per pixel, at most 18 MiB.
+// Four RGBA32F textures plus two scalar R32F textures: 72 bytes per pixel, at most 18 MiB.
 const BAND_PIXELS = 262144;
 
 function functionParts(source) {
@@ -13238,6 +13291,17 @@ void main() {
 }
 `;
 
+// Store distance as ordinary float color, without a fragment depth output. Readers
+// recover the same binary-scaled float from .r; no precision or memory is lost.
+const DEPTH_MAIN = `
+uniform vec2 uBandOrigin, uBandSize;
+uniform highp sampler2D uTraceGeometry;
+void main() {
+  ivec2 pixel = clamp(ivec2(vUv * uRes - uBandOrigin),ivec2(0),ivec2(uBandSize)-1);
+  fragColor = vec4(texelFetch(uTraceGeometry,pixel,0).x*(1.0/65536.0),0.0,0.0,1.0);
+}
+`;
+
 const STATIC_LIGHT_MAIN = `
 uniform highp sampler2D uTraceGeometry;
 void main() {
@@ -13245,9 +13309,8 @@ void main() {
   CityRay ray = cityTraceRay(pixel,cityDirection(),pixAngle);
   vec4 geometry = texelFetch(uTraceGeometry,pixel,0);
   int primitive, cells; cityTraceUnpack(geometry.y,primitive,cells);
-  vec3 glow = ray.enabled ? cityTraceStaticLight(ray.origin,ray.direction,pixAngle,geometry) : vec3(0.0);
+  vec3 glow = ray.enabled ? cityTraceStaticLight(ray.origin,ray.direction,uPassMode>0?uTraceCells.y:uTraceCells.x,pixAngle,geometry) : vec3(0.0);
   fragColor = vec4(glow,float(primitive));
-  gl_FragDepth = geometry.x*(1.0/65536.0);
 }
 `;
 
@@ -13448,6 +13511,7 @@ function sources(canonical) {
     traceMovers: traceSelect(['cityTraceAux', 'citySpecialId', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + MOVERS_MAIN,
     tracePortal: traceSelect(['cityTracePortalAux', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + PORTAL_MAIN,
     traceStatic: traceSelect(['cityTraceStatic', 'cityTracePack', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_MAIN,
+    traceDepth: DEPTH_MAIN,
     traceStaticLight: traceSelect(['cityTraceStaticLight', 'cityTraceUnpack', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_LIGHT_MAIN,
     traceFire: traceSelect(['cityTraceMovingFire', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + FIRE_MAIN,
     towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveTower'])
@@ -13469,13 +13533,14 @@ function create(gfx, canonical) {
   const movers = gfx.program('city:trace-movers', bodies.traceMovers, undefined, { library: false, deferred: true });
   const portal = gfx.program('city:trace-portal', bodies.tracePortal, undefined, { library: false, deferred: true });
   const trace = gfx.program('city:trace-static', bodies.traceStatic, undefined, { library: false, deferred: true });
+  const depthCopy = gfx.program('city:trace-depth', bodies.traceDepth, undefined, { library: false, deferred: true });
   const staticLight = gfx.program('city:trace-static-light', bodies.traceStaticLight, undefined, { library: false, deferred: true });
   const fire = gfx.program('city:trace-fire', bodies.traceFire, undefined, { library: false, deferred: true });
   const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false, deferred: true });
   const street = gfx.program('city:street', bodies.street, undefined, { library: false, deferred: true });
   const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false, deferred: true });
   const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false, deferred: true });
-  const programs = [movers, portal, trace, staticLight, fire, towers, street, reflection, compose];
+  const programs = [movers, portal, trace, depthCopy, staticLight, fire, towers, street, reflection, compose];
   let scratch = null;
 
   function free(value) {
@@ -13490,7 +13555,7 @@ function create(gfx, canonical) {
       for (let i = 0; i < 4; i++) next.textures.push(gfx.createTexture(w, h, { format: 'rgba32f', filter: 'nearest' }));
       const [primaryHit, reflectedHit, pSurface, rSurface] = next.textures;
       const depth = () => {
-        const texture = gfx.createTexture(w, h, { format: 'depth32f', filter: 'nearest' });
+        const texture = gfx.createTexture(w, h, { format: 'r32f', filter: 'nearest' });
         next.textures.push(texture); return texture;
       };
       const primaryDepth = depth(), reflectedDepth = depth();
@@ -13499,7 +13564,7 @@ function create(gfx, canonical) {
         next.views.push(target); return target;
       }
       Object.assign(next, { primaryHit, primaryDepth, reflectedHit, reflectedDepth, pSurface, rSurface,
-        primary: view([pSurface],primaryDepth), reflection: view([rSurface],reflectedDepth),
+        primary: view([primaryDepth]), reflection: view([reflectedDepth]),
         primaryColor: view([primaryHit]), reflectionColor: view([reflectedHit]),
         primarySurface: view([pSurface]), reflectionSurface: view([rSurface]) });
       return next;
@@ -13529,11 +13594,7 @@ function create(gfx, canonical) {
           // physical bounds clip the band while preserving the original global vUv/rays.
           gfx.bindTarget(target); gl.viewport(0, -y, w, height);
           if (clear) gl.clear(gl.COLOR_BUFFER_BIT);
-          if (program === staticLight) {
-            // Depth stores the exact float hit distance, scaled by a binary power. ALWAYS
-            // writes each ray, including SKY and inactive reflections, without a depth clear.
-            gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.ALWAYS); gl.depthMask(true);
-          } else gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.DEPTH_TEST);
           gfx.fullscreen(program, { ...band, ...extra });
         }
         // Primary material output later becomes the ray cache. Bind a safe dummy until that
@@ -13542,11 +13603,12 @@ function create(gfx, canonical) {
         pass(movers, s.primaryColor, primaryRay);
         pass(portal, s.primarySurface, { ...primaryRay, uTraceAux: s.primaryHit });
         pass(trace, s.primaryColor, { ...primaryRay, uTraceAux: s.pSurface });
-        pass(staticLight, s.primary, { ...primaryRay, uTraceGeometry: s.primaryHit });
+        pass(depthCopy, s.primary, { ...primaryRay, uTraceGeometry: s.primaryHit });
+        pass(staticLight, s.primarySurface, { ...primaryRay, uTraceGeometry: s.primaryHit });
         pass(fire, s.primaryColor, { ...primaryRay, uHitData: s.pSurface, uHitDepth: s.primaryDepth });
         // Geometry and lights have independent programs. Once final glow/ID lives in
         // primaryHit, reuse pSurface for materials, then the cached reflection direction.
-        // Its color-only view avoids feedback while materials read the separate depth.
+        // All views contain color only, including the separate scalar distance buffer.
         const primary = { ...primaryRay, uHitData: s.primaryHit, uHitDepth: s.primaryDepth };
         pass(towers, s.primarySurface, primary, true);
         pass(street, s.primarySurface, primary);
@@ -13558,7 +13620,8 @@ function create(gfx, canonical) {
         pass(movers, s.reflectionColor, reflectedRay);
         pass(portal, s.reflectionSurface, { ...reflectedRay, uTraceAux: s.reflectedHit });
         pass(trace, s.reflectionColor, { ...reflectedRay, uTraceAux: s.rSurface });
-        pass(staticLight, s.reflection, { ...reflectedRay, uTraceGeometry: s.reflectedHit });
+        pass(depthCopy, s.reflection, { ...reflectedRay, uTraceGeometry: s.reflectedHit });
+        pass(staticLight, s.reflectionSurface, { ...reflectedRay, uTraceGeometry: s.reflectedHit });
         pass(fire, s.reflectionColor, { ...reflectedRay, uHitData: s.rSurface, uHitDepth: s.reflectedDepth });
         const reflected = { ...reflectedRay, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth };
         pass(towers, s.reflectionSurface, reflected, true);

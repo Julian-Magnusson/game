@@ -40,34 +40,37 @@ during shader preparation around 2.95 seconds. Several city programs are pending
 does not identify which compiler job caused the reset. City programs now prepare one at a time,
 with later sources queued, and the moving-fire calculation is invoked once after tracing instead
 of through repeated early-return calls. Full graphics remain; Windows stability still needs confirmation.
-The latest fresh Windows report (build 7cdcb0a) prepares movers in 150.3 ms and portal geometry
-in 100.1 ms, then loses/restores the context while preparing only city:trace-static after 1452.3 ms.
-The remaining city programs are queued and no world resources or city draws exist yet. This
-isolates static preparation, without proving a specific internal driver defect.
-Static geometry now uses one flat bounded loop for cell and primitive iteration, with no light
-accumulator or depth output. A separate light pass replays exactly the visited cells, preserving
-stationary fire and booster glow before moving fire. The geometry and light fragments are
-16,151 and 11,008 bytes; the seven other city sources remain unchanged. Hit IDs and visited counts
-share a finite normal float32 packet, preserving full precision without adding textures.
-The actual pipeline matches 861 canonical GPU rays across 13 worlds/frames exactly for distance,
-winning ID and glow, including maximum-part cells and 1/2/40/120-cell limits. All nine displayed
-640×480 scene captures are identical to the preceding release. Storage tests recover 306 final
-and 400 intermediate packets exactly. Local 1080p seam/resize/failure checks pass; these checks
-preserve graphics locally and do not establish Radeon/Direct3D11 stability.
-The full city renderer uses nine separate programs: five intersection/light stages, cached
-reflected-ray preparation, building materials, street materials and composition. Each fragment
-source is under 36 KB, replacing the previous 106 KB combined city shader. The same 120/40-cell
-tracing budgets and full graphics remain on every browser. Sixteen draws per horizontal band
-reuse four RGBA32F and two D32F scratch textures, capped at 18 MiB in steady use and 36 MiB briefly
-during resize. Materials recover original attributes and analytic normals from the selected
-primitive without another city walk. Final-image and post-processing targets are additional;
-output resolution settings are preserved.
+The latest fresh Windows report (build 10c201c) prepares the flat static geometry in 383.6 ms,
+then loses/restores the context while preparing only city:trace-static-light after 1251.1 ms.
+Later city programs are queued and no world resources or draws exist. The remaining failure
+is therefore isolated to light preparation, without proving a specific internal driver defect.
+Lighting now uses one uniform-bounded loop and explicit near/far booster-ring blocks. Distances
+are copied through a tiny 600-byte shader into ordinary R32F color buffers; no city shader writes
+fragment depth or enables depth testing. This separates procedural lighting from the native
+depth-output path. The other eight city shader sources, including the Windows-confirmed geometry,
+remain unchanged. Full graphics, reflections and 120/40-cell traversal budgets remain.
+All ten programs and 18 real city draws complete locally. GPU storage recovers 306 final and 400
+intermediate packets exactly. The actual pipeline matches 871 canonical rays across 14 worlds/frames
+exactly for hit distance, winning ID and glow, including visible near/far booster rings and inside
+streaks. All nine 640×480 displayed captures are identical to the preceding release. These checks
+preserve graphics locally; Radeon/Direct3D11 stability still needs confirmation. Full-HD
+seam/resize/failure cleanup and complete-game startup/flight also pass locally; interrupted
+reports remain copyable without querying the lost driver.
+The full city renderer uses ten separate programs: six intersection/light/distance stages, cached
+reflected-ray preparation, building materials, street materials and composition. Fragment sources
+range from 600 to 35,719 bytes. Eighteen draws per horizontal band reuse four RGBA32F and two R32F
+color textures, capped at 18 MiB in steady use and 36 MiB briefly during resize, with the same
+32-bit precision and memory footprint as the preceding depth buffers. R32F color rendering is
+supported by the [existing full-renderer extension](https://registry.khronos.org/webgl/extensions/EXT_color_buffer_float/).
+Materials recover original attributes and analytic normals from the selected primitive without
+another city walk. Final-image and post-processing targets are additional; resolution settings
+are preserved.
 New reports distinguish observed context loss from timeout recovery. A [standalone per-draw
 runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.html)
 checks the remaining failure: generate it in the development repository with
 `node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
 It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
-For a fresh test use [diagnostic 2, build 10c201c](https://julian-magnusson.github.io/game/graphics-check-10c201c78213.html).
+For a fresh test use [diagnostic 2, build a894c3b](https://julian-magnusson.github.io/game/graphics-check-a894c3b53398.html).
 Its unique address, visible build and ISO run time distinguish the new attempt from an older
 loaded page or report. Copy and Save become available after completion or interruption;
 clipboard failure selects the report and explains how to copy it manually.
