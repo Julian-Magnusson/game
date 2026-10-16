@@ -4,7 +4,7 @@ Play at **https://julian-magnusson.github.io/game/**.
 
 Every browser and operating system now starts with the same full city and Sewer renderer,
 including Chrome and Edge on Windows. Old saved fallback/interruption flags are ignored.
-Automatic resolution adapts to frame cost, and selected resolution settings are honored.
+Automatic resolution adapts to frame cost, with selected resolution settings as pixel ceilings.
 Optional effect failures have a readable display fallback. Graphics interruptions stop rendering
 and flight without automatic reloads; the full renderer offers a single **use compatibility graphics**
 switch that opens `?graphics=safe`. Failures do not save a graphics preference for later visits.
@@ -18,10 +18,15 @@ after a graphics interruption, with pending durations frozen when rendering stop
 identify the last submitted operation, not a proven
 failing driver stage. No player
 progress or course codes are included, and nothing is sent automatically. The earlier mesh
-release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. The earlier full-renderer
-refactor still failed: the 106,165-byte city shader (`bfa12964`) remained pending at 30,014 ms,
-with post programs ready in 15–85 ms, zero rendered frames and `context.lost: false`. This
-isolates city preparation, not weak hardware, a proven driver hang or an exact driver bug.
+release worked on the reported Radeon RX 5700 XT with ANGLE/Direct3D11. Its latest report
+confirms that all five city programs prepare in 128–1,746 ms, the Sewer program in 2,766 ms,
+and initial program preparation in 4,587 ms.
+Context loss and restoration follow one submitted 2560×1271 frame; successful GPU
+completion is not established. Runtime stability remains unresolved, with no confirmed driver
+defect or specific failing draw.
+The player also reports failure at 640×360, so native pixel count alone is not an adequate
+explanation. ANGLE may compile another executable for the first draw's output-attachment layout;
+initial link readiness does not exclude this. It remains a possibility, not a confirmed cause.
 The full city renderer now uses five separate programs for intersection, reflected-ray preparation,
 building materials, street materials and composition. Reflected rays are computed once and
 cached so tracing and shading use the same direction. Each submitted fragment source is under
@@ -30,15 +35,21 @@ reflections with the same 120/40-cell tracing budgets. Eight draws per horizonta
 eight full-precision RGBA32F scratch textures, capped at 32 MiB (33.6 MB) in steady use and
 64 MiB (67.1 MB) briefly during resize. Final-image and post-processing targets are additional;
 output resolution is preserved.
-New reports distinguish observed context loss from timeout recovery. Mac Chrome checks do not
-reproduce the AMD/Direct3D11 backend; the new pipeline still needs testing on the Windows PC.
+New reports distinguish observed context loss from timeout recovery. A [standalone per-draw
+runtime probe](https://julian-magnusson.github.io/game/graphics-runtime-probe.html?v=4fa453b)
+checks the remaining failure: generate it in the development repository with
+`node tools/probe-city-runtime.mjs --prepare-only`, open it and explicitly press **Run**.
+It checks resources, real output-attachment layouts and GPU-fenced completion between draws.
+A startup-resolution controller prototype is held back because it reduced image resolution too
+aggressively in browser validation. Neither is a confirmed Windows fix; stable AMD/Direct3D11
+gameplay still needs confirmation.
 A standalone city compiler probe is available in the development repository for isolating
 shader preparation from the rest of startup.
 Nine local scene comparisons against the original renderer with a shared reflection ray retain
 at least 99% identical display channels; differences are at most three 8-bit code values, confined
 to three isolated Arctic Dawn pixels above one code. The raw original comparison also preserves
 the same visible detail and features, with small floating-point differences in its rain ripples.
-This checks graphics locally; Windows AMD startup still needs confirmation.
+This checks graphics locally; Windows AMD runtime stability still needs confirmation.
 Use the ordinary play URL for the same full renderer everywhere.
 
 Fly through a generated city with mouse/keyboard on desktop, or phone tilt and an optional
