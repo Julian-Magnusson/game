@@ -2,6 +2,11 @@
 
 Play at **https://julian-magnusson.github.io/game/**.
 
+**Windows verification, 2026-10-16:** the player confirms build `3a1dd84` loads and plays in
+fullscreen on the reported Radeon RX 5700 XT / Chrome ANGLE Direct3D11 system. It uses the
+same full graphics as other browsers, with no compatibility switch needed. The ordered
+lighting shader preserves the previous images and resolves the reported startup interruption.
+
 Every browser and operating system now starts with the same full city and Sewer renderer,
 including Chrome and Edge on Windows. Old saved fallback/interruption flags are ignored.
 Automatic resolution adapts to frame cost, with selected resolution settings as pixel ceilings.
@@ -79,8 +84,10 @@ local scene captures. Full-HD rendering, all seven band seams, transactional res
 cleanup and complete-game startup/flight also pass locally. The 1080p PNG matches the preceding
 release. Windows and Mac browser profiles upload identical shaders, and interrupted reports
 remain copyable without driver reads. These local profiles use Intel/ANGLE OpenGL.
-The standalone test establishes Windows compilation of this one program; full-game Windows
-startup, drawing and flight still need player verification. The diagnostic page itself never
+The standalone test establishes Windows compilation of this one program. The subsequent
+full-game build `3a1dd84` is also confirmed by the player to load and play in fullscreen on
+the Windows PC. This verifies the reported startup issue, not every theme, course or driver
+version. The diagnostic page itself never
 changes the game or retries automatically. Its controls remain pinned to historical sources
 after the production light is adopted.
 The full city renderer uses ten separate programs: six intersection/light/distance stages, cached
