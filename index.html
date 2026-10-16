@@ -12581,6 +12581,10 @@ float cityTraceEllipsoid(vec3 ro, vec3 rd, vec3 lo, vec3 hi) {
   return t;
 }
 
+// Loop-free replacement for the compact distance-only capsule intersection.
+// Preserve scalar arithmetic, candidate order and the original body early-exit rules.
+// A Float32 CPU branch comparison matched 500,000 deterministic cases, including
+// inside, axis-parallel and zero-length-axis cases. GPU canonical parity is still required.
 float cityTraceCapsule(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape) {
   bool alongX = shape < 3.5;
   float radius = 0.5 * (alongX ? hi.z - lo.z : hi.x - lo.x);
@@ -12595,27 +12599,56 @@ float cityTraceCapsule(vec3 ro, vec3 rd, vec3 lo, vec3 hi, float shape) {
   float rr = dot(rd, rd), baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), hit = 1e9;
   float A = baba * rr - bard * bard, B = baba * dot(rd, oa) - baoa * bard;
   float C = baba * (dot(oa, oa) - radius * radius) - baoa * baoa, disc = B * B - A * C;
+  bool done = false;
   if (A > 1e-6 && disc >= 0.0) {
     float root = sqrt(disc);
-    for (int j = 0; j < 2; j++) {
-      float t = (-B + (j == 0 ? -root : root)) / A, y = baoa + t * bard;
+    {
+      float t = (-B + (-root)) / A, y = baoa + t * bard;
       if (t >= 0.0 && t < hit && y >= 0.0 && y <= baba) {
         hit = t;
-        // A valid entry on the cylinder is already the first surface. From inside its body,
-        // a valid exit is first too; avoid tracing the caps across most trunk pixels.
-        if (j == 0 || (baoa >= 0.0 && baoa <= baba)) return hit;
+        // The old j == 0 branch returned immediately, even if a cap root was closer.
+        done = true;
+      }
+    }
+    if (!done) {
+      float t = (-B + root) / A, y = baoa + t * bard;
+      if (t >= 0.0 && t < hit && y >= 0.0 && y <= baba) {
+        hit = t;
+        // The old j == 1 branch skipped caps only when the origin lay inside the body span.
+        done = baoa >= 0.0 && baoa <= baba;
       }
     }
   }
-  for (int cap = 0; cap < 2; cap++) {
-    vec3 centre = cap == 0 ? a : b, oc = ro - centre;
-    float B = dot(oc, rd), disc = B * B - rr * (dot(oc, oc) - radius * radius);
-    if (disc < 0.0) continue;
-    float root = sqrt(disc);
-    for (int j = 0; j < 2; j++) {
-      float t = (-B + (j == 0 ? -root : root)) / rr, y = baoa + t * bard;
-      if (t >= 0.0 && t < hit && (cap == 0 ? y <= 0.0 : y >= baba)) {
-        hit = t;
+  if (!done) {
+    {
+      vec3 centre = a, oc = ro - centre;
+      float B = dot(oc, rd), disc = B * B - rr * (dot(oc, oc) - radius * radius);
+      // This is the exact complement of the original disc < 0.0 continue guard.
+      if (!(disc < 0.0)) {
+        float root = sqrt(disc);
+        {
+          float t = (-B + (-root)) / rr, y = baoa + t * bard;
+          if (t >= 0.0 && t < hit && y <= 0.0) hit = t;
+        }
+        {
+          float t = (-B + root) / rr, y = baoa + t * bard;
+          if (t >= 0.0 && t < hit && y <= 0.0) hit = t;
+        }
+      }
+    }
+    {
+      vec3 centre = b, oc = ro - centre;
+      float B = dot(oc, rd), disc = B * B - rr * (dot(oc, oc) - radius * radius);
+      if (!(disc < 0.0)) {
+        float root = sqrt(disc);
+        {
+          float t = (-B + (-root)) / rr, y = baoa + t * bard;
+          if (t >= 0.0 && t < hit && y >= baba) hit = t;
+        }
+        {
+          float t = (-B + root) / rr, y = baoa + t * bard;
+          if (t >= 0.0 && t < hit && y >= baba) hit = t;
+        }
       }
     }
   }
@@ -12762,9 +12795,9 @@ void cityTraceMovingFire(float nearestT, vec3 ro, vec3 rd, float pixAngle, inout
   }
 }
 
-TraceHit cityTraceNearest(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
-  TraceHit h; h.t = FAR; h.primitive = citySpecialId(0);
-  vec3 inv = 1.0 / rd;
+// Stage rays are already clamped by their wrappers. Keep this prelude identical to
+// canonical tracing: moving geometry is bounded by the original ground/Sewer distance.
+vec4 cityTraceAux(vec3 ro, vec3 rd) {
   float tGround = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
   if (uCollapsePortalActive > 0.5 && tGround <= 0.0) tGround = 1e9;
   bool shaft = false;
@@ -12774,12 +12807,24 @@ TraceHit cityTraceNearest(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout 
     shaft = true; tGround = cityTraceSewer(ro, rd);
   }
   TraceHit moved = cityTraceMoving(ro, rd, tGround);
+  return vec4(moved.t, float(moved.primitive), tGround, shaft ? 1.0 : 0.0);
+}
+
+vec4 cityTracePortalAux(vec3 ro, vec3 rd, vec4 aux) {
   if (uCollapsePortalActive > 0.5) {
-    int primitive;float t=cityTracePortal(ro,rd,primitive);
-    if(t>0.0&&t<moved.t) {
-      moved.t=t; moved.primitive = int(uN)*int(uN)*32+1536+primitive;
+    int primitive; float t = cityTracePortal(ro, rd, primitive);
+    if (t > 0.0 && t < aux.x) {
+      aux.xy = vec2(t, float(int(uN)*int(uN)*32+1536+primitive));
     }
   }
+  return aux;
+}
+
+TraceHit cityTraceStatic(vec3 ro, vec3 rd, int maxCells, float pixAngle, vec4 aux, inout vec3 glow) {
+  TraceHit h; h.t = FAR; h.primitive = citySpecialId(0);
+  vec3 inv = 1.0 / rd;
+  float tGround = aux.z; bool shaft = aux.w > 0.5;
+  TraceHit moved; moved.t = aux.x; moved.primitive = int(aux.y);
   float lowest=uCollapsePortalActive>0.5?uCollapsePortalOrigin.y+uCollapsePortalAxis.y*uCollapsePortalAxis.w-uCollapsePortalOrigin.w
     :uCollapseActive>0.5?uCollapseHole.w:-1.0;
   vec2 span = cityTraceSlab(ro, inv, vec3(0.0,lowest,0.0), vec3(uSize, uMaxH, uSize));
@@ -12932,12 +12977,6 @@ TraceHit cityTraceNearest(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout 
   return cityTraceCloser(h, moved);
 }
 
-TraceHit cityTracePacket(vec3 ro, vec3 rd, int maxCells, float pixAngle, inout vec3 glow) {
-  rd = mix(rd, vec3(1e-6), lessThan(abs(rd), vec3(1e-6)));
-  TraceHit near = cityTraceNearest(ro, rd, maxCells, pixAngle, glow);
-  cityTraceMovingFire(near.t, ro, rd, pixAngle, glow);
-  return near;
-}
 `;
 
 GAME.cityTrace = { GLSL };
@@ -12947,8 +12986,8 @@ GAME.cityTrace = { GLSL };
 ;(function () {
 'use strict';
 // ---- src/render/city-passes.js ----
-// The full city picture, divided into small programs. Canonical material/geometry functions
-// remain in city.js; selecting their dependency closures prevents duplicate visual definitions.
+// The full city picture, divided into small programs. Materials/normals stay in city.js;
+// city-trace.js supplies distance-only counterparts checked against the canonical geometry.
 // Horizontal bands keep exact float intermediates bounded independently of screen resolution.
 // Four RGBA32F textures plus two D32F textures: 72 bytes per pixel, at most 18 MiB.
 const BAND_PIXELS = 262144;
@@ -13080,21 +13119,61 @@ Hit cityReadHit(ivec2 pixel) {
 }
 `;
 
-const TRACE_MAIN = `
+// Every intersection stage uses the same trace origin and component clamp. Material/fog
+// stages still use the original unoffset reflection point, as in the canonical renderer.
+const TRACE_RAY = `
 uniform int uPassMode;
+CityRay cityTraceRay(ivec2 pixel, vec3 rd, float pixAngle) {
+  CityRay ray = cityPrimary(rd); if (uPassMode > 0) ray = cityReflection(pixel,rd,pixAngle);
+  if (uPassMode > 0) ray.origin += vec3(0.0,0.01,0.0);
+  ray.direction = mix(ray.direction,vec3(1e-6),lessThan(abs(ray.direction),vec3(1e-6)));
+  return ray;
+}
+`;
+
+const MOVERS_MAIN = `
+void main() {
+  ivec2 pixel = cityPixel(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityTraceRay(pixel,cityDirection(),pixAngle);
+  fragColor = ray.enabled ? cityTraceAux(ray.origin,ray.direction) : vec4(FAR,float(citySpecialId(0)),FAR,0.0);
+}
+`;
+
+const PORTAL_MAIN = `
+uniform highp sampler2D uTraceAux;
+void main() {
+  ivec2 pixel = cityPixel(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityTraceRay(pixel,cityDirection(),pixAngle);
+  vec4 aux = texelFetch(uTraceAux,pixel,0);
+  if (ray.enabled) aux = cityTracePortalAux(ray.origin,ray.direction,aux);
+  fragColor = aux;
+}
+`;
+
+const STATIC_MAIN = `
+uniform highp sampler2D uTraceAux;
 void main() {
   ivec2 pixel = cityPixel(); vec3 rd = cityDirection();
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
-  bool reflected = uPassMode > 0;
-  CityRay ray = cityPrimary(rd); if (reflected) ray = cityReflection(pixel,rd,pixAngle);
+  CityRay ray = cityTraceRay(pixel,rd,pixAngle);
   vec3 glow = vec3(0.0);
   TraceHit h; h.t=FAR;h.primitive=citySpecialId(0);
   if (ray.enabled) {
-    vec3 origin = reflected ? ray.origin+vec3(0.0,0.01,0.0) : ray.origin;
-    h=cityTracePacket(origin,ray.direction,reflected?uTraceCells.y:uTraceCells.x,pixAngle,glow);
+    h=cityTraceStatic(ray.origin,ray.direction,uPassMode>0?uTraceCells.y:uTraceCells.x,pixAngle,texelFetch(uTraceAux,pixel,0),glow);
   }
   fragColor=vec4(glow,float(h.primitive));
   gl_FragDepth=h.t*(1.0/65536.0);
+}
+`;
+
+const FIRE_MAIN = `
+uniform highp sampler2D uHitData, uHitDepth;
+void main() {
+  ivec2 pixel = cityPixel(); float pixAngle = 2.0 * uTanHalf.y / uRes.y;
+  CityRay ray = cityTraceRay(pixel,cityDirection(),pixAngle);
+  vec4 packet = texelFetch(uHitData,pixel,0); vec3 glow = packet.rgb;
+  if (ray.enabled) cityTraceMovingFire(texelFetch(uHitDepth,pixel,0).r*65536.0,ray.origin,ray.direction,pixAngle,glow);
+  fragColor = vec4(glow,packet.w);
 }
 `;
 
@@ -13281,7 +13360,10 @@ function sources(canonical) {
   const traceSelect = functionParts(shared + '\n' + GAME.cityTrace.GLSL).select;
   const reflectionRoots = ['groundGloss', 'rainRipple', 'noise', 'saturate', 'cityDecodeId'];
   const result = {
-    trace: traceSelect(['cityTracePacket', 'cityDecodeId']) + BAND + REFLECTION + TRACE_MAIN,
+    traceMovers: traceSelect(['cityTraceAux', 'citySpecialId', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + MOVERS_MAIN,
+    tracePortal: traceSelect(['cityTracePortalAux', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + PORTAL_MAIN,
+    traceStatic: traceSelect(['cityTraceStatic', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + STATIC_MAIN,
+    traceFire: traceSelect(['cityTraceMovingFire', 'cityDecodeId']) + BAND + REFLECTION + TRACE_RAY + FIRE_MAIN,
     towers: select(['shadeTower', 'shadeProp', 'shadeBridge', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveTower'])
       + BAND + REFLECTION + READ_HIT + TOWER_MAIN,
     street: select(['shadeStreet', 'shadePortal', 'collapseLocalPoint', 'collapseLocalVector', 'cityDecodeId', 'cityResolveStreet'])
@@ -13298,12 +13380,15 @@ function sources(canonical) {
 
 function create(gfx, canonical) {
   const { gl } = gfx, bodies = sources(canonical);
-  const trace = gfx.program('city:trace', bodies.trace, undefined, { library: false, deferred: true });
+  const movers = gfx.program('city:trace-movers', bodies.traceMovers, undefined, { library: false, deferred: true });
+  const portal = gfx.program('city:trace-portal', bodies.tracePortal, undefined, { library: false, deferred: true });
+  const trace = gfx.program('city:trace-static', bodies.traceStatic, undefined, { library: false, deferred: true });
+  const fire = gfx.program('city:trace-fire', bodies.traceFire, undefined, { library: false, deferred: true });
   const towers = gfx.program('city:towers', bodies.towers, undefined, { library: false, deferred: true });
   const street = gfx.program('city:street', bodies.street, undefined, { library: false, deferred: true });
   const reflection = gfx.program('city:reflection', bodies.reflection, undefined, { library: false, deferred: true });
   const compose = gfx.program('city:compose', bodies.compose, undefined, { library: false, deferred: true });
-  const programs = [trace, towers, street, reflection, compose];
+  const programs = [movers, portal, trace, fire, towers, street, reflection, compose];
   let scratch = null;
 
   function free(value) {
@@ -13328,6 +13413,7 @@ function create(gfx, canonical) {
       }
       Object.assign(next, { primaryHit, primaryDepth, reflectedHit, reflectedDepth, pSurface, rSurface,
         primary: view([primaryHit],primaryDepth), reflection: view([reflectedHit],reflectedDepth),
+        primaryColor: view([primaryHit]), reflectionColor: view([reflectedHit]),
         primarySurface: view([pSurface]), reflectionSurface: view([rSurface]) });
       return next;
     } catch (error) { free(next); throw error; }
@@ -13365,21 +13451,31 @@ function create(gfx, canonical) {
         }
         // Primary material output later becomes the ray cache. Bind a safe dummy until that
         // output is complete: WebGL checks feedback even inside an untaken shader branch.
-        pass(trace, s.primary, { uPassMode: 0, uReflectionRay: gfx.noiseTex });
-        const primary = { uPassMode: 0, uReflectionRay: gfx.noiseTex, uHitData: s.primaryHit, uHitDepth: s.primaryDepth };
-        pass(towers, s.primarySurface, primary, true);
-        pass(street, s.primarySurface, primary);
+        const primaryRay = { uPassMode: 0, uReflectionRay: gfx.noiseTex };
+        pass(movers, s.primaryColor, primaryRay);
+        pass(portal, s.primarySurface, { ...primaryRay, uTraceAux: s.primaryHit });
+        pass(trace, s.primary, { ...primaryRay, uTraceAux: s.pSurface });
+        pass(fire, s.primarySurface, { ...primaryRay, uHitData: s.primaryHit, uHitDepth: s.primaryDepth });
+        // Final glow/ID now lives in pSurface. Material color uses the former hit color,
+        // through a color-only view so sampling its separate depth cannot cause feedback.
+        const primary = { ...primaryRay, uHitData: s.pSurface, uHitDepth: s.primaryDepth };
+        pass(towers, s.primaryColor, primary, true);
+        pass(street, s.primaryColor, primary);
         // Ground does not use primary object RGB, so its surface texel can hold a shared ray.
         // Non-ground object texels retain their color and the explicit inactive alpha sentinel.
-        pass(reflection, s.primarySurface, { uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth });
+        pass(reflection, s.primaryColor, { uPrimaryHit: s.pSurface, uPrimaryDepth: s.primaryDepth });
         // Reflected rays use their own exact hit records; all stages share the cached direction.
-        pass(trace, s.reflection, { uPassMode: 1, uReflectionRay: s.pSurface });
-        const reflected = { uPassMode: 1, uReflectionRay: s.pSurface, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth };
-        pass(towers, s.reflectionSurface, reflected, true);
-        pass(street, s.reflectionSurface, reflected);
+        const reflectedRay = { uPassMode: 1, uReflectionRay: s.primaryHit };
+        pass(movers, s.reflectionColor, reflectedRay);
+        pass(portal, s.reflectionSurface, { ...reflectedRay, uTraceAux: s.reflectedHit });
+        pass(trace, s.reflection, { ...reflectedRay, uTraceAux: s.rSurface });
+        pass(fire, s.reflectionSurface, { ...reflectedRay, uHitData: s.reflectedHit, uHitDepth: s.reflectedDepth });
+        const reflected = { ...reflectedRay, uHitData: s.rSurface, uHitDepth: s.reflectedDepth };
+        pass(towers, s.reflectionColor, reflected, true);
+        pass(street, s.reflectionColor, reflected);
         gfx.bindTarget(output); gl.disable(gl.DEPTH_TEST); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, y, w, h);
-        gfx.fullscreen(compose, { ...band, uReflectionRay: s.pSurface, uPrimaryHit: s.primaryHit, uPrimaryDepth: s.primaryDepth,
-          uReflectedHit: s.reflectedHit, uReflectedDepth: s.reflectedDepth, uPrimarySurface: s.pSurface, uReflectionSurface: s.rSurface });
+        gfx.fullscreen(compose, { ...band, uReflectionRay: s.primaryHit, uPrimaryHit: s.pSurface, uPrimaryDepth: s.primaryDepth,
+          uReflectedHit: s.rSurface, uReflectedDepth: s.reflectedDepth, uPrimarySurface: s.primaryHit, uReflectionSurface: s.reflectedHit });
       }
     } finally {
       // Full city drawing owns fullscreen state; callers resume at the complete output target.
