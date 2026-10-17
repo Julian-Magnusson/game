@@ -3139,6 +3139,8 @@ AUDIO.pumpShape = pumpShape;
 //   build         the bar before the drop (the player schedules it on the bar line)
 //   impact        the drop's downbeat
 //   collapseAlarm a softened two-tone emergency loop; the player owns its lifetime
+//   collapseBlast<v>, collapseRumble<v>  a building blown down nearby (v 0..2) or far across the
+//                 city (v 0..1); rendered with the alarm, not with each song
 // One sound family: FM bells and glints reward, noise sweeps move, detuned saws carry the music's
 // supersaw colour. Each effect is mastered to its own peak, which sets its balance against the
 // music it usually plays over (loudness, 400 ms windows, at full volume settings): gates about
@@ -3626,6 +3628,42 @@ function renderCollapseAlarm() {
   return master(out, -10);
 }
 
+// Collapse destruction. A blast: a detonation's crack, a driven sub boom, a low roar closing as
+// it rolls away, then the building coming down (masonry clatter, struck steel, glass) in a wide
+// outdoor space. A rumble is the same event far across the city: no crack or debris, the top
+// rolled off and the roar stretched out. Independent of harmony, like the alarm they play with.
+const BLAST_VARIANTS = 3, RUMBLE_VARIANTS = 2;
+function collapseBlast(variant, distant) {
+  const pitch = [1, 0.82, 1.16][variant], seed = 601 + variant * 41 + (distant ? 300 : 0), rand = rng(seed);
+  const buf = makeBuffer(distant ? 3.6 : 3.2), debris = makeBuffer(distant ? 3.6 : 3.2);
+  const delay = distant ? 0.02 : 0;
+  thump(buf, { at: delay, from: 130 * pitch, to: 30 * pitch, drop: 0.09, tau: distant ? 0.5 : 0.34, gain: distant ? 0.6 : 0.8, drive: 2.2 });
+  noise(buf, { at: delay + 0.003, sec: 2.6, gain: 5.5, mode: 'lp', q: 0.8, seed: seed + 1,
+    env: t => attackDecay(t, distant ? 0.03 : 0.004, distant ? 0.75 : 0.42), cutoff: t => (distant ? 150 : 520) * pitch * Math.exp(-t / 0.5) + 70 });
+  noise(buf, { at: delay + 0.12, sec: distant ? 3.2 : 2.8, gain: distant ? 3.2 : 2.4, mode: 'lp', q: 0.6, seed: seed + 2,
+    env: t => smoothstep(0, distant ? 0.6 : 0.3, t) * Math.exp(-t / (distant ? 1.2 : 0.85)), cutoff: () => (distant ? 140 : 260) * pitch });
+  if (!distant) {
+    noise(debris, { at: 0, sec: 0.14, gain: 1.1, mode: 'hp', seed: seed + 3, env: t => attackDecay(t, 0.0004, 0.014), cutoff: () => 700 });
+    for (let k = 0; k < 28; k++) {
+      const at = 0.1 - 0.55 * Math.log(1 - rand() * 0.92), band = 450 + 2600 * rand(), level = 0.55 * (0.35 + 0.65 * rand()) * Math.exp(-at / 1.3);
+      noise(debris, { at, sec: 0.09, gain: level, mode: 'bp', q: 1.6, seed: seed + 10 + k, env: t => attackDecay(t, 0.001, 0.016), cutoff: () => band });
+    }
+    clang(debris, { at: 0.18 + rand() * 0.25, freq: 120 * pitch, ratio: 1.41, index: 4, tau: 0.4, gain: 0.16, pan: rand() * 1.2 - 0.6 });
+    clang(debris, { at: 0.35 + rand() * 0.3, freq: 310 * pitch, ratio: 2.76, index: 3, tau: 0.25, gain: 0.1, pan: rand() * 1.2 - 0.6 });
+    glass(debris, { at: 0.06, count: 34, gain: 0.12, seed: seed + 4 });
+    mixInto(buf, debris, 1);
+  }
+  addReverb(distant ? buf : debris, buf, distant ? 0.3 : 0.45, { room: 0.9, damp: 0.55, predelayMs: distant ? 45 : 25, lowCut: 140 });
+  return master(buf, distant ? -9 : -4);
+}
+
+function renderCollapseBlasts() {
+  const out = {};
+  for (let v = 0; v < BLAST_VARIANTS; v++) out[`collapseBlast${v}`] = collapseBlast(v, false);
+  for (let v = 0; v < RUMBLE_VARIANTS; v++) out[`collapseRumble${v}`] = collapseBlast(v, true);
+  return out;
+}
+
 function renderSfx() {
   const out = {};
   loop.progression.forEach((chord, i) => {
@@ -3651,6 +3689,7 @@ function renderSfx() {
 
 AUDIO.renderSfx = renderSfx;
 AUDIO.renderCollapseAlarm = renderCollapseAlarm;
+AUDIO.renderCollapseBlasts = renderCollapseBlasts;
 
 })();
 </script>
@@ -3666,6 +3705,9 @@ self.onmessage = e => {
     if (msg.type === 'collapse-alarm') {
       const s = AUDIO.renderCollapseAlarm();
       self.postMessage({ type: 'collapse-alarm', l: s.l, r: s.r }, [s.l.buffer, s.r.buffer]);
+    } else if (msg.type === 'collapse-blasts') {
+      const effects = AUDIO.renderCollapseBlasts();
+      self.postMessage({ type: 'collapse-blasts', effects }, Object.values(effects).flatMap(s => [s.l.buffer, s.r.buffer]));
     } else if (msg.type === 'stem') {
       const s = AUDIO.renderStem(msg.stem);
       self.postMessage({ type: 'stem', stem: msg.stem, l: s.l, r: s.r, timings: s.timings }, [s.l.buffer, s.r.buffer]);
@@ -4274,17 +4316,53 @@ function decorate(city, course) {
     if (city.park[i] || city.kind[i] !== city.KIND.PLAZA || GAME.rng.stream(city.seed, `plaza-fountain-${i}`)() > 0.04) continue;
     if (addFountain(i)) plazaFountains++;
   }
-  // Broad central hills occupy most of selected park parcels. They rise enough to read as
-  // sloping ground from flight height, while neighboring lawns and fountain foundations stay
-  // level. One cell-local solid adds no new atlas or tracing-loop budget.
-  // Metadata is {object,cell,x,z,h,rx,rz}; its shared ellipsoid has centre y=-h and radius 2h.
+  // Park hills occupy selected park parcels. Each is an uneven knoll, a twin-topped hill with
+  // a saddle or a hummock cluster: one to three overlapping terrain ellipsoids with varied
+  // height, spread, steepness and offset, while neighboring lawns and fountain foundations
+  // stay level. Every lump stays inside its cell and its footing stays off the street.
+  // Metadata is {object,cell,x,z,h,rx,rz,lumps}; x,z,h is the highest summit, and each lump
+  // {x,z,h,rx,rz,depth} is an ellipsoid centred at y=-depth with vertical radius depth+h.
+  const STREET_EDGE = city.cell / 2 - 3.2, CELL_EDGE = city.cell / 2 - 0.4;
   for (let cell = 0; cell < city.kind.length; cell++) {
     if (!city.park[cell] || protectedCells.has(cell) || city.streetBoxes[cell]?.length) continue;
     const r = GAME.rng.stream(city.seed, `park-ground-${cell}`);
     if (r() > 0.55) continue;
-    const [x, z] = city.cellCenter(cell), h = r.range(7, 10), rx = r.range(14.0, 14.8), rz = r.range(14.0, 14.8);
-    const object = place([box(x, -h, z, rx, h * 2, rz, MATERIAL.TERRAIN, SHAPE.ELLIPSOID)]);
-    if (object) course.parkMounds.push({ object, cell, x, z, h, rx, rz });
+    const [cx, cz] = city.cellCenter(cell), lumps = [];
+    // The ground footprint of a lump is its radius times `foot`; offsets are clamped so both
+    // the footing and the full envelope fit the parcel.
+    const lump = (dx, dz, h, groundX, groundZ, depth) => {
+      const foot = Math.sqrt(1 - (depth / (depth + h)) ** 2),
+        rx = Math.min(groundX / foot, CELL_EDGE - 0.5), rz = Math.min(groundZ / foot, CELL_EDGE - 0.5),
+        limitX = Math.min(STREET_EDGE - rx * foot, CELL_EDGE - rx), limitZ = Math.min(STREET_EDGE - rz * foot, CELL_EDGE - rz);
+      if (limitX < 0 || limitZ < 0) return null;
+      const x = cx + Math.max(-limitX, Math.min(limitX, dx)), z = cz + Math.max(-limitZ, Math.min(limitZ, dz));
+      lumps.push({ x, z, h, rx, rz, depth });
+      return lumps.at(-1);
+    };
+    // Taller lumps get broader footings so every hill keeps a grassy slope rather than a dome.
+    const h = r.range(4, 11), spread = Math.min(12.5, Math.max(r.range(8.5, 12.5), h * 1.3)),
+      narrow = Math.max(spread * r.range(0.62, 1), Math.min(spread, h * 1.2)), wide = r() < 0.5,
+      angle = r() * Math.PI * 2, shift = r.range(0, 4.5);
+    const main = lump(Math.cos(angle) * shift, Math.sin(angle) * shift, h,
+      wide ? spread : narrow, wide ? narrow : spread, h * r.range(0.45, 1.15));
+    const style = r();
+    if (style < 0.45) {
+      // A lower second top across a saddle, roughly opposite the main summit.
+      const turn = angle + Math.PI + r.range(-0.7, 0.7), reach = spread * r.range(0.55, 0.85), top = h * r.range(0.45, 0.8),
+        size = Math.max(spread * r.range(0.45, 0.7), top * 1.3);
+      lump(main.x - cx + Math.cos(turn) * reach, main.z - cz + Math.sin(turn) * reach, top,
+        size * r.range(0.9, 1.15), size * r.range(0.9, 1.15), top * r.range(0.45, 1));
+    } else if (style < 0.8) {
+      // Small hummocks on the lower slopes.
+      for (let i = 0; i < 2; i++) {
+        const turn = angle + Math.PI * (0.6 + i * 0.8) + r.range(-0.4, 0.4), reach = spread * r.range(0.5, 0.9),
+          top = r.range(1.6, Math.max(2, h * 0.45)), size = Math.max(r.range(3.5, 6), top * 1.4);
+        lump(main.x - cx + Math.cos(turn) * reach, main.z - cz + Math.sin(turn) * reach, top,
+          size * r.range(0.9, 1.2), size * r.range(0.9, 1.2), r.range(1.5, 4));
+      }
+    }
+    const object = place(lumps.map(m => box(m.x, -m.depth, m.z, m.rx, m.depth + m.h, m.rz, MATERIAL.TERRAIN, SHAPE.ELLIPSOID)));
+    if (object) course.parkMounds.push({ object, cell, x: main.x, z: main.z, h, rx: main.rx, rz: main.rz, lumps });
   }
   const raise = (pieces, y) => y > 0 ? pieces.map(b => { const p = [...b]; p[1] += y; p[4] += y; return p; }) : pieces;
   // Seats require a level foundation; their long supports should not float over a hillside.
@@ -7801,33 +7879,72 @@ function polyhedron(vertices,faces) {
     ...centre.map((_,i)=>Math.max(...vertices.map(p=>p[i])))]};
 }
 
-function create({x,z,yaw=0,origin=[x,9,z],slope=-0.22,length=80,radius=10,mountainRadius=62,mountainHeight=78}={}) {
+function create({x,z,yaw=0,origin=[x,9,z],slope=-0.22,length=80,radius=10,mountainRadius=62,mountainHeight=78,seed=0}={}) {
   if(!origin.every(Number.isFinite)||![yaw,slope,length,radius].every(Number.isFinite)||length<20||radius<4)
     throw new Error('Invalid mountain tunnel geometry');
   const forward=[Math.sin(yaw),0,Math.cos(yaw)],axis=unit([forward[0],slope,forward[2]]),
     right=[forward[2],0,-forward[0]],up=cross(axis,right);
   const portal={origin:[...origin],axis,right,up,forward,slope,length,radius,mountainRadius,mountainHeight,rocks:[],peaks:[],bars:[]};
-  // Low boulders anchor a broad, angular ridge. The six convex rock pieces below have real
-  // flat faces and sharp summits shared by collision, triangles and analytic intersections.
-  const scale=mountainRadius/62,vertical=mountainHeight/78;
-  for(const [across,along,y,rx,ry,rz] of [[0,34,3,31,15,30],[-40,54,2,25,13,27],
-    [43,64,1,25,14,30],[0,114,0,43,14,32]]) {
-    const centre=[origin[0]+forward[0]*along*scale+right[0]*across*scale,y*vertical,
-      origin[2]+forward[2]*along*scale+right[2]*across*scale],radii=[rx*scale,ry*vertical,rz*scale];
+  // Each course seeds its own small range: a main summit, uneven shoulders, lower foothills
+  // and half-buried boulders. Every piece is a convex rock with flat faces (or an ellipsoid)
+  // shared by collision, triangles and analytic intersections.
+  const scale=mountainRadius/62,vertical=mountainHeight/78,r=GAME.rng.stream(seed>>>0,'collapse-mountain'),
+    between=(lo,hi)=>lo+(hi-lo)*r(),jitter=v=>(r()*2-1)*v,flip=r()<0.5?-1:1,lean=dot(forward,axis);
+  // Slides a whole piece away from the approach until it is entirely behind the mouth plane.
+  const behind=along=>Math.max(0,0.02-along)/lean;
+  const rock=(across,along,y,rx,ry,rz)=>{
+    const radii=[rx*scale,ry*vertical,rz*scale],
+      centre=[origin[0]+forward[0]*along*scale+right[0]*across*scale,y*vertical,origin[2]+forward[2]*along*scale+right[2]*across*scale],
+      shift=behind(dot(sub(centre,origin),axis)-Math.hypot(...radii.map((v,i)=>v*axis[i])));
+    for(let i=0;i<3;i++)centre[i]+=forward[i]*shift;
     portal.rocks.push({centre,radii,bounds:[...centre.map((v,i)=>v-radii[i]),...centre.map((v,i)=>v+radii[i]),11,1]});
+  };
+  for(const [a,s,y,rx,ry,rz] of [[0,34,3,31,15,30],[-40,54,2,25,13,27],[43,64,1,25,14,30],[0,114,0,43,14,32]])
+    rock(flip*(a+jitter(5)),s+jitter(5),y,rx*between(0.88,1.1),ry*between(0.8,1.15),rz*between(0.88,1.1));
+  // Scattered boulders around the foot break up the line where the range meets the park.
+  const boulders=4+Math.floor(r()*4);
+  for(let i=0;i<boulders;i++) {
+    const turn=Math.PI*(0.36+1.28*(i+0.5+jitter(0.35))/boulders),reach=between(0.9,1.12),size=between(6,14),ry=between(4,9);
+    rock(Math.sin(turn)*76*reach,84-Math.cos(turn)*80*reach,-ry*between(0.1,0.45),size*between(0.8,1.25),ry,size*between(0.8,1.25));
   }
+  const solid=(vertices,faces)=>{
+    const shift=behind(Math.min(...vertices.map(p=>dot(sub(p,origin),axis))));
+    portal.peaks.push(polyhedron(vertices.map(p=>p.map((v,i)=>v+forward[i]*shift)),faces));
+  };
   // The front cliff lies precisely on the tilted mouth plane: the arch is embedded in rock
   // rather than floating in front of a rounded hill, and no lip projects into the approach.
-  const front=[[-35,-17],[35,-17],[-2,36]].map(([a,h])=>[a*scale,h*vertical]);
+  const front=[[-35,-17],[35,-17],[flip*(-2+jitter(4)),between(33,40)]].map(([a,h])=>[a*scale,h*vertical]);
   portal.peaks.push(polyhedron([0,35*scale].flatMap(s=>front.map(([a,h])=>point(portal,s,a,h))),
     [[0,1,2],[3,5,4],[0,3,4,1],[1,4,5,2],[2,5,3,0]]));
   const surface=(a,s,y)=>[origin[0]+right[0]*a*scale+forward[0]*s*scale,y*vertical,
     origin[2]+right[2]*a*scale+forward[2]*s*scale];
-  for(const [a,s,w,d,h,da,ds] of [[0,57,58,55,82,-5,4],[-35,55,30,40,60,-4,-3],
-    [36,67,34,46,68,3,-3],[-20,105,39,39,74,2,-3],[26,114,38,35,56,-5,-2]]) {
-    const vertices=[surface(a-w,s-d,-6),surface(a+w,s-d,-6),surface(a+w,s+d,-6),surface(a-w,s+d,-6),surface(a+da,s+ds,h)];
-    portal.peaks.push(polyhedron(vertices,[[0,3,2,1],[0,1,4],[1,2,4],[2,3,4],[3,0,4]]));
-  }
+  // A convex crag: an uneven four or five sided pyramid, or a level ridge with planar flanks.
+  // It is built on a unit footprint and mapped affinely, so faces stay flat and convex.
+  const crag=(a,s,w,d,h,shape)=>{
+    const turn=jitter(0.6),c=Math.cos(turn),n=Math.sin(turn),at=(u,v,y)=>surface(a+(u*c-v*n)*w,s+(u*n+v*c)*d,y);
+    if(shape===2) {
+      const top=between(0.2,0.55),side=jitter(0.3);
+      solid([at(-1,-1,-6),at(1,-1,-6),at(1,1,-6),at(-1,1,-6),at(-top,side,h),at(top,side,h)],
+        [[0,1,2,3],[0,1,5,4],[3,2,5,4],[0,4,3],[1,2,5]]);
+      return;
+    }
+    const sides=shape?5:4,start=r()*Math.PI*2,vertices=[];
+    for(let i=0;i<sides;i++) {
+      const angle=start+(i+jitter(0.16))*Math.PI*2/sides,k=sides===4?Math.SQRT2*between(0.85,1):between(1.05,1.25);
+      vertices.push(at(Math.cos(angle)*k,Math.sin(angle)*k,-6));
+    }
+    vertices.push(at(jitter(0.32),jitter(0.32),h));
+    solid(vertices,[[...vertices.keys()].slice(0,sides),...Array.from({length:sides},(_,i)=>[i,(i+1)%sides,sides])]);
+  };
+  // The summit always stays a sharp point; shoulders vary in height so the skyline shows
+  // separate tops with saddles between them rather than one even lump.
+  crag(flip*jitter(5),57+jitter(5),58*between(0.85,1),55*between(0.85,1),between(84,98),r()<0.5?0:1);
+  for(const [a,s,w,d,h] of [[-35,55,30,40,60],[36,67,34,46,68],[-20,105,39,39,74],[26,114,38,35,56]])
+    crag(flip*(a+jitter(7)),s+jitter(7),w*between(0.78,1.05),d*between(0.78,1.05),h*between(0.68,1.18),Math.floor(r()*3));
+  const foothills=[[-66,30],[68,38],[-74,94],[76,102],[-48,150],[50,154]];
+  for(let i=foothills.length-1;i>0;i--) {const k=Math.floor(r()*(i+1));[foothills[i],foothills[k]]=[foothills[k],foothills[i]];}
+  for(const [a,s] of foothills.slice(0,r()<0.5?3:4))
+    crag(flip*(a+jitter(6)),s+jitter(8),between(16,25),between(16,25),between(22,46),Math.floor(r()*3));
   // Broken iron stubs leave a wide central aperture. Every visible rod remains a real capsule;
   // no decorative unbroken bar can cross the flight path through the entrance.
   const clear=radius-0.35,outer=radius+0.45;
@@ -7982,6 +8099,22 @@ function crossing(from, to, ring) {
 
 const through = (from, to, ring) => { const hit = crossing(from, to, ring); return !!hit && hit.distance <= ring.radius; };
 
+// Sinking is vertical only. A building beside the lane may therefore fall when every solid it
+// lowers (tower parts, props, bridges) stays horizontally outside the lane at each sample in
+// [from, to]; an overhead piece would otherwise descend into the flight path.
+const SINK_CLEAR = 11;
+function sinkClear(city, line, cell, from, to) {
+  const boxes = city.boxes(cell).filter(b => !b[6]);
+  for (let k = Math.max(0, from); k <= to; k++) {
+    const x = line.x[k], z = line.z[k];
+    for (const b of boxes) {
+      const px = Math.max(b[0] - x, 0, x - b[3]), pz = Math.max(b[2] - z, 0, z - b[5]);
+      if (px * px + pz * pz < SINK_CLEAR * SINK_CLEAR) return false;
+    }
+  }
+  return true;
+}
+
 function approach(city, course, trigger, line, snapshots = null) {
   let run = GAME.run.create(city, course), pilot = { k: 0 };
   const flight = { ...course, line };
@@ -8120,7 +8253,8 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   const city = GAME.courseData.unpack(structuredClone(GAME.courseData.pack(sourceCity, sourceCourse))).city;
   city.clearGeometryCache();
   const portal = GAME.collapsePortal.create({ x: origin[0], z: origin[2], yaw: heading, origin,
-    slope: -0.22, length: tail, radius: 10, mountainRadius: 62, mountainHeight: 78 });
+    slope: -0.22, length: tail, radius: 10, mountainRadius: 62, mountainHeight: 78,
+    seed: (sourceCity.seed ^ Math.imul(Math.round(trigger.x), 73856093) ^ Math.imul(Math.round(trigger.z), 19349663)) >>> 0 });
   const course = escapeCourse(sourceCourse.difficulty, portal, initial), { line } = course;
   const mouthS = course.portalEntry.mouthS;
   const state = { time: 0, falls: new Float32Array(city.n * city.n * 4), portal, hazards: [], progress: 0 };
@@ -8153,17 +8287,18 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
     if (building && city.boxes(cell).filter(b => !b[6]).length <= GAME.collapseMotion.MAX_PARTS
       && near.distance > 18 && near.distance < 100 && near.k > 8 && near.k < end - 12) candidates.push({ cell, x, z, ...near });
   }
-  // Reserve several movers for burning trees; the large-scale skyline uses inexpensive
+  // Reserve a few movers for burning trees; the large-scale skyline uses inexpensive
   // per-cell downward timelines instead of increasing the shader's rigid-mover loops.
+  // Toppling follows the flight: buildings further along the route go over a little later.
   candidates.sort((a, b) => a.distance - b.distance || a.k - b.k);
-  const motionSpecs = [], used = new Set();
+  const motionSpecs = [], used = new Set(), cruise = GAME.flight.cruise(sourceCourse.difficulty);
   for (const item of candidates) {
     const { cell, distance, dx, dz, k, x, z } = item;
     if (used.has(cell)) continue;
     motionSpecs.push({ cell, kind: 'building', axis: [dz / distance, -dx / distance], angle: 1.12,
-      start: 0.45 + motionSpecs.length * 0.075, duration: 4.5 + (cell % 5) * 0.35, drop: 0 });
+      start: Math.min(4, 0.6 + motionSpecs.length * 0.06 + k * SAMPLE / cruise * 0.3), duration: 4.5 + (cell % 5) * 0.35, drop: 0 });
     used.add(cell); state.hazards.push({ cell, s: k * SAMPLE, x, z, top: Math.abs(city.boxB[cell * 4 + 1]), kind: 'building' });
-    if (motionSpecs.length >= 18) break;
+    if (motionSpecs.length >= GAME.collapseMotion.MAX_MOVERS - 3) break;
   }
   for (let cell = 0; cell < city.n * city.n && motionSpecs.length < GAME.collapseMotion.MAX_MOVERS; cell++) {
     if (used.has(cell) || parkCells.has(cell)) continue;
@@ -8191,9 +8326,13 @@ function escapeWorld(sourceCity, sourceCourse, trigger, initial) {
   for (let cell = 0; cell < city.n * city.n; cell++) {
     if (used.has(cell) || parkCells.has(cell) || !city.buildingBoxes(cell).length) continue;
     const [x, z] = city.cellCenter(cell), near = nearest(x, z);
-    if (near.distance < 84) continue;
     const top = Math.abs(city.boxB[cell * 4 + 1]), jitter = ((cell * 1103515245 + city.seed) >>> 0) / 4294967296;
-    state.falls.set([0.45 + Math.min(5.5, near.distance / 240) + jitter * 1.2, 4 + jitter * 3, top + 12, 1], cell * 4);
+    if (near.distance < 84) {
+      // The street frontage crumbles as the glider passes it, never into the lane.
+      if (!sinkClear(city, line, cell, 0, end)) continue;
+      const reach = near.k * SAMPLE / cruise;
+      state.falls.set([clamp(reach - 1.6 + jitter * 1.8, 0.5, 12), 3.2 + jitter * 2.2, top + 12, 1], cell * 4);
+    } else state.falls.set([0.45 + Math.min(5.5, near.distance / 240) + jitter * 1.2, 4 + jitter * 3, top + 12, 1], cell * 4);
     fallingCells.push(cell);
   }
   state.motionSpecs = motionSpecs; state.fallingCells = fallingCells;
@@ -8607,14 +8746,20 @@ function begin(city, course, secret = course.collapse, glider = null) {
     const [x, z] = world.city.cellCenter(spec.cell), near = nearest(x, z);
     return near.distance > 1 ? { ...spec, axis: [near.dz / near.distance, -near.dx / near.distance] } : spec;
   });
-  // Distant downward-only falls must also remain outside the new lane. A small cell window
-  // clears their timeline; there is no scan or re-planning of the thousands of skyline falls.
+  // Downward-only falls must also remain outside the new lane. Only cells in a small window
+  // around it are re-checked; the thousands of skyline falls are never re-planned.
+  const window = new Map();
   for (let k = 0; k <= end; k += 4) {
     const ix = Math.floor(line.x[k] / world.city.cell), iz = Math.floor(line.z[k] / world.city.cell);
     for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
       const x = ix + dx, z = iz + dz;
-      if (x >= 0 && z >= 0 && x < world.city.n && z < world.city.n) state.falls[(z * world.city.n + x) * 4 + 3] = 0;
+      if (x < 0 || z < 0 || x >= world.city.n || z >= world.city.n) continue;
+      const cell = z * world.city.n + x, span = window.get(cell);
+      if (span) span[1] = k; else window.set(cell, [k, k]);
     }
+  }
+  for (const [cell, [from, to]] of window) {
+    if (state.falls[cell * 4 + 3] && !sinkClear(world.city, line, cell, from - 4, Math.min(end, to + 4))) state.falls[cell * 4 + 3] = 0;
   }
   state.fallingCells = state.fallingCells.filter(cell => state.falls[cell * 4 + 3]);
   const geometry = world.course.escapeGeometry;
@@ -8642,25 +8787,79 @@ GAME.collapse = { prepare, begin, entryGlider, step, steer, approachSteer, prove
 const SAMPLE = 4, DT = 1 / 120;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const normalize = a => { const length = Math.hypot(...a) || 1; return a.map(v => v / length); };
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-// Each code builds its own network: the number of bends and shafts, their direction, length and
-// tightness, and the hazards placed along straights all come from the seed. Hazards are listed
-// in placement order; the obstacles that bend the guide line need the most room, so go first.
+// Difficulty sets the bore, the rings and how densely hazards fill the network. Each station on
+// a straight draws one weighted hazard; shafts gain a weaving line, curtains and crossing fans.
 const PROFILES = {
-  easy: { main: 30, side: 24, gate: 9.5, pipe: 1.6, gap: 0, connectors: [5, 6], shafts: 2, turn: [122, 136],
-    angles: [Math.PI / 2], straight: [250, 360], spacing: 110, dirt: 16, dirtSpacing: 85, cableLow: 0,
-    hazards: { pipe: 8 } },
-  medium: { main: 26, side: 21, gate: 7.8, pipe: 1.8, gap: 12, connectors: [6, 8], shafts: 2, turn: [112, 128],
-    angles: [Math.PI / 2, Math.PI / 3], straight: [220, 330], spacing: 80, dirt: 24, dirtSpacing: 65, cableLow: 0,
-    hazards: { falls: 1, cable: 3, pipe: 13 } },
-  hard: { main: 23, side: 18.5, gate: 6.4, pipe: 2.1, gap: 10, connectors: [8, 10], shafts: 3, turn: [106, 122],
-    angles: [Math.PI / 2, Math.PI / 3, Math.PI / 4], straight: [190, 300], spacing: 64, dirt: 32, dirtSpacing: 52,
-    cableLow: 0.3, hazards: { grate: 2, sluice: 2, falls: 2, cable: 5, pipe: 18 } },
-  extreme: { main: 21, side: 17, gate: 5.2, pipe: 2.4, gap: 8.5, connectors: [10, 12], shafts: 4, turn: [104, 118],
-    angles: [Math.PI / 2, Math.PI / 3, Math.PI / 4], straight: [170, 270], spacing: 54, dirt: 40, dirtSpacing: 44,
-    cableLow: 0.45, hazards: { grate: 4, sluice: 3, falls: 3, cable: 6, pipe: 22 } },
+  easy: { main: 32, side: 27, gate: 10.5, pipe: 1.5, gap: 0, connectors: [5, 6], shafts: 2, shaftExtra: 0, turn: [124, 140],
+    straight: [260, 360], spacing: 150, ease: 60, dirt: 12, dirtSpacing: 100, cableLow: 0, clearance: 14,
+    weave: 0, curtains: [8, 11], pathCurtains: 0, shaftFans: 0, shaftOmega: 0, hubHole: 0, bladeOmega: 0,
+    hazards: { pipe: 1 } },
+  medium: { main: 26, side: 21, gate: 8, pipe: 1.8, gap: 12, connectors: [6, 7], shafts: 2, shaftExtra: 0, turn: [112, 128],
+    straight: [220, 320], spacing: 92, ease: 56, dirt: 24, dirtSpacing: 66, cableLow: 0, clearance: 7.5,
+    weave: 12, curtains: [10, 14], pathCurtains: 2, shaftFans: 0, shaftOmega: 0, hubHole: 6.6, bladeOmega: 0,
+    hazards: { pipe: 5, cable: 2, falls: 2, hub: 1.5 } },
+  hard: { main: 21, side: 17, gate: 6.2, pipe: 2.1, gap: 10, connectors: [8, 9], shafts: 3, shaftExtra: 10, turn: [106, 120],
+    straight: [190, 280], spacing: 62, ease: 46, dirt: 34, dirtSpacing: 50, cableLow: 0.3, clearance: 6,
+    weave: 10, curtains: [12, 16], pathCurtains: 4, shaftFans: 1, shaftOmega: 0.32, hubHole: 5.6, bladeOmega: 1,
+    hazards: { pipe: 5, cable: 3, falls: 2.5, grate: 2, sluice: 2, hub: 1.5, blades: 2 } },
+  extreme: { main: 18, side: 14.5, gate: 4.9, pipe: 2.3, gap: 8.5, connectors: [10, 11], shafts: 4, shaftExtra: 22, turn: [104, 116],
+    straight: [170, 250], spacing: 46, ease: 38, dirt: 44, dirtSpacing: 40, cableLow: 0.45, clearance: 4.6,
+    weave: 8, curtains: [14, 18], pathCurtains: 6, shaftFans: 2, shaftOmega: 0.4, hubHole: 4.9, bladeOmega: 1.4,
+    hazards: { pipe: 4, cable: 3, falls: 3, grate: 3, sluice: 3, hub: 2, blades: 3 } },
 };
-const PIPE_HITS = { grate: 'grate', sluice: 'sluice', cable: 'cable', root: 'cable', falls: 'falls' };
+// The code alone picks how the network is laid out and how it looks, on every difficulty.
+const STYLES = {
+  grid: { angles: [Math.PI / 2], straight: 1.12, connectors: 0, shafts: 0, side: 0.35, turn: 1 },
+  meander: { angles: [Math.PI / 4, Math.PI / 3, Math.PI / 6], straight: 0.78, connectors: 2, shafts: 0, side: 0.5, turn: 0.95 },
+  sweep: { angles: [Math.PI * 2 / 3, Math.PI / 2, Math.PI * 3 / 4], straight: 1, connectors: 0, shafts: 0, side: 0.4, turn: 1.15 },
+  tower: { angles: [Math.PI / 2, Math.PI / 3], straight: 0.9, connectors: 1, shafts: 1, side: 0.45, turn: 1 },
+  warren: { angles: [Math.PI / 2, Math.PI / 3, Math.PI / 4, Math.PI * 2 / 3], straight: 0.85, connectors: 1, shafts: 0, side: 0.7, turn: 1 },
+};
+const THEMES = [
+  { id: 'brick', style: 0, cell: [1.08, 0.46], mortar: 0.025, wallA: [0.2, 0.11, 0.065], wallB: [0.1, 0.13, 0.12],
+    grout: [0.029, 0.037, 0.033], lamp: [2.1, 0.96, 0.29], water: [0.01, 0.033, 0.01], fog: [0.012, 0.03, 0.032], moss: 1, gloss: 0 },
+  { id: 'concrete', style: 1, cell: [5.6, 2.8], mortar: 0.035, wallA: [0.15, 0.15, 0.145], wallB: [0.105, 0.115, 0.12],
+    grout: [0.045, 0.05, 0.05], lamp: [1.3, 1.55, 1.85], water: [0.012, 0.026, 0.032], fog: [0.016, 0.024, 0.034], moss: 0.45, gloss: 0 },
+  { id: 'stone', style: 2, cell: [2.3, 1.05], mortar: 0.07, wallA: [0.2, 0.165, 0.115], wallB: [0.12, 0.11, 0.095],
+    grout: [0.04, 0.034, 0.026], lamp: [2.3, 1.2, 0.45], water: [0.03, 0.024, 0.01], fog: [0.032, 0.024, 0.014], moss: 1.3, gloss: 0 },
+  { id: 'tile', style: 3, cell: [0.64, 0.64], mortar: 0.02, wallA: [0.3, 0.32, 0.29], wallB: [0.1, 0.24, 0.21],
+    grout: [0.05, 0.058, 0.05], lamp: [1.35, 2, 1.55], water: [0.004, 0.036, 0.03], fog: [0.01, 0.034, 0.03], moss: 0.8, gloss: 1 },
+  { id: 'iron', style: 4, cell: [3.6, 2.2], mortar: 0.03, wallA: [0.16, 0.085, 0.05], wallB: [0.075, 0.072, 0.07],
+    grout: [0.028, 0.024, 0.02], lamp: [2.35, 0.62, 0.26], water: [0.016, 0.012, 0.018], fog: [0.028, 0.013, 0.012], moss: 0.35, gloss: 0.45 },
+];
+const PIPE_HITS = { grate: 'grate', sluice: 'sluice', cable: 'cable', root: 'cable', falls: 'falls', strut: 'fan' };
+
+// Fans share one blade basis with the shader: blade k points along e1·cos θ + e2·sin θ.
+function fanBasis(axis) {
+  const e1 = normalize(cross(Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], axis));
+  return { e1, e2: cross(axis, e1) };
+}
+function fanBlades(fan, time) {
+  const { e1, e2 } = fanBasis(fan.axis), blades = [];
+  for (let k = 0; k < fan.blades; k++) {
+    const angle = fan.phase + fan.omega * time + Math.PI * 2 * k / fan.blades;
+    const d = e1.map((v, i) => v * Math.cos(angle) + e2[i] * Math.sin(angle));
+    blades.push([fan.c.map((v, i) => v + d[i] * fan.inner), fan.c.map((v, i) => v + d[i] * fan.tip)]);
+  }
+  return blades;
+}
+// A curtain of falling water is an upright box; its width runs along d and its face along n.
+function sheetDistance(sheet, x, y, z) {
+  const qx = x - sheet.c[0], qz = z - sheet.c[2];
+  const a = Math.abs(qx * sheet.d[0] + qz * sheet.d[2]) - sheet.hw, b = Math.abs(y - sheet.c[1]) - sheet.hh;
+  const c = Math.abs(qz * sheet.d[0] - qx * sheet.d[2]) - sheet.thick;
+  return Math.hypot(Math.max(a, 0), Math.max(b, 0), Math.max(c, 0));
+}
+// Fan hubs and open rings are the solid between two coaxial cylinders, cut by two planes.
+function ringDistance(fan, x, y, z) {
+  const q = [x - fan.c[0], y - fan.c[1], z - fan.c[2]], along = dot(q, fan.axis);
+  const rho = Math.hypot(q[0] - fan.axis[0] * along, q[1] - fan.axis[1] * along, q[2] - fan.axis[2] * along);
+  const mid = (fan.ringIn + fan.ringOut) / 2, half = (fan.ringOut - fan.ringIn) / 2;
+  return Math.hypot(Math.max(Math.abs(rho - mid) - half, 0), Math.max(Math.abs(along) - fan.ringHalf, 0));
+}
 
 function segmentPoint(point, a, b) {
   const ba = b.map((v, i) => v - a[i]), pa = point.map((v, i) => v - a[i]);
@@ -8674,7 +8873,9 @@ function distanceToSegment(point, a, b) {
   return Math.hypot(px - bx * t, py - by * t, pz - bz * t);
 }
 
-function sphere(city, x, y, z, radius) {
+// Curtains, hubs and rings are static. Blades turn with the run clock, so they only collide when
+// a time is given (flight steps), never in the static layout and respawn checks.
+function sphere(city, x, y, z, radius, time) {
   const p = [x, y, z], world = city.sewer;
   let inShell = false, safe = false;
   for (const tube of world.tunnels) {
@@ -8685,16 +8886,34 @@ function sphere(city, x, y, z, radius) {
     }
   }
   if (!safe) return { kind: inShell ? 'ground' : 'tower', sewer: inShell ? 'water' : 'wall' };
-  for (const [i, pipe] of world.pipes.entries()) {
+  for (let i = 0; i < world.pipes.length; i++) {
+    const pipe = world.pipes[i];
     if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: PIPE_HITS[pipe.kind] || 'pipe', pipe: i };
   }
-  for (const [i, pile] of world.dirt.entries()) {
+  for (let i = 0; i < world.dirt.length; i++) {
+    const pile = world.dirt[i];
     if (Math.abs(x - pile.centre[0]) > pile.radii[0] + radius
       || Math.abs(y - pile.centre[1]) > pile.radii[1] + radius
       || Math.abs(z - pile.centre[2]) > pile.radii[2] + radius) continue;
     const bounds = pile.centre.map((v, j) => v - pile.radii[j])
       .concat(pile.centre.map((v, j) => v + pile.radii[j]));
     if (GAME.collide.ellipsoidDistance2(bounds, x, y, z) <= radius * radius) return { kind: 'tower', sewer: 'dirt', dirt: i };
+  }
+  const sheets = world.sheets || [], fans = world.fans || [];
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i], reach = sheet.hw + sheet.thick + radius;
+    if (Math.abs(y - sheet.c[1]) > sheet.hh + radius
+      || (x - sheet.c[0]) ** 2 + (z - sheet.c[2]) ** 2 > reach * reach) continue;
+    if (sheetDistance(sheet, x, y, z) <= radius) return { kind: 'tower', sewer: 'falls', sheet: i };
+  }
+  for (let i = 0; i < fans.length; i++) {
+    const fan = fans[i], reach = fan.tip + fan.width + radius;
+    if ((x - fan.c[0]) ** 2 + (y - fan.c[1]) ** 2 + (z - fan.c[2]) ** 2 > reach * reach) continue;
+    if (ringDistance(fan, x, y, z) <= radius) return { kind: 'tower', sewer: 'fan', fan: i };
+    if (time === undefined || fan.phase === null) continue;
+    for (const [a, b] of fanBlades(fan, time)) {
+      if (distanceToSegment(p, a, b) <= fan.width + radius) return { kind: 'tower', sewer: 'fan', fan: i };
+    }
   }
   return null;
 }
@@ -8747,7 +8966,7 @@ function step(run, stick, dt) {
   GAME.flight.step(g, stick, dt, () => current(run.city, g.x, g.y, g.z)
     + GAME.flight.FLIGHT.TURN_SINK * Math.abs(stick.x) + power);
   run.time += dt;
-  const to = [g.x, g.y, g.z], hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS);
+  const to = [g.x, g.y, g.z], hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS, run.time);
   if (hit) {
     run.crashed = hit; run.crashes++; run.retries++;
     // Keep the crash camera in the enclosed air. At maximum speed the attempted position can
@@ -8814,12 +9033,25 @@ function steer(pilot, glider, course) {
   return { x, y: clamp(gamma / (gamma >= 0 ? F.CLIMB_ANGLE * Math.max(0.1, eased) : F.DIVE_ANGLE), -1, 1) };
 }
 
+// A blade fan's phase is set as the proof approaches it, so a gap meets the proven line.
+function phaseFans(pending, run, pilot) {
+  const s = pilot.k * SAMPLE, speed = Math.max(run.glider.speed, 20);
+  for (const fan of pending) {
+    if (fan.phase !== null || fan.s - s > 70) continue;
+    const time = run.time + Math.max(0, fan.s - s) / speed, { e1, e2 } = fanBasis(fan.axis);
+    const q = fan.cross.map((v, i) => v - fan.c[i]);
+    fan.phase = wrap(Math.atan2(dot(q, e2), dot(q, e1)) + Math.PI / fan.blades - fan.omega * time);
+  }
+}
+
 function prove(city, course, mistakes = null) {
   const run = GAME.run.create(city, course), pilot = { k: 0 }, events = [], path = [];
   const crashes = [...(mistakes?.crashAt || [])], random = GAME.rng.stream(city.seed, 'sewer-shaky');
+  const pending = (city.sewer.fans || []).filter(fan => fan.phase === null);
   let wobble = { x: 0, y: 0 }, tick = 0, elapsed = 0, failures = 0;
   while (!run.finished && elapsed < course.par * 3 + 30) {
     const stick = steer(pilot, run.glider, course);
+    if (pending.length) phaseFans(pending, run, pilot);
     if (mistakes?.noise) {
       if (tick % 30 === 0) wobble = { x: (random() * 2 - 1) * mistakes.noise, y: (random() * 2 - 1) * mistakes.noise };
       stick.x = clamp(stick.x + wobble.x, -1, 1); stick.y = clamp(stick.y + wobble.y, -1, 1);
@@ -8853,12 +9085,14 @@ function pack(city, course) {
 const unpack = data => restore(data.city, data.course);
 
 function build(seed, difficulty, attempt) {
-  const profile = PROFILES[difficulty];
-  const r = GAME.rng.stream(seed, `sewer-network-v2:${attempt}`), mirrored = r.chance(0.5) ? -1 : 1;
+  const profile = PROFILES[difficulty], look = GAME.rng.stream(seed, 'sewer-look');
+  const theme = THEMES[look.int(0, THEMES.length - 1)], styleName = look.pick(Object.keys(STYLES)), style = STYLES[styleName];
+  const r = GAME.rng.stream(seed, `sewer-network-v3:${attempt}`), mirrored = r.chance(0.5) ? -1 : 1;
   const rotation = r.range(-Math.PI, Math.PI), ox = 1050, oz = 1050;
   const transform = p => [ox + Math.cos(rotation) * p[0] * mirrored + Math.sin(rotation) * p[2],
     p[1], oz - Math.sin(rotation) * p[0] * mirrored + Math.cos(rotation) * p[2]];
-  const raw = [], tunnels = [], shafts = [], ranges = [], occupied = [];
+  // owners[i] is the route range that tunnel i belongs to (-1 for source inlets).
+  const raw = [], tunnels = [], owners = [], shafts = [], ranges = [], occupied = [];
   let pose = [0, 80, 0], yaw = 0, distance = 0, piece = 0;
   const point = p => {
     if (raw.length) distance += Math.hypot(...p.map((v, i) => v - raw.at(-1).p[i]));
@@ -8880,6 +9114,7 @@ function build(seed, difficulty, attempt) {
       const end = Math.min(points.length - 1, k + chunk), a = points[k], b = points[end];
       tunnels.push({ a: transform(a), b: transform(b), radius, kind,
         water: Math.min(a[1], b[1]) - radius * 0.65 });
+      owners.push(ranges.length);
     }
     ranges.push({ s0: first, s1: distance, kind, radius, water, straight: true });
   }
@@ -8911,6 +9146,7 @@ function build(seed, difficulty, attempt) {
     for (let k = 0; k < points.length - 1; k += 7) {
       const end = Math.min(points.length - 1, k + 7);
       tunnels.push({ a: transform(points[k]), b: transform(points[end]), radius: width, kind, water: a[1] - width * 0.65 });
+      owners.push(ranges.length);
     }
     ranges.push({ s0: first, s1: distance, kind, radius: width, water: a[1] - width * 0.65, straight: false });
     yaw += angle;
@@ -8931,43 +9167,54 @@ function build(seed, difficulty, attempt) {
     const geometry = { a: transform([centre[0], lo, centre[2]]), b: transform([centre[0], hi, centre[2]]),
       radius: width, kind: dy > 0 ? 'riser' : 'drop', water: lo - 17 };
     tunnels.push(geometry);
+    owners.push(ranges.length);
     shafts.push({ ...geometry, lift: dy > 0 ? 9.5 : 0 });
     const steps = Math.ceil(Math.hypot(2 * Math.PI * radius, dy) / SAMPLE);
     for (let k = 1; k <= steps; k++) {
       const angle = startAngle + winding * Math.PI * 2 * k / steps;
       point([centre[0] + Math.cos(angle) * radius, start[1] + dy * k / steps, centre[2] + Math.sin(angle) * radius]);
     }
-    ranges.push({ s0: first, s1: distance, kind: geometry.kind, radius: width, water: geometry.water, straight: false });
+    ranges.push({ s0: first, s1: distance, kind: geometry.kind, radius: width, water: geometry.water, straight: false,
+      shaft: shafts.length - 1 });
     return true;
   }
   // Main collectors and narrower branches alternate between seeded bends and spiral chambers
   // that lift or drop the route into another stacked level. Harder routes have more of both.
-  const connectors = r.int(...profile.connectors), shaftAt = new Set();
-  while (shaftAt.size < Math.min(profile.shafts, connectors - 1)) shaftAt.add(r.int(1, connectors - 1));
+  const connectors = r.int(...profile.connectors) + style.connectors, shaftAt = new Set();
+  while (shaftAt.size < Math.min(profile.shafts + style.shafts, connectors - 1)) shaftAt.add(r.int(1, connectors - 1));
   const shaftKinds = ['riser', 'drop'];
+  let lastWide = 0, sides = 0;
   while (shaftKinds.length < shaftAt.size) shaftKinds.push(r.chance(0.5) ? 'riser' : 'drop');
   for (let k = shaftKinds.length - 1; k > 0; k--) { const j = r.int(0, k); [shaftKinds[k], shaftKinds[j]] = [shaftKinds[j], shaftKinds[k]]; }
   for (let c = 0; c <= connectors; c++) {
     const first = c === 0, last = c === connectors;
-    const kind = first || last ? 'main' : r.chance(0.45) ? 'side' : 'main';
-    const length = first ? r.range(400, 470) : last ? r.range(380, 440) : r.range(...profile.straight);
-    if (![1, 0.75, 1.3, 0.6].some(scale => straight(Math.max(first || last ? 320 : 170, length * scale), kind))) return null;
+    // Every route has at least one narrower branch.
+    const kind = first || last ? 'main' : r.chance(style.side) || (!sides && c === connectors - 1) ? 'side' : 'main';
+    if (kind === 'side') sides++;
+    const length = first ? r.range(280, 470) : last ? r.range(380, 440) : r.range(...profile.straight) * style.straight;
+    if (![1, 0.75, 1.3, 0.6].some(scale => straight(Math.max(first ? 280 : last ? 320 : 170, length * scale), kind))) return null;
     if (last) break;
     if (shaftAt.has(c)) {
-      const rising = shaftKinds.shift() === 'riser', height = Math.max(rising ? 70 : 56, profile.main * 2 + 12);
-      const dy = (height + r.range(0, 6)) * (rising ? 1 : -1), radius = r.range(76, 96), hand = r.chance(0.5) ? 1 : -1;
+      const rising = shaftKinds.shift() === 'riser', height = Math.max(rising ? 74 : 62, profile.main * 2 + 28) + profile.shaftExtra;
+      const dy = (height + r.range(0, 8)) * (rising ? 1 : -1), radius = r.range(76, 96), hand = r.chance(0.5) ? 1 : -1;
       if (!shaft(dy, radius, hand) && !shaft(dy, radius, -hand)) return null;
     } else {
-      const angle = r.pick(profile.angles), radius = r.range(...profile.turn);
+      const angle = r.pick(style.angles);
+      // Shallow bends need a wider arc so the next tunnel clears the one before the bend.
+      const radius = Math.max(r.range(...profile.turn) * style.turn, (2 * profile.main + 16) / (2 * Math.sin(angle / 2)));
       let sign = r.chance(0.5) ? 1 : -1;
+      // Wide turns zig-zag rather than curl the network back into itself.
+      if (angle > Math.PI / 2 + 0.01 && lastWide) sign = r.chance(0.75) ? -lastWide : lastWide;
       // Far from the first manhole, prefer bending back so the network stays compact.
       if (Math.hypot(pose[0], pose[2]) > 650) {
         const home = s => -(Math.sin(yaw + s * angle) * pose[0] + Math.cos(yaw + s * angle) * pose[2]);
         const better = home(1) > home(-1) ? 1 : -1;
         sign = r.chance(0.75) ? better : -better;
       }
+      const before = yaw;
       if (!turn(sign * angle, radius, kind) && !turn(-sign * angle, radius, kind)
         && !turn(sign * Math.PI / 2, radius, kind) && !turn(-sign * Math.PI / 2, radius, kind)) return null;
+      if (angle > Math.PI / 2 + 0.01) lastWide = Math.sign(yaw - before);
     }
   }
 
@@ -8989,19 +9236,45 @@ function build(seed, difficulty, attempt) {
     return { k, p, direction, side: [-direction[2], 0, direction[0]] };
   };
   const at = s => frame(line, s);
+  // A prop belongs to the bore it was placed in. Where a shaft, an inlet or a branch at another
+  // water level opens beside that spot, the prop would hang in the other volume, so it moves on.
+  const sameBore = (tube, range) => tube.kind === range.kind && tube.radius === range.radius
+    && Math.abs(tube.water - range.water) < 1e-6;
+  const inside = (p, owner, margin) => tunnels.some((tube, i) => owners[i] !== owner
+    && distanceToSegment(p, tube.a, tube.b) < tube.radius + margin);
+  const foreign = (p, owner, margin) => tunnels.some((tube, i) => owners[i] !== owner && !sameBore(tube, ranges[owner])
+    && distanceToSegment(p, tube.a, tube.b) < tube.radius + margin);
+  const isolated = (s, range, span = 0, margin = 1.5) => {
+    const { p: c, side, direction } = frame(base, s), R = range.radius, owner = ranges.indexOf(range);
+    for (const along of span ? [-span, 0, span] : [0]) for (const u of [-0.92, -0.5, 0, 0.5, 0.92]) {
+      for (const h of [range.water + 0.5 - c[1], 0, 0.5 * R, 0.92 * R]) {
+        if (Math.hypot(u * R, h) > R - 0.4) continue;
+        const p = [c[0] + side[0] * u * R + direction[0] * along, c[1] + h, c[2] + side[2] * u * R + direction[2] * along];
+        if (foreign(p, owner, margin)) return false;
+      }
+    }
+    return true;
+  };
   const inflows = [];
   for (const range of ranges.filter(range => ['main', 'side'].includes(range.kind))) {
-    const s = (range.s0 + range.s1) / 2, { p, direction, side } = at(s), sign = r.chance(0.5) ? -1 : 1;
-    const mouth = p.map((v, i) => v + side[i] * sign * (range.radius - 2));
-    mouth[1] = range.water + 8;
-    const back = mouth.map((v, i) => v + side[i] * sign * 75 + direction[i] * 18);
-    back[1] += 2;
-    const width = 6 + r.range(0, 1.4);
-    tunnels.push({ a: mouth, b: back, radius: width, kind: 'inlet', water: mouth[1] - width * 0.45 });
-    inflows.push({ a: [...mouth], b: [mouth[0] - side[0] * sign * 7, range.water + 0.6, mouth[2] - side[2] * sign * 7],
-      radius: 1.1, side: sign });
+    const owner = ranges.indexOf(range), sign = r.chance(0.5) ? -1 : 1, width = 6 + r.range(0, 1.4);
+    // The source sits mid-range, or a little either way when that spot opens into another bore.
+    for (const f of [0.5, 0.38, 0.62, 0.3, 0.7]) {
+      const s = range.s0 + (range.s1 - range.s0) * f, { p, direction, side } = at(s);
+      const mouth = p.map((v, i) => v + side[i] * sign * (range.radius - 2));
+      mouth[1] = range.water + 8;
+      const back = mouth.map((v, i) => v + side[i] * sign * 75 + direction[i] * 18);
+      back[1] += 2;
+      const middle = mouth.map((v, i) => (v + back[i]) / 2);
+      if (!isolated(s, range, 12) || inside(middle, owner, width + 4) || inside(back, owner, width + 4)) continue;
+      tunnels.push({ a: mouth, b: back, radius: width, kind: 'inlet', water: mouth[1] - width * 0.45 });
+      owners.push(-1);
+      inflows.push({ a: [...mouth], b: [mouth[0] - side[0] * sign * 7, range.water + 0.6, mouth[2] - side[2] * sign * 7],
+        radius: 1.1, side: sign });
+      break;
+    }
   }
-  const pipes = [], dirt = [], hazards = [], gateSpots = [];
+  const pipes = [], dirt = [], sheets = [], fans = [], wallFans = [], hazards = [], gateSpots = [];
   const shuffle = list => {
     for (let k = list.length - 1; k > 0; k--) { const j = r.int(0, k); [list[k], list[j]] = [list[j], list[k]]; }
     return list;
@@ -9014,21 +9287,35 @@ function build(seed, difficulty, attempt) {
   // Seeded stations along straight tunnels, clear of the start, the finish and every ring.
   const stations = [];
   for (const range of ranges.filter(range => range.straight)) {
-    for (let s = range.s0 + 60 + r.range(0, 25); s <= range.s1 - 45; s += profile.spacing * r.range(0.8, 1.2)) {
+    for (let s = range.s0 + 40 + r.range(0, 20); s <= range.s1 - 30; s += profile.spacing * r.range(0.8, 1.2)) {
       if (s > 150 && s < finishS - 70 && gateSpots.every(g => Math.abs(g - s) > 26)) stations.push({ s, range });
     }
   }
-  shuffle(stations);
-  const BENDS = { grate: true, sluice: true, falls: true };
-  for (const [type, count] of Object.entries(profile.hazards)) {
-    let placed = 0;
-    for (const station of stations) {
-      if (placed >= count) break;
-      const reach = BENDS[type] ? 76 : 16, { s, range } = station;
-      if (station.used || hazards.some(h => Math.abs(h.s - s) < Math.max(h.reach, reach) + 10)) continue;
-      if (BENDS[type] && (s - reach < range.s0 || s + reach > range.s1)) continue;
-      station.used = true; placed++;
-      hazards.push({ type, s, range, reach, u: 0, v: 0 });
+  // Each station draws a weighted hazard; one that does not fit there falls back to a pipe.
+  const BENDS = { grate: true, sluice: true, falls: true, blades: true };
+  const weights = Object.entries(profile.hazards), total = weights.reduce((sum, [, w]) => sum + w, 0);
+  const choose = () => {
+    let x = r() * total;
+    for (const [type, w] of weights) if ((x -= w) < 0) return type;
+    return 'pipe';
+  };
+  // Hazards that bend the line claim their stations first; the rest fit around their eased
+  // approaches, but a hub's hole on the tunnel axis needs the line fully back on that axis.
+  const spacing = (a, b) => a.bend && b.bend ? Math.max(a.reach, b.reach) + 10
+    : a.bend || b.bend ? ((a.bend ? b : a).type === 'hub' ? (a.bend ? a : b).reach + 10 : 34) : 26;
+  const plan = stations.map(station => ({ ...station, wanted: choose() }));
+  for (const bends of [true, false]) {
+    for (const station of plan) {
+      const { s, range } = station;
+      if (station.placed || (bends && !BENDS[station.wanted])) continue;
+      for (const type of bends ? [station.wanted] : new Set([station.wanted, 'pipe'])) {
+        const h = { type, s, range, bend: !!BENDS[type], reach: BENDS[type] ? 14 + profile.ease : 16, u: 0, v: 0 };
+        if (hazards.some(other => Math.abs(other.s - s) < spacing(h, other))) continue;
+        if (h.bend && (s - h.reach < range.s0 || s + h.reach > range.s1)) continue;
+        if (!isolated(s, range, type === 'cable' ? 10 : 4)) continue;
+        hazards.push(h); station.placed = true;
+        break;
+      }
     }
   }
   hazards.sort((a, b) => a.s - b.s);
@@ -9036,27 +9323,65 @@ function build(seed, difficulty, attempt) {
     const R = h.range.radius;
     if (h.type === 'grate') { h.u = r.range(-0.26, 0.26) * R; h.v = r.range(-0.12, 0.2) * R; }
     else if (h.type === 'sluice') { h.top = r.chance(0.55); h.v = (h.top ? -0.2 : 0.18) * R; }
-    else if (h.type === 'falls') { h.sign = r.chance(0.5) ? 1 : -1; h.u = -h.sign * 0.24 * R; }
+    else if (h.type === 'falls') { h.sign = r.chance(0.5) ? 1 : -1; h.u = -h.sign * 0.3 * R; }
+    else if (h.type === 'blades') { h.sign = r.chance(0.5) ? 1 : -1; h.u = h.sign * 0.46 * R; h.v = r.range(-0.05, 0.2) * R; }
   }
-  // Bend the guide line through each opening: level for 14 units either side, eased over 60.
+  // Bend the guide line through each opening: level for 14 units either side, then eased.
   for (let k = 0; k < n; k++) {
     const s = k * SAMPLE;
     let du = 0, dv = 0;
     for (const h of hazards) {
       const d = Math.abs(s - h.s);
-      if ((!h.u && !h.v) || d >= 74) continue;
-      const w = d <= 14 ? 1 : 0.5 + 0.5 * Math.cos(Math.PI * (d - 14) / 60);
+      if ((!h.u && !h.v) || d >= h.reach) continue;
+      const w = d <= 14 ? 1 : 0.5 + 0.5 * Math.cos(Math.PI * (d - 14) / (h.reach - 14));
       du += h.u * w; dv += h.v * w;
     }
     if (!du && !dv) continue;
     const { side } = frame(base, s);
     line.x[k] += side[0] * du; line.y[k] += dv; line.z[k] += side[2] * du;
   }
+  // Inside a shaft the guide weaves in and out around the spiral, past curtains set on the
+  // spiral itself; it still meets both straight tunnels exactly on their axes.
+  for (const range of ranges) {
+    if (range.shaft === undefined || !profile.weave) continue;
+    const tube = shafts[range.shaft];
+    range.weave = { amplitude: profile.weave, waves: difficulty === 'extreme' ? 3 : r.int(3, 4) };
+    for (let k = Math.ceil(range.s0 / SAMPLE); k <= Math.min(n - 1, Math.floor(range.s1 / SAMPLE)); k++) {
+      const f = (k * SAMPLE - range.s0) / (range.s1 - range.s0), offset = profile.weave * Math.sin(range.weave.waves * Math.PI * f);
+      const dx = line.x[k] - tube.a[0], dz = line.z[k] - tube.a[2], rho = Math.hypot(dx, dz);
+      line.x[k] += dx / rho * offset; line.z[k] += dz / rho * offset;
+    }
+  }
+  const gates = [];
+  // Gates at bends and shaft quarters make every connecting tunnel part of the ordered route.
+  for (const range of ranges) {
+    const count = range.kind === 'riser' || range.kind === 'drop' ? 4 : Math.max(1, Math.floor((range.s1 - range.s0) / 210));
+    for (let k = 1; k <= count; k++) {
+      const s = range.s0 + (range.s1 - range.s0) * k / (count + 0.25), { p, direction } = at(s);
+      if (s > finishS - 30) continue;
+      gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction, s: Math.round(s / SAMPLE) * SAMPLE,
+        radius: profile.gate, finish: false });
+    }
+  }
+  const { p: finishPoint, direction: finishDirection } = at(finishS);
+  gates.push({ index: gates.length, x: finishPoint[0], y: finishPoint[1], z: finishPoint[2], n: finishDirection,
+    s: Math.round(finishS / SAMPLE) * SAMPLE, radius: profile.gate, finish: true });
+  gates.sort((a, b) => a.s - b.s); gates.forEach((gate, index) => { gate.index = index; });
+  // Scenery and hazards keep their distance from the proven line and never cut through a ring.
+  const clearOf = (distanceTo, from, to, clearance) => {
+    for (let k = Math.max(0, Math.floor(from / SAMPLE)); k <= Math.min(n - 1, Math.ceil(to / SAMPLE)); k++) {
+      if (distanceTo([line.x[k], line.y[k], line.z[k]]) < clearance) return false;
+    }
+    return gates.every(gate => distanceTo([gate.x, gate.y, gate.z]) >= gate.radius + 1.5);
+  };
+  const curtain = (centre, d, hw, bottom, top, thick, kind) => ({ c: [centre[0], (bottom + top) / 2, centre[2]], d: [...d], hw,
+    hh: (top - bottom) / 2, thick, kind });
   const across = (c, side, u, y, direction = null, along = 0) => [c[0] + side[0] * u + (direction ? direction[0] * along : 0), y,
     c[2] + side[2] * u + (direction ? direction[2] * along : 0)];
   for (const h of hazards) {
     const { p: c, side, direction } = frame(base, h.s), R = h.range.radius, water = h.range.water, s = h.s;
-    const ly = c[1] + h.v, lu = h.u, roof = u => c[1] + Math.sqrt(Math.max(0, R * R - u * u));
+    const lp = at(s).p, ly = lp[1], lu = (lp[0] - c[0]) * side[0] + (lp[2] - c[2]) * side[2];
+    const roof = u => c[1] + Math.sqrt(Math.max(0, R * R - u * u));
     if (h.type === 'grate') {
       // An iron grate fills the bore except for one seeded window on the guide line.
       const bar = 0.55, pitch = 3.1, w = profile.gap / 2, high = profile.gap * 0.58, bottom = water - 1.2;
@@ -9079,9 +9404,23 @@ function build(seed, difficulty, attempt) {
         pipes.push({ a: across(c, side, -halfAt(y), y), b: across(c, side, halfAt(y), y), radius: plank, kind: 'sluice', s });
       }
     } else if (h.type === 'falls') {
-      // Runoff pours through a cracked roof; the guide swings to the other side of the bore.
-      const u = h.sign * 0.17 * R;
-      pipes.push({ a: across(c, side, u, water - 1.5), b: across(c, side, u, roof(u) + 1), radius: 2.3, kind: 'falls', s });
+      // Runoff pours through a split roof across one half of the bore; the guide takes the other.
+      const u0 = h.sign * 0.04 * R, u1 = h.sign * (R + 1.5);
+      sheets.push(curtain(across(c, side, (u0 + u1) / 2, 0), side, Math.abs(u1 - u0) / 2, water - 1, c[1] + R + 1.5, 0.45, 'falls'));
+    } else if (h.type === 'hub') {
+      // A ventilation fan fills the bore; its blades turn around an open ring on the tunnel axis.
+      const hole = profile.hubHole;
+      fans.push({ c: [...c], axis: [...direction], tip: R - 0.7, inner: hole + 1, blades: r.int(5, 7), width: 0.5,
+        omega: (r.chance(0.5) ? 1 : -1) * r.range(1.5, 2.4), phase: r.range(0, Math.PI * 2), s, cross: null,
+        ringIn: hole, ringOut: hole + 1.3, ringHalf: 0.8, kind: 'hub' });
+    } else if (h.type === 'blades') {
+      // A big fan turns on a hub held from the roof; the guide passes between two of its blades.
+      fans.push({ c: [...c], axis: [...direction], tip: R - 0.7, inner: 1.8, blades: difficulty === 'extreme' ? r.int(3, 4) : 3,
+        width: 0.6, omega: (r.chance(0.5) ? 1 : -1) * profile.bladeOmega * r.range(0.85, 1.15), phase: null, s,
+        cross: at(s).p, ringIn: 0, ringOut: 2.4, ringHalf: 1.1, kind: 'blades' });
+      const back = across(c, side, 0, c[1], direction, -2.6);
+      pipes.push({ a: [...c], b: back, radius: 0.9, kind: 'strut', s });
+      pipes.push({ a: back, b: across(c, side, 0, c[1] + R + 1, direction, -2.6), radius: 0.9, kind: 'strut', s });
     } else if (h.type === 'cable') {
       // Roots and sagging cables hang from the roof; only those beside the line reach down low.
       for (let j = r.int(5, 9); j > 0; j--) {
@@ -9098,6 +9437,12 @@ function build(seed, difficulty, attempt) {
       const sign = r.chance(0.5) ? 1 : -1, diagonal = r.chance(0.33), height = ly + sign * 7;
       pipes.push({ a: across(c, side, -(R - 1), height), b: across(c, side, R - 1, height + (diagonal ? 2.2 : 0)),
         radius: profile.pipe, kind: diagonal ? 'diagonal' : 'crossing', s });
+      // Harder tunnels often add a second pipe on the other side of the line, a few units on.
+      const other = ly - sign * 7.5;
+      if (profile.gap && r.chance(difficulty === 'extreme' ? 0.45 : difficulty === 'hard' ? 0.35 : 0.2) && other - profile.pipe > water + 0.3) {
+        pipes.push({ a: across(c, side, -(R - 1), other, direction, 6), b: across(c, side, R - 1, other, direction, 6),
+          radius: profile.pipe * 0.8, kind: 'crossing', s });
+      }
       // A circular return pipe follows one wall and turns into the ceiling. Its ends overlap so
       // it reads as a continuous service pipe rather than a floating rectangular obstacle.
       if (r.chance(0.35)) {
@@ -9107,46 +9452,144 @@ function build(seed, difficulty, attempt) {
       }
     }
   }
-  // Silt banks: low, wide mounds that barely break the waterline, ringed by smaller lumps.
+  // Scenery along the straights: water pours down the side walls and fans turn behind grilles in
+  // them. Both stay inside their own bore, beside the line and clear of hazards and openings.
+  for (const range of ranges.filter(range => range.straight)) {
+    const R = range.radius;
+    for (let s = range.s0 + 30 + r.range(0, 40); s < range.s1 - 30; s += r.range(70, 150)) {
+      const { p: c, side, direction } = frame(base, s), u = (r.chance(0.5) ? 1 : -1) * 0.74 * R, hw = r.range(3, 7.5);
+      const sheet = curtain(across(c, side, u, 0), direction, hw, range.water - 1, c[1] + Math.sqrt(R * R - u * u) + 1, 0.35, 'wall');
+      if (s < 40 || s > finishS - 20 || hazards.some(h => Math.abs(h.s - s) < hw + 14) || !isolated(s, range, hw + 2)) continue;
+      if (clearOf(p => sheetDistance(sheet, ...p), s - 40, s + 40, 3.5)) sheets.push(sheet);
+    }
+    for (let s = range.s0 + 50 + r.range(0, 50); s < range.s1 - 40; s += r.range(90, 170)) {
+      const { p: c, side } = frame(base, s), sign = r.chance(0.5) ? 1 : -1, v = r.range(0.02, 0.22) * R;
+      const u = sign * Math.sqrt(R * R - v * v), radius = r.range(0.26, 0.34) * R, centre = across(c, side, u, c[1] + v);
+      const fan = { c: centre, n: normalize([-side[0] * u, -v, -side[2] * u]), radius, blades: r.int(3, 6),
+        omega: (r.chance(0.5) ? 1 : -1) * r.range(1.2, 3.2), phase: r.range(0, Math.PI * 2) };
+      if (hazards.some(h => Math.abs(h.s - s) < radius + 8) || !isolated(s, range, radius + 3)
+        || inflows.some(flow => Math.hypot(...flow.a.map((v, i) => v - centre[i])) < radius + 10)
+        || sheets.some(sheet => sheetDistance(sheet, ...centre) < radius + 2)) continue;
+      wallFans.push(fan);
+    }
+  }
+  // Shafts are the big rooms. A column carries a huge fan under the dome, curtains fall from the
+  // dome along the wall and fans turn in it. Medium routes weave between curtains on the spiral;
+  // on hard routes some shafts swap those curtains for fans that sweep across the spiral.
+  const fanParity = r.int(0, 1);
+  for (const range of ranges) {
+    if (range.shaft === undefined) continue;
+    const tube = shafts[range.shaft], owner = ranges.indexOf(range), Rs = tube.radius, lo = tube.a[1], hi = tube.b[1];
+    const [ax, , az] = tube.a, R = profile.main, sAt = f => range.s0 + (range.s1 - range.s0) * f;
+    const crossing = profile.shaftFans > 0 && (range.shaft + fanParity) % 2 === 1, reach = Rs - 6.5;
+    // Curtains reach down to the lowest water around them, including a joining tunnel's channel.
+    const bottom = Math.min(tube.water, ...tunnels.filter((_, i) => Math.abs(owners[i] - owner) === 1).map(t => t.water)) - 1;
+    const dome = rho => hi + Math.sqrt(Math.max(0, Rs * Rs - rho * rho));
+    let innermost = Infinity;
+    const shaftSheet = (x, z, d, hw, thick, kind, clearance) => {
+      // A flat curtain meets the dome along its whole width; its ends tuck into the masonry.
+      const qx = x - ax, qz = z - az, t = clamp(-(qx * d[0] + qz * d[2]), -hw, hw);
+      const nearest = Math.hypot(qx + d[0] * t, qz + d[2] * t) - thick;
+      const far = Math.max(Math.hypot(qx + d[0] * hw, qz + d[2] * hw), Math.hypot(qx - d[0] * hw, qz - d[2] * hw));
+      if (far > Rs - 0.8) return false;
+      const sheet = curtain([x, 0, z], d, hw, bottom, dome(nearest) + 0.5, thick, kind);
+      if (!clearOf(p => sheetDistance(sheet, ...p), range.s0 - 100, range.s1 + 100, clearance)) return false;
+      sheets.push(sheet); innermost = Math.min(innermost, nearest);
+      return true;
+    };
+    for (let j = r.int(...profile.curtains); j > 0; j--) {
+      const angle = r.range(0, Math.PI * 2), rho = Rs - r.range(2.5, 4.5);
+      shaftSheet(ax + Math.cos(angle) * rho, az + Math.sin(angle) * rho, [-Math.sin(angle), 0, Math.cos(angle)],
+        r.range(4, 13), 0.4, 'shaft', 4.5);
+    }
+    if (!crossing && range.weave) {
+      // On the spiral where the guide swings out or in, and right beside it elsewhere.
+      for (let j = 0; j < range.weave.waves; j++) {
+        const { p, direction } = frame(base, sAt((j + 0.5) / range.weave.waves));
+        shaftSheet(p[0], p[2], direction, r.range(5, 9), 0.5, 'spiral', profile.clearance);
+      }
+      for (let j = 0, tries = 0; j < profile.pathCurtains && tries < profile.pathCurtains * 4; tries++) {
+        const { p, direction } = at(sAt(r.range(0.08, 0.92))), qx = p[0] - ax, qz = p[2] - az, rho = Math.hypot(qx, qz);
+        const offset = (r.chance(0.5) ? 1 : -1) * (profile.clearance + 2.2 + r.range(0, 4));
+        if (shaftSheet(p[0] + qx / rho * offset, p[2] + qz / rho * offset, direction, r.range(3, 6), 0.45, 'spiral', profile.clearance)) j++;
+      }
+    }
+    if (crossing) {
+      // Slow three-bladed fans span the shaft between its tunnel openings, turning with the flight.
+      const startY = at(range.s0).p[1], endY = at(range.s1).p[1], clear = R + 1.7 + 4;
+      const fa = (lo + clear - startY) / (endY - startY), fb = (hi - clear - startY) / (endY - startY);
+      const low = Math.max(0.08, Math.min(fa, fb)), high = Math.min(0.92, Math.max(fa, fb));
+      const { p: mid, direction } = at(sAt(0.5)), travel = Math.sign((mid[2] - az) * direction[0] - (mid[0] - ax) * direction[2]) || 1;
+      const placed = [];
+      for (let tries = 0; placed.length < profile.shaftFans && tries < 12 && high > low; tries++) {
+        const f = r.range(low, high), s = sAt(f);
+        if (placed.some(g => Math.abs(g - f) < 0.16) || gates.some(gate => Math.abs(gate.s - s) < 24)) continue;
+        placed.push(f);
+        const p = at(s).p;
+        fans.push({ c: [ax, p[1], az], axis: [0, 1, 0], tip: reach, inner: 5, blades: 3, width: 1.7,
+          omega: travel * profile.shaftOmega, phase: null, s, cross: p, ringIn: 0, ringOut: 6, ringHalf: 2.2, kind: 'shaft' });
+      }
+    }
+    pipes.push({ a: [ax, tube.water - 1, az], b: [ax, hi + Rs + 1, az], radius: 2.4, kind: 'pole', s: null });
+    const domeY = hi + R + 9, domeTip = Math.sqrt(Math.max(0, Rs * Rs - (domeY + 1.5 - hi) ** 2)) - 2;
+    fans.push({ c: [ax, domeY, az], axis: [0, 1, 0], tip: Math.min(domeTip, crossing ? reach : innermost - 3), inner: 5,
+      blades: r.int(4, 6), width: 1.5, omega: (r.chance(0.5) ? 1 : -1) * r.range(0.22, 0.4), phase: r.range(0, Math.PI * 2),
+      s: null, cross: null, ringIn: 0, ringOut: 6.5, ringHalf: 2, kind: 'dome' });
+    for (let j = r.int(3, 6), tries = 0; j > 0 && tries < 40; tries++) {
+      const angle = r.range(0, Math.PI * 2), radius = r.range(7, 14);
+      const y = r.range(lo + radius + 3, Math.max(lo + radius + 3, hi - radius - 3));
+      const normal = [-Math.cos(angle), 0, -Math.sin(angle)], c = [ax - normal[0] * Rs, y, az - normal[2] * Rs];
+      const front = c.map((v, i) => v + normal[i] * 1.5);
+      if (foreign(front, owner, radius + 3) || wallFans.some(o => Math.hypot(...o.c.map((v, i) => v - c[i])) < o.radius + radius + 3)
+        || sheets.some(sheet => sheetDistance(sheet, ...front) < radius + 1)) continue;
+      wallFans.push({ c, n: normal, radius, blades: r.int(4, 7), omega: (r.chance(0.5) ? 1 : -1) * r.range(0.8, 2),
+        phase: r.range(0, Math.PI * 2) });
+      j--;
+    }
+  }
+  // Silt banks: low, wide mounds that barely break the waterline, ringed by smaller lumps. Each
+  // lump stays inside its own water channel, away from any other bore's opening.
   const spots = [];
   for (const range of ranges.filter(range => range.kind === 'main' || range.kind === 'side')) {
     for (let s = range.s0 + 30 + r.range(0, 30); s < range.s1 - 20; s += profile.dirtSpacing * r.range(0.7, 1.3)) {
       if (s > 70) spots.push({ s, range });
     }
   }
-  for (const { s, range } of shuffle(spots).slice(0, profile.dirt)) {
-    const { p: c, side, direction } = frame(base, s), R = range.radius, water = range.water;
+  let banks = 0;
+  for (const { s, range } of shuffle(spots)) {
+    if (banks >= profile.dirt) break;
+    const { p: c, side, direction } = frame(base, s), R = range.radius, water = range.water, owner = ranges.indexOf(range);
+    const channel = Math.sqrt(Math.max(0, R * R - (water - c[1]) ** 2)) - 0.8;
     const lengthwiseX = Math.abs(direction[0]) > Math.abs(direction[2]);
-    const mound = (u, along, long, wide, high, lift) => dirt.push({ centre: across(c, side, u, water + lift, direction, along),
-      radii: lengthwiseX ? [long, high, wide] : [wide, high, long] });
-    const u = (r.chance(0.5) ? 1 : -1) * r.range(0.15, 0.5) * R;
-    mound(u, 0, r.range(7, 13), r.range(5, 9), r.range(1.5, 2.8), r.range(0.1, 0.6));
-    for (let j = r.int(2, 4); j > 0; j--) mound(u + r.range(-7, 7), r.range(-12, 12), r.range(1.4, 3.6), r.range(1.2, 3.2), r.range(0.5, 1.3), 0.15);
-  }
-  const gates = [];
-  // Gates at bends and shaft quarters make every connecting tunnel part of the ordered route.
-  for (const range of ranges) {
-    const count = range.kind === 'riser' || range.kind === 'drop' ? 4 : Math.max(1, Math.floor((range.s1 - range.s0) / 210));
-    for (let k = 1; k <= count; k++) {
-      const s = range.s0 + (range.s1 - range.s0) * k / (count + 0.25), { p, direction } = at(s);
-      if (s > finishS - 30) continue;
-      gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction, s: Math.round(s / SAMPLE) * SAMPLE,
-        radius: profile.gate, finish: false });
+    const radiiOf = (long, high, wide) => lengthwiseX ? [long, high, wide] : [wide, high, long];
+    const spread = radii => Math.hypot(radii[0] * side[0], radii[2] * side[2]);
+    const main = radiiOf(r.range(7, 13), r.range(1.5, 2.8), r.range(5, 9) * Math.min(1, R / 26));
+    const room = channel - spread(main), u = (r.chance(0.5) ? 1 : -1) * Math.min(r.range(0.1, 0.35) * R, room);
+    const lumps = [{ u, along: 0, radii: main, lift: r.range(0.1, 0.6) }];
+    for (let j = r.int(2, 4); j > 0; j--) {
+      const radii = radiiOf(r.range(1.4, 3.6), r.range(0.5, 1.3), r.range(1.2, 3.2)), limit = Math.max(0, channel - spread(radii));
+      lumps.push({ u: clamp(u + r.range(-7, 7), -limit, limit), along: r.range(-12, 12), radii, lift: 0.15 });
     }
+    const ok = room >= 0 && lumps.every(l => {
+      const centre = across(c, side, l.u, water + 0.3, direction, l.along);
+      return [[0, 0], [l.radii[0], 0], [-l.radii[0], 0], [0, l.radii[2]], [0, -l.radii[2]]]
+        .every(([dx, dz]) => !foreign([centre[0] + dx, centre[1], centre[2] + dz], owner, 0.5))
+        && inflows.every(flow => Math.hypot(flow.b[0] - centre[0], flow.b[2] - centre[2]) > Math.max(l.radii[0], l.radii[2]) + 4);
+    });
+    if (!ok) continue;
+    for (const l of lumps) dirt.push({ centre: across(c, side, l.u, water + l.lift, direction, l.along), radii: l.radii });
+    banks++;
   }
-  const { p, direction } = at(finishS);
-  gates.push({ index: gates.length, x: p[0], y: p[1], z: p[2], n: direction,
-    s: Math.round(finishS / SAMPLE) * SAMPLE, radius: profile.gate, finish: true });
-  gates.sort((a, b) => a.s - b.s); gates.forEach((gate, index) => { gate.index = index; });
   const city = { environment: 'sewer', seed, difficulty, size: 4096, maxHeight: 260, obstacles: pipes,
-    sewer: { tunnels, pipes, dirt, inflows, shafts, startY: 80,
+    sewer: { tunnels, pipes, dirt, inflows, shafts, sheets, fans, wallFans, theme: { ...theme }, startY: 80,
       minY: Math.min(...tunnels.map(tube => tube.water ?? Infinity)) } };
   const counts = {};
   for (const h of hazards) counts[h.type] = (counts[h.type] || 0) + 1;
+  counts.curtains = sheets.length; counts.fans = fans.length; counts.wallFans = wallFans.length;
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
-    par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length,
-    props: pipes.length, bridges: 0, hazards: counts, version: 2 };
+    par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length + sheets.length + fans.length,
+    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 3 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
@@ -9170,7 +9613,8 @@ function generate(seed, difficulty = 'medium') {
 }
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
-  sphere, groundHeight, current, pack, unpack, distanceToSegment, PROFILES, SAMPLE };
+  sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
+  PROFILES, STYLES, THEMES, SAMPLE };
 
 })();
 </script>
@@ -10886,6 +11330,8 @@ let preference = 'neon-flight', requestedSong = null, renderController = null, s
 let hasFlown = false;
 let environment = 'surface', surfaceSong = null, surfaceSelectionChanged = false;
 let alarm = false, alarmBuffer = null, alarmTask = null, alarmSource = null;
+let blastBuffers = null, blastsTried = false; // Collapse destruction effects, rendered after the alarm
+const blastSources = new Set();
 let sceneMuted = false, musicPaused = false;
 const plays = {};                  // effect name -> times played (tests read this)
 
@@ -10916,18 +11362,24 @@ function toBuffer(...channels) {
 
 // This tiny warning renders separately from the large music stems. A Collapse can therefore
 // sound immediately after audio unlock, including on a phone still preparing its first song.
+// The destruction blasts follow on the same worker once the alarm is ready.
 function prepareAlarm() {
-  if (alarmBuffer) return Promise.resolve();
+  if (alarmBuffer && (blastBuffers || blastsTried)) return Promise.resolve();
   if (alarmTask) return alarmTask;
   alarmTask = (async () => {
     let worker, url;
     try {
       url = workerUrl(); worker = new Worker(url);
-      const r = await job(worker, { type: 'collapse-alarm' }, new AbortController().signal);
-      alarmBuffer = toBuffer(r.l, r.r);
-      syncAlarm();
+      if (!alarmBuffer) {
+        const r = await job(worker, { type: 'collapse-alarm' }, new AbortController().signal);
+        alarmBuffer = toBuffer(r.l, r.r);
+        syncAlarm();
+      }
+      blastsTried = true;
+      const b = await job(worker, { type: 'collapse-blasts' }, new AbortController().signal);
+      if (b.effects) blastBuffers = Object.fromEntries(Object.entries(b.effects).map(([k, s]) => [k, toBuffer(s.l, s.r)]));
     } catch (err) {
-      // The full song render supplies the same effect if this optional early job fails.
+      // The full song render supplies the alarm if this optional early job fails.
       console.warn(`[audio] warning preparation: ${err.message}`);
     } finally { worker?.terminate(); if (url) URL.revokeObjectURL(url); }
   })().finally(() => { alarmTask = null; });
@@ -11129,6 +11581,8 @@ function ensureOutput() {
 }
 
 function stopAlarm() {
+  for (const { src, gain } of blastSources) { gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03); src.stop(ctx.currentTime + 0.2); }
+  blastSources.clear();
   if (!alarmSource) return;
   const { src, gain } = alarmSource;
   gain.gain.setTargetAtTime(0, ctx.currentTime, 0.012);
@@ -11136,9 +11590,10 @@ function stopAlarm() {
   alarmSource = null;
 }
 
+// During a Collapse the music is gone: only the alarm and the destruction around it are heard.
 function syncAlarm() {
   const audible = alarm && !sceneMuted && !musicPaused;
-  if (nodes?.warningMusic) nodes.warningMusic.gain.setTargetAtTime(audible ? 0.56 : 1, ctx.currentTime, 0.08);
+  if (nodes?.warningMusic) nodes.warningMusic.gain.setTargetAtTime(audible ? 0 : 1, ctx.currentTime, 0.08);
   if (!audible) { stopAlarm(); return; }
   if (!ctx || !nodes || !alarmBuffer || alarmSource) return;
   const src = ctx.createBufferSource(), gain = ctx.createGain(), now = ctx.currentTime;
@@ -11398,6 +11853,24 @@ function play(name, gain = 1, delay = 0) {
   playAt(name, ctx.currentTime + delay, gain);
 }
 
+// A Collapse blast: `gain` from its distance and `pan` (-1 left .. 1 right) from its bearing.
+// Heard only while the alarm is, so a pause or the end of the escape also silences the debris.
+function blast(name, gain = 1, pan = 0) {
+  if (!/^collapse(Blast|Rumble)\d$/.test(name)) throw new Error(`no Collapse blast "${name}"`);
+  plays[name] = (plays[name] || 0) + 1;
+  const buffer = blastBuffers?.[name];
+  if (!ctx || !nodes || !buffer || !alarm || sceneMuted || musicPaused) return;
+  const src = ctx.createBufferSource(), g = ctx.createGain(), panner = ctx.createStereoPanner?.();
+  src.buffer = buffer; g.gain.value = Math.max(0, Math.min(1, gain));
+  src.connect(g);
+  if (panner) { panner.pan.value = Math.max(-1, Math.min(1, pan)); g.connect(panner); panner.connect(nodes.fx); }
+  else g.connect(nodes.fx);
+  const entry = { src, gain: g };
+  src.onended = () => { blastSources.delete(entry); src.disconnect?.(); g.disconnect?.(); panner?.disconnect?.(); };
+  src.start(ctx.currentTime);
+  blastSources.add(entry);
+}
+
 // Muffles the music: 'crash' dips it for a moment, 'pause' holds it muffled, 'clear' restores it.
 function muffle(kind) {
   if (!['crash', 'pause', 'clear'].includes(kind)) throw new Error(`unknown muffle "${kind}"`);
@@ -11423,10 +11896,10 @@ function setVolumes(v) {
 
 GAME.sound = {
   load, unlock, setSong, prepareRun, songStatus, setEnvironment, setAlarm, setSceneMuted,
-  setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, muffle, setVolumes,
+  setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, blast, muffle, setVolumes,
   state: () => ({ loaded: !!buffers, unlocked: !!ctx, playing: started, context: ctx ? ctx.state : null, level,
     song: meta?.song ?? null, requestedSong, preference, songError,
-    environment, alarm, alarmPlaying: !!alarmSource, sceneMuted,
+    environment, alarm, alarmPlaying: !!alarmSource, blastsReady: !!blastBuffers, blastsPlaying: blastSources.size, sceneMuted,
     volumes: { ...volumes }, plays: { ...plays } }),
 };
 
@@ -12441,7 +12914,10 @@ const add=(a,b)=>a.map((v,i)=>v+b[i]), sub=(a,b)=>a.map((v,i)=>v-b[i]),
   mul=(a,s)=>a.map(v=>v*s), dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0),
   cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
   unit=p=>mul(p,1/Math.max(1e-9,Math.hypot(...p))), middle=(a,b)=>mul(add(a,b),0.5);
-const MAX_ROCKS=12, MAX_PEAKS=6, PEAK_FACES=6, MAX_BARS=24, CUT_CLEARANCE=0.045;
+const MAX_ROCKS=12, MAX_PEAKS=10, PEAK_FACES=6, MAX_BARS=16, CUT_CLEARANCE=0.045;
+// Source IDs within the portal's 44 slots: rocks, peaks, lining, bars, then the stone rim.
+const PEAK_ID=MAX_ROCKS, LINING_ID=PEAK_ID+MAX_PEAKS, BAR_ID=LINING_ID+1, RIM_ID=BAR_ID+MAX_BARS;
+if(RIM_ID>=44)throw new Error('Collapse portal primitive IDs exceed their reserved range');
 function local(portal,p) {
   const d=sub(p,portal.origin),along=dot(d,portal.axis),radial=sub(d,mul(portal.axis,along));
   return {along,radial,radialDistance:Math.hypot(...radial)};
@@ -12661,7 +13137,7 @@ float portalPeak(vec3 ro,vec3 rd,int index,out vec3 normal) {
   if(far>0.001&&!portalVoid(ro+rd*far)) {normal=farNormal;return far;}
   return 1e9;
 }
-// Source IDs: rocks 0..11, peaks 12..17, lining 18, bars 19..42, stone rim 43.
+// Source IDs: rocks 0..${PEAK_ID-1}, peaks ${PEAK_ID}..${LINING_ID-1}, lining ${LINING_ID}, bars ${BAR_ID}..${RIM_ID-1}, stone rim ${RIM_ID}.
 float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material,out int primitive) {
   float hit=1e9;material=0;primitive=0;
   if(uCollapsePortalActive<0.5)return hit;
@@ -12671,25 +13147,25 @@ float portalHit(vec3 ro,vec3 rd,out vec3 normal,out int material,out int primiti
   }
   for(int i=0;i<uCollapsePeakCount;i++) {
     vec3 n;float t=portalPeak(ro,rd,i,n);
-    if(t<hit) {hit=t;normal=n;material=0;primitive=12+i;}
+    if(t<hit) {hit=t;normal=n;material=0;primitive=${PEAK_ID}+i;}
   }
   vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
   float A=dot(d.xy,d.xy),B=dot(q.xy,d.xy),C=dot(q.xy,q.xy)-uCollapsePortalOrigin.w*uCollapsePortalOrigin.w,D=B*B-A*C;
   if(A>1e-7&&D>=0.0)for(int side=0;side<2;side++) {
     float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A,s=q.z+d.z*t;
     if(t>0.001&&t<hit&&s>=0.0&&s<=uCollapsePortalAxis.w) {
-      vec2 radial=q.xy+d.xy*t;hit=t;normal=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);material=1;primitive=18;
+      vec2 radial=q.xy+d.xy*t;hit=t;normal=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);material=1;primitive=${LINING_ID};
     }
   }
   for(int i=0;i<uCollapseBarCount;i++) {
     vec3 n;float t=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,n);
-    if(t>0.001&&t<hit) {hit=t;normal=n;material=2;primitive=19+i;}
+    if(t>0.001&&t<hit) {hit=t;normal=n;material=2;primitive=${BAR_ID}+i;}
   }
   if(abs(d.z)>1e-7) {
     float t=(-0.08-q.z)/d.z;vec2 radial=q.xy+d.xy*t;
     float r=length(radial);
     if(t>0.001&&t<hit&&r>=uCollapsePortalOrigin.w&&r<=uCollapsePortalOrigin.w+1.2) {
-      hit=t;normal=-uCollapsePortalAxis.xyz;material=3;primitive=43;
+      hit=t;normal=-uCollapsePortalAxis.xyz;material=3;primitive=${RIM_ID};
     }
   }
   return hit;
@@ -12714,7 +13190,8 @@ function uniforms(portal) {
   if(portal)uniformCache.set(portal,result);else emptyUniforms=result;
   return result;
 }
-GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunnel,local,point,outside,uniforms,GLSL,MAX_ROCKS,MAX_PEAKS,PEAK_FACES,MAX_BARS};
+GAME.collapsePortalRender={build,buildSteps,groundMesh,groundBounds,subtractTunnel,local,point,outside,uniforms,GLSL,MAX_ROCKS,MAX_PEAKS,PEAK_FACES,MAX_BARS,
+  PEAK_ID,LINING_ID,BAR_ID,RIM_ID};
 
 })();
 
@@ -12880,25 +13357,25 @@ float cityTracePortal(vec3 ro,vec3 rd,out int primitive) {
   }
   for(int i=0;i<uCollapsePeakCount;i++) {
     float t=cityTracePortalPeak(ro,rd,i);
-    if(t<hit) {hit=t;primitive=12+i;}
+    if(t<hit) {hit=t;primitive=${GAME.collapsePortalRender.PEAK_ID}+i;}
   }
   vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
   float A=dot(d.xy,d.xy),B=dot(q.xy,d.xy),C=dot(q.xy,q.xy)-uCollapsePortalOrigin.w*uCollapsePortalOrigin.w,D=B*B-A*C;
   if(A>1e-7&&D>=0.0)for(int side=0;side<2;side++) {
     float t=(-B+(side==0?-sqrt(D):sqrt(D)))/A,s=q.z+d.z*t;
     if(t>0.001&&t<hit&&s>=0.0&&s<=uCollapsePortalAxis.w) {
-      hit=t;primitive=18;
+      hit=t;primitive=${GAME.collapsePortalRender.LINING_ID};
     }
   }
   for(int i=0;i<uCollapseBarCount;i++) {
     float t=cityTracePortalBar(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w);
-    if(t>0.001&&t<hit) {hit=t;primitive=19+i;}
+    if(t>0.001&&t<hit) {hit=t;primitive=${GAME.collapsePortalRender.BAR_ID}+i;}
   }
   if(abs(d.z)>1e-7) {
     float t=(-0.08-q.z)/d.z;vec2 radial=q.xy+d.xy*t;
     float r=length(radial);
     if(t>0.001&&t<hit&&r>=uCollapsePortalOrigin.w&&r<=uCollapsePortalOrigin.w+1.2) {
-      hit=t;primitive=43;
+      hit=t;primitive=${GAME.collapsePortalRender.RIM_ID};
     }
   }
   return hit;
@@ -13751,12 +14228,12 @@ Hit cityResolveStreet(Hit h,vec3 ro,vec3 rd) {
     h.a=P;h.b=Q;return h;
   }
   int part=h.primitive-int(uN)*int(uN)*32-1536;float unused;
-  if(part<12) {unused=portalEllipsoid(ro,rd,uCollapseRockCentre[part],uCollapseRockRadii[part],h.n);h.a=vec4(0.0);}
-  else if(part<18) {unused=portalPeak(ro,rd,part-12,h.n);h.a=vec4(0.0);}
-  else if(part==18) {
+  if(part<${GAME.collapsePortalRender.PEAK_ID}) {unused=portalEllipsoid(ro,rd,uCollapseRockCentre[part],uCollapseRockRadii[part],h.n);h.a=vec4(0.0);}
+  else if(part<${GAME.collapsePortalRender.LINING_ID}) {unused=portalPeak(ro,rd,part-${GAME.collapsePortalRender.PEAK_ID},h.n);h.a=vec4(0.0);}
+  else if(part==${GAME.collapsePortalRender.LINING_ID}) {
     vec3 q=portalLocal(ro),d=vec3(dot(rd,uCollapsePortalRight),dot(rd,uCollapsePortalUp),dot(rd,uCollapsePortalAxis.xyz));
     vec2 radial=q.xy+d.xy*h.t;h.n=normalize(-uCollapsePortalRight*radial.x-uCollapsePortalUp*radial.y);h.a=vec4(1.0,0.0,0.0,0.0);
-  } else if(part<43) {int i=part-19;unused=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,h.n);h.a=vec4(2.0,0.0,0.0,0.0);}
+  } else if(part<${GAME.collapsePortalRender.RIM_ID}) {int i=part-${GAME.collapsePortalRender.BAR_ID};unused=portalBarHit(ro,rd,uCollapseBarA[i].xyz,uCollapseBarB[i].xyz,uCollapseBarA[i].w,h.n);h.a=vec4(2.0,0.0,0.0,0.0);}
   else {h.n=-uCollapsePortalAxis.xyz;h.a=vec4(3.0,0.0,0.0,0.0);}
   h.b=vec4(0.0);return h;
 }
@@ -15373,19 +15850,29 @@ GAME.sewerRenderer = { create };
 // Underground flight. The air is the union of the simulation's water-clipped capsules;
 // intersecting their ray intervals keeps bends and junctions open without marching through
 // solid walls. Nearby geometry lives in a small texture, independent of total map length.
-const TUNNELS = 32, PIPES = 56, DIRT = 40, INFLOWS = 20;
-const PIPE_MATERIALS = { grate: 1, sluice: 2, cable: 3, root: 4, falls: 5 };
+const TUNNELS = 32, PIPES = 56, DIRT = 40, INFLOWS = 20, FANS = 8, SHEETS = 32, WALL_FANS = 12;
+const PIPE_MATERIALS = { grate: 1, sluice: 2, cable: 3, root: 4, falls: 5, strut: 6, pole: 7 };
+const SHEET_KINDS = { falls: 0, wall: 1, shaft: 2, spiral: 3 };
 const PIPE_BASE = TUNNELS, DIRT_BASE = PIPE_BASE + PIPES, FLOW_BASE = DIRT_BASE + DIRT;
-const ATLAS_WIDTH = FLOW_BASE + INFLOWS, FAR = 280;
+const FAN_BASE = FLOW_BASE + INFLOWS, SHEET_BASE = FAN_BASE + FANS, WALL_BASE = SHEET_BASE + SHEETS;
+const ATLAS_WIDTH = WALL_BASE + WALL_FANS, ATLAS_ROWS = 4, FAR = 280;
+// Worlds from before themes existed render with the original brick look.
+const DEFAULT_THEME = { style: 0, cell: [1.08, 0.46], mortar: 0.025, wallA: [0.2, 0.11, 0.065], wallB: [0.1, 0.13, 0.12],
+  grout: [0.029, 0.037, 0.033], lamp: [2.1, 0.96, 0.29], water: [0.01, 0.033, 0.01], fog: [0.012, 0.03, 0.032], moss: 1, gloss: 0 };
 
 const FRAG = `
 uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
 uniform vec2 uTanHalf;
 uniform highp sampler2D uSewerGeometry;
-uniform vec4 uSewerCount;
-uniform float uSewerMotion;
+uniform vec4 uSewerCount, uSewerCount2;
+uniform float uSewerMotion, uSewerClock;
+uniform vec3 uThemeWallA, uThemeWallB, uThemeGrout, uThemeLamp, uThemeWater, uThemeFog;
+uniform vec4 uThemeStyle;
+uniform vec2 uThemeExtra;
 const int TUNNELS = ${TUNNELS}, PIPES = ${PIPES}, DIRT = ${DIRT}, INFLOWS = ${INFLOWS};
+const int FANS = ${FANS}, SHEETS = ${SHEETS}, WALL_FANS = ${WALL_FANS};
 const int PIPE_BASE = ${PIPE_BASE}, DIRT_BASE = ${DIRT_BASE}, FLOW_BASE = ${FLOW_BASE};
+const int FAN_BASE = ${FAN_BASE}, SHEET_BASE = ${SHEET_BASE}, WALL_BASE = ${WALL_BASE};
 const float SEWER_FAR = ${FAR}.0, EMPTY = 1e6;
 
 float pulseAA(float x, float duty, float w) {
@@ -15458,6 +15945,45 @@ bool sewerBroadPhase(vec3 ro, vec3 rd, vec3 a, vec3 b, float radius) {
   return along + bound > 0.0 && length(delta - rd * max(along, 0.0)) <= bound;
 }
 
+vec2 sewerCylinder(vec3 q, vec3 d, float radius) {
+  float A = dot(d, d), B = dot(q, d), C = dot(q, q) - radius * radius;
+  if (A < 0.00000001) return C <= 0.0 ? vec2(-EMPTY, EMPTY) : vec2(EMPTY, -EMPTY);
+  float disc = B * B - A * C;
+  if (disc < 0.0) return vec2(EMPTY, -EMPTY);
+  float root = sqrt(disc);
+  return vec2(-B - root, -B + root) / A;
+}
+
+// Fan hubs and open rings: the solid between two coaxial cylinders, cut by two planes. This is
+// the same shape the simulation collides with.
+float sewerRing(vec3 ro, vec3 rd, vec3 centre, vec3 axis, vec3 ring, out vec3 n) {
+  vec3 q = ro - centre;
+  float oa = dot(q, axis), da = dot(rd, axis);
+  vec3 qr = q - axis * oa, dr = rd - axis * da;
+  vec2 slab = abs(da) > 0.000001
+    ? vec2(min((-ring.z - oa) / da, (ring.z - oa) / da), max((-ring.z - oa) / da, (ring.z - oa) / da))
+    : (abs(oa) <= ring.z ? vec2(-EMPTY, EMPTY) : vec2(EMPTY, -EMPTY));
+  vec2 outer = sewerCylinder(qr, dr, ring.y);
+  float enter = max(slab.x, outer.x), leave = min(slab.y, outer.y), t = enter;
+  n = -rd;
+  if (enter > leave) return EMPTY;
+  n = slab.x > outer.x ? axis * -sign(da) : normalize(qr + dr * enter);
+  if (ring.x > 0.0) {
+    vec2 inner = sewerCylinder(qr, dr, ring.x);
+    if (inner.x <= enter && enter <= inner.y) {
+      t = inner.y; n = -normalize(qr + dr * t);
+      if (t > leave) return EMPTY;
+    }
+  }
+  return t > 0.001 ? t : EMPTY;
+}
+
+// Blade k points along e1·cos θ + e2·sin θ, exactly as in the simulation's fan basis.
+vec3 sewerFanDirection(vec3 axis, float angle) {
+  vec3 e1 = normalize(cross(abs(axis.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), axis));
+  return e1 * cos(angle) + cross(axis, e1) * sin(angle);
+}
+
 struct SewerHit { float t; vec3 n; int kind; int index; };
 
 SewerHit sewerTrace(vec3 ro, vec3 rd) {
@@ -15521,6 +16047,29 @@ SewerHit sewerTrace(vec3 ro, vec3 rd) {
       h.n = normalize((ro + rd * t - centre) / (radii * radii));
     }
   }
+  // Fans turn with the run clock, so the drawn blades are the ones the glider can hit.
+  for (int i = 0; i < FANS; i++) {
+    if (float(i) >= uSewerCount2.x) break;
+    int index = FAN_BASE + i;
+    vec4 a = sewerData(index, 0), b = sewerData(index, 1), c = sewerData(index, 2), d = sewerData(index, 3);
+    vec2 bound = sewerSphereInterval(ro, rd, a.xyz, max(a.w + c.w, length(d.yz)) + 0.1);
+    if (bound.x > bound.y || bound.y < 0.001 || bound.x > h.t) continue;
+    vec3 n;
+    float t = sewerRing(ro, rd, a.xyz, b.xyz, d.xyz, n);
+    if (t < h.t) { h.t = t; h.kind = 7; h.index = index; h.n = n; }
+    for (int k = 0; k < 8; k++) {
+      if (float(k) >= c.z) break;
+      vec3 direction = sewerFanDirection(b.xyz, c.x + c.y * uSewerClock + 6.2831853 * float(k) / c.z);
+      vec3 p0 = a.xyz + direction * b.w, p1 = a.xyz + direction * a.w;
+      vec2 span = sewerCapsuleInterval(ro, rd, p0, p1, c.w);
+      float tb = span.x > 0.001 ? span.x : span.y;
+      if (span.x <= span.y && tb > 0.001 && tb < h.t) {
+        h.t = tb; h.kind = 5; h.index = index;
+        vec3 p = ro + rd * tb;
+        h.n = normalize(p - sewerAxisPoint(p, p0, p1));
+      }
+    }
+  }
   return h;
 }
 
@@ -15564,7 +16113,7 @@ vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour
   float along = dot(p - a.xyz, frame[2]);
   float rung = floor((along + phase) / spacing + 0.5) * spacing - phase;
   lamp = sewerLamp(index, rung);
-  lampColour = vec3(2.1, 0.96, 0.29);
+  lampColour = uThemeLamp;
   vec3 light = vec3(0.31, 0.40, 0.39) * (0.78 + n.y * 0.16);
   // Pools from both neighbouring lamps make the vault feel continuous through long collectors.
   for (int j = -1; j <= 1; j++) {
@@ -15591,6 +16140,18 @@ vec3 sewerSpillRipples(vec3 p, float pixel) {
     float foam = exp(-d * d * 3.0) * (0.68 + 0.32 * sin(across * 3.2 + uSewerMotion * 2.2));
     glow += vec3(0.015, 0.043, 0.025) * (ripple * exp(-d * 0.5) + foam * 1.3);
   }
+  // Foam boils where a curtain of water lands.
+  for (int i = 0; i < SHEETS; i++) {
+    if (float(i) >= uSewerCount2.y) break;
+    vec4 a = sewerData(SHEET_BASE + i, 0), b = sewerData(SHEET_BASE + i, 1);
+    float bottom = a.y - b.w;
+    if (p.y < bottom || p.y > bottom + 8.0) continue;
+    vec3 q = p - a.xyz;
+    float d = length(vec2(max(abs(dot(q.xz, b.xz)) - a.w, 0.0), max(abs(q.z * b.x - q.x * b.z) - b.y, 0.0)));
+    if (d > 4.0) continue;
+    float foam = exp(-d * 1.1) * (0.55 + 0.45 * tnoise(vec3(p.xz * 1.7, uSewerMotion * 1.3)));
+    glow += vec3(0.05, 0.075, 0.068) * foam;
+  }
   return glow;
 }
 
@@ -15606,18 +16167,34 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
   vec3 lamp, lampColour;
   vec3 light = sewerLighting(p, h.n, index, lamp, lampColour), col;
   if (h.kind == 1) {
-    float row = floor(uv.y / 0.46);
-    vec2 bricks = vec2(uv.x / 1.08 + mod(row, 2.0) * 0.5, uv.y / 0.46);
-    vec2 edges = min(fract(bricks), 1.0 - fract(bricks)) * vec2(1.08, 0.46);
-    float mortar = 1.0 - smoothstep(0.025, 0.048 + pixel, min(edges.x, edges.y));
+    // The code's theme picks the masonry: running-bond brick, cast concrete panels, irregular
+    // stone courses, glazed tile or riveted iron plates.
+    float style = uThemeStyle.x;
+    vec2 cell = uThemeStyle.yz;
+    float row = floor(uv.y / cell.y);
+    float bond = style < 0.5 ? mod(row, 2.0) * 0.5 : style > 1.5 && style < 2.5 ? hash11(row * 7.31) : 0.0;
+    vec2 bricks = vec2(uv.x / cell.x + bond, uv.y / cell.y);
+    vec2 edges = min(fract(bricks), 1.0 - fract(bricks)) * cell;
+    float mortar = 1.0 - smoothstep(uThemeStyle.w, uThemeStyle.w * 1.9 + pixel, min(edges.x, edges.y));
     float key = hash12(floor(bricks));
     float kind = sewerData(index, 2).y;
-    col = mix(vec3(0.20, 0.11, 0.065), vec3(0.10, 0.13, 0.12), key * 0.68);
+    col = mix(uThemeWallA, uThemeWallB, key * 0.68);
     col *= 0.75 + grain * 0.38;
-    col = mix(col, vec3(0.029, 0.037, 0.033), mortar * 0.9);
+    col = mix(col, uThemeGrout, mortar * 0.9);
     // Bevel highlights and recess shadows give each small brick the same relief as the menu.
-    float bevel = bandAA(fract(bricks.y) * 0.46 - 0.07, 0.025, pixel);
+    float bevel = bandAA(fract(bricks.y) * cell.y - 0.07, 0.025, pixel);
     col *= 0.90 + bevel * 0.18;
+    if (style > 0.5 && style < 1.5) {
+      // Concrete: shutter tie holes in every panel.
+      vec2 f = (fract(bricks) - 0.5) * cell;
+      float tie = 1.0 - smoothstep(0.07, 0.1 + pixel, length(vec2(abs(f.x) - cell.x * 0.3, abs(f.y) - cell.y * 0.25)));
+      col *= 1.0 - tie * 0.6;
+    } else if (style > 3.5) {
+      // Iron: a rivet line inside every plate seam.
+      vec2 rivet = vec2(mod(uv.x, 0.55) - 0.275, edges.y - 0.26);
+      float head = 1.0 - smoothstep(0.065, 0.095 + pixel, length(rivet));
+      col = mix(col, uThemeWallA * 1.6, head * 0.8);
+    }
     if (kind > 1.5 && kind < 2.5) {
       col = mix(col, vec3(0.13, 0.15, 0.135) * (0.7 + grain * 0.35), 0.48);
       float seams = max(bandAA(mod(uv.x + 6.0, 12.0) - 6.0, 0.07, pixel), bandAA(mod(uv.y + 3.0, 6.0) - 3.0, 0.045, pixel));
@@ -15633,7 +16210,7 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     col += vec3(0.037, 0.042, 0.037) * ribBevel;
     float waterY = b.w > -99999.0 ? b.w : a.y - a.w * 0.65;
     float damp = (1.0 - smoothstep(waterY + 2.0, waterY + 15.0, p.y)) * smoothstep(0.34, 0.76, grime);
-    col = mix(col, vec3(0.018, 0.065, 0.033) * (0.7 + grain * 0.6), damp * 0.83);
+    col = mix(col, vec3(0.018, 0.065, 0.033) * (0.7 + grain * 0.6), damp * min(0.83 * uThemeExtra.x, 0.95));
     float streak = tnoise(vec3(uv.x * 0.42, p.y * 0.04, angle * 3.0));
     col *= 1.0 - smoothstep(0.61, 0.85, streak) * 0.3;
     // Embedded iron services and drain courses remain flush with the exact collision wall.
@@ -15659,10 +16236,41 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     col = mix(col, vec3(0.023, 0.033, 0.030), casing);
     col = mix(col, lampColour * (1.4 - bars * 1.25), panel);
     col += vec3(0.04, 0.07, 0.065) * pow(1.0 - abs(dot(h.n, rd)), 5.0) * damp;
+    if (uThemeExtra.y > 0.0) {
+      // Glazed tile and wet iron catch the nearest lamp.
+      vec3 toLamp = lamp - p;
+      float glint = pow(max(dot(reflect(-normalize(toLamp), h.n), -rd), 0.0), 26.0) * (1.0 - mortar);
+      col += lampColour * glint * uThemeExtra.y * 0.5 / (1.0 + length(toLamp) * 0.05);
+    }
+    // Fans turn behind round grilles set flush in the wall.
+    for (int i = 0; i < WALL_FANS; i++) {
+      if (float(i) >= uSewerCount2.z) break;
+      vec4 fa = sewerData(WALL_BASE + i, 0), fb = sewerData(WALL_BASE + i, 1);
+      vec3 delta = p - fa.xyz;
+      float depth = dot(delta, fb.xyz);
+      if (abs(depth) > 2.5) continue;
+      vec3 plane = delta - fb.xyz * depth;
+      float r = length(plane);
+      if (r > fa.w + 0.8) continue;
+      vec4 fc = sewerData(WALL_BASE + i, 2);
+      vec3 e1 = normalize(cross(abs(fb.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), fb.xyz)), e2 = cross(fb.xyz, e1);
+      float angle = atan(dot(plane, e2), dot(plane, e1)) - (fc.x + fc.y * uSewerClock);
+      float sector = 6.2831853 / fb.w, along = fract((angle + r / fa.w * 0.7) / sector);
+      float hubR = fa.w * 0.2, inside = 1.0 - smoothstep(fa.w - pixel, fa.w + pixel, r);
+      float blade = bandAA(along - 0.5, 0.21, pixel / max(r * sector, 0.01)) * smoothstep(hubR - pixel, hubR + pixel, r);
+      float hub = 1.0 - smoothstep(hubR - pixel, hubR + pixel, r);
+      float rust = smoothstep(0.45, 0.8, grime + grain * 0.2);
+      vec3 metal = mix(vec3(0.17, 0.18, 0.17), vec3(0.24, 0.1, 0.045), rust) * light;
+      vec3 fanColour = mix(vec3(0.004, 0.005, 0.005), metal * (0.55 + 0.25 * grain), max(blade, hub));
+      float grille = max(pulseAA(dot(plane, e1) / 0.9 + 0.5, 0.1, pixel / 0.9), pulseAA(dot(plane, e2) / 0.9 + 0.5, 0.1, pixel / 0.9));
+      fanColour = mix(fanColour, metal * 0.45, grille * 0.85);
+      col = mix(col, fanColour, inside);
+      col = mix(col, metal * 0.9, bandAA(r - fa.w - 0.35, 0.3, pixel));
+    }
   } else if (h.kind == 2) {
     float wave = sin(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) + sin(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8);
     vec3 n = normalize(vec3(cos(p.x * 0.85 + p.z * 0.57 - uSewerMotion * 1.5) * 0.055, 1.0, cos(p.z * 1.1 - p.x * 0.37 + uSewerMotion * 0.8) * 0.07));
-    col = vec3(0.010, 0.033, 0.010) * (0.80 + grain * 0.27 + wave * 0.08);
+    col = uThemeWater * (0.80 + grain * 0.27 + wave * 0.08);
     vec3 delta = lamp - p;
     float spec = pow(max(dot(reflect(-normalize(delta), n), -rd), 0.0), 40.0);
     col += lampColour * spec * 1.2 / (1.0 + length(delta) * 0.035);
@@ -15708,7 +16316,21 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     float u = dot(p - pa.xyz, axis), rust = smoothstep(0.39, 0.75, grime + grain * 0.18);
     float material = sewerData(h.index, 2).y;
     float rim = pow(1.0 - abs(dot(h.n, rd)), 4.0);
-    if (material > 4.5) {
+    if (material > 6.5) {
+      // A riveted iron column carries the dome fan.
+      float band = bandAA(mod(u + 4.0, 8.0) - 4.0, 0.35, pixel);
+      col = mix(vec3(0.12, 0.13, 0.12), vec3(0.2, 0.08, 0.04), rust) * (0.75 + grain * 0.35);
+      col = mix(col, vec3(0.22, 0.23, 0.2), band);
+      col *= light;
+      col += vec3(0.04, 0.05, 0.045) * rim;
+    } else if (material > 5.5) {
+      // Fan struts: iron painted with warning stripes.
+      float stripe = pulseAA((u + p.y) / 1.2, 0.5, pixel / 1.2);
+      col = mix(vec3(0.03), vec3(0.45, 0.33, 0.05), stripe) * (0.8 + grain * 0.3);
+      col = mix(col, vec3(0.2, 0.08, 0.04), rust * 0.5);
+      col *= light;
+      col += vec3(0.05) * rim;
+    } else if (material > 4.5) {
       // Falling runoff: bright streaks race down a murky green column.
       float around = atan(dot(h.n, vec3(-axis.z, 0.0, axis.x)), dot(h.n, vec3(axis.z, 0.0, -axis.x)));
       float fall = tnoise(vec3(around * 2.2, u * 0.35 + uSewerMotion * 4.2, float(h.index)));
@@ -15750,6 +16372,24 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
       col *= light;
       col += vec3(0.035, 0.06, 0.038) * rim;
     }
+  } else if (h.kind == 5 || h.kind == 7) {
+    vec4 fa = sewerData(h.index, 0), fb = sewerData(h.index, 1), fd = sewerData(h.index, 3);
+    vec3 delta = p - fa.xyz;
+    float along = dot(delta, fb.xyz), rho = length(delta - fb.xyz * along);
+    float rust = smoothstep(0.42, 0.78, grime + grain * 0.2), rim = pow(1.0 - abs(dot(h.n, rd)), 4.0);
+    if (h.kind == 5) {
+      // Blades: painted sheet steel with a black and yellow warning tip.
+      col = mix(vec3(0.15, 0.16, 0.15), vec3(0.22, 0.085, 0.04), rust * 0.8) * (0.8 + grain * 0.3);
+      float stripe = pulseAA(rho / 0.9, 0.5, pixel / 0.9);
+      col = mix(col, mix(vec3(0.03), vec3(0.5, 0.36, 0.05), stripe), smoothstep(fa.w - 3.2, fa.w - 2.8, rho));
+      col *= light;
+    } else {
+      // Hubs and rings are cast iron; an open ring's lip glows so its hole reads from afar.
+      col = mix(vec3(0.1, 0.11, 0.1), vec3(0.2, 0.08, 0.04), rust) * (0.7 + grain * 0.4);
+      col *= light;
+      if (fd.x > 0.0) col += vec3(0.55, 0.4, 0.07) * (1.0 - smoothstep(0.15, 0.55 + pixel, rho - fd.x));
+    }
+    col += vec3(0.05, 0.055, 0.05) * rim;
   } else {
     // Silt: wet, dark sludge at the waterline, drying to crusted mud, gravel and litter on top.
     float waterY = b.w > -99999.0 ? b.w : a.y - a.w * 0.65;
@@ -15825,22 +16465,67 @@ vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) 
   return result;
 }
 
+// Curtains of falling water are the simulation's upright boxes, drawn as translucent moving
+// sheets over whatever lies behind them.
+vec4 sewerCurtain(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) {
+  int best = -1; bool endFace = false;
+  depth = wall;
+  for (int i = 0; i < SHEETS; i++) {
+    if (float(i) >= uSewerCount2.y) break;
+    int index = SHEET_BASE + i;
+    vec4 a = sewerData(index, 0), b = sewerData(index, 1);
+    vec3 d = vec3(b.x, 0.0, b.z), across = vec3(-d.z, 0.0, d.x), q = ro - a.xyz;
+    vec3 o = vec3(dot(q, d), q.y, dot(q, across)), v = vec3(dot(rd, d), rd.y, dot(rd, across));
+    vec3 safe = vec3(abs(v.x) < 0.000001 ? 0.000001 : v.x, abs(v.y) < 0.000001 ? 0.000001 : v.y, abs(v.z) < 0.000001 ? 0.000001 : v.z);
+    vec3 extent = vec3(a.w, b.w, b.y), t0 = (-extent - o) / safe, t1 = (extent - o) / safe;
+    vec3 near = min(t0, t1), far = max(t0, t1);
+    float enter = max(max(near.x, near.y), near.z), leave = min(min(far.x, far.y), far.z);
+    if (enter > leave || enter < 0.001 || enter >= depth) continue;
+    depth = enter; best = i; endFace = enter == near.x;
+  }
+  if (best < 0) return vec4(0.0);
+  // Only the nearest curtain is shaded; the ones behind it are mostly hidden by its water.
+  int index = SHEET_BASE + best;
+  vec4 a = sewerData(index, 0), b = sewerData(index, 1), c = sewerData(index, 2);
+  vec3 d = vec3(b.x, 0.0, b.z), across = vec3(-d.z, 0.0, d.x), p = ro + rd * depth;
+  vec3 local = vec3(dot(p - a.xyz, d), p.y - a.y, dot(p - a.xyz, across));
+  float pixel = max(depth * pixAngle, 0.002);
+  vec3 n = endFace ? d * -sign(dot(rd, d)) : across * (dot(rd, across) > 0.0 ? -1.0 : 1.0);
+  vec3 lamp, lampColour;
+  vec3 light = sewerLighting(p, n, int(c.z + 0.5), lamp, lampColour);
+  float grain = tnoise(vec3(local.x * 1.6, (p.y + uSewerMotion * 9.0) * 0.18, float(best) * 2.3));
+  float flowing = tnoise(vec3(local.x * 0.5, (p.y + uSewerMotion * 12.0) * 0.6, float(best) * 3.1));
+  float streams = pow(0.5 + 0.5 * sin(local.x * 4.3 + grain * 5.0), 4.0);
+  vec3 colour = (uThemeWater * 2.6 + vec3(0.006, 0.014, 0.012)) * (0.7 + grain * 0.6) * (light * 0.6 + 0.4);
+  colour += vec3(0.03, 0.07, 0.06) * streams * (0.4 + flowing * 0.8) * (light * 0.4 + 0.6);
+  float edge = 1.0 - smoothstep(a.w - 0.4, a.w + pixel, abs(local.x));
+  // Curtains in the way are dense; those along the walls are thinner films.
+  float opacity = c.y < 0.5 || c.y > 2.5 ? 0.82 + flowing * 0.12 : 0.6 + flowing * 0.2;
+  return vec4(colour, opacity * edge);
+}
+
 void main() {
   vec2 ndc = (vUv - 0.5) * 2.0;
   vec3 ro = uCamPos;
   vec3 rd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   SewerHit hit = sewerTrace(ro, rd);
-  vec3 fog = vec3(0.012, 0.030, 0.032);
+  vec3 fog = uThemeFog;
   vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
   float haze = 1.0 - exp(-hit.t * 0.0105);
   col = mix(col, fog, haze);
-  float inflowDepth;
+  float inflowDepth, curtainDepth;
   vec4 inflow = sewerInflow(ro, rd, hit.t, pixAngle, inflowDepth);
-  float inflowHaze = 1.0 - exp(-inflowDepth * 0.0105);
-  col = mix(col, mix(inflow.rgb, fog, inflowHaze), inflow.a);
+  vec4 curtain = sewerCurtain(ro, rd, hit.t, pixAngle, curtainDepth);
+  vec4 nearLayer = curtainDepth < inflowDepth ? curtain : inflow, farLayer = curtainDepth < inflowDepth ? inflow : curtain;
+  float nearDepth = min(curtainDepth, inflowDepth), farDepth = max(curtainDepth, inflowDepth);
+  col = mix(col, mix(farLayer.rgb, fog, 1.0 - exp(-farDepth * 0.0105)), farLayer.a);
+  col = mix(col, mix(nearLayer.rgb, fog, 1.0 - exp(-nearDepth * 0.0105)), nearLayer.a);
   // Existing ring/guide/stars have the same depth and controls as surface flight.
-  vec3 markers = courseLight(ro, rd, inflow.a > 0.55 ? min(hit.t, inflowDepth) : hit.t, pixAngle);
+  float markerDepth = hit.t;
+  if (inflow.a > 0.55) markerDepth = min(markerDepth, inflowDepth);
+  if (curtain.a > 0.55) markerDepth = min(markerDepth, curtainDepth);
+  vec3 markers = courseLight(ro, rd, markerDepth, pixAngle);
   float opacity = saturate(max(markers.r, max(markers.g, markers.b)));
   col = col * (1.0 - opacity * 0.74) + markers;
   fragColor = vec4(max(col, vec3(0.0)), 1.0);
@@ -15876,26 +16561,30 @@ function create(gfx) {
   const { gl } = gfx;
   const program = gfx.program('sewer-flight', FRAG);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const data = new Float32Array(ATLAS_WIDTH * 3 * 4);
-  const atlas = gfx.createTexture(ATLAS_WIDTH, 3, { format: 'rgba32f', filter: 'nearest', data });
-  let world = null, flows = [], last = null, counts = [0, 0, 0, 0], clipped = 0;
+  const data = new Float32Array(ATLAS_WIDTH * ATLAS_ROWS * 4);
+  const atlas = gfx.createTexture(ATLAS_WIDTH, ATLAS_ROWS, { format: 'rgba32f', filter: 'nearest', data });
+  let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
-    world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0;
+    world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = world.theme || DEFAULT_THEME;
   }
-  function select(items, position, maximum, radius) {
-    return items.map((value, index) => ({ value, index, distance: value.centre
-      ? Math.max(0, Math.hypot(...value.centre.map((v, i) => v - position[i])) - Math.max(...value.radii))
-      : Math.max(0, distanceToSegment(position, value.a, value.b) - radius(value)) }))
+  const away = (position, centre) => Math.hypot(...centre.map((v, i) => v - position[i]));
+  function select(items, position, maximum, distance) {
+    return items.map((value, index) => ({ value, index, distance: Math.max(0, distance(value)) }))
       .filter(v => v.distance <= FAR + 20).sort((a, b) => a.distance - b.distance || a.index - b.index).slice(0, maximum);
   }
   function pack(position) {
     data.fill(0);
-    const selected = [select(world.tunnels, position, TUNNELS, t => t.radius), select(world.pipes || [], position, PIPES, p => p.radius),
-      select(world.dirt || [], position, DIRT), select(flows, position, INFLOWS, f => f.radius)];
+    const segment = value => distanceToSegment(position, value.a, value.b) - value.radius;
+    const selected = [select(world.tunnels, position, TUNNELS, segment), select(world.pipes || [], position, PIPES, segment),
+      select(world.dirt || [], position, DIRT, d => away(position, d.centre) - Math.max(...d.radii)), select(flows, position, INFLOWS, segment)];
+    const fans = select(world.fans || [], position, FANS, fan => away(position, fan.c) - Math.max(fan.tip + fan.width, fan.ringOut + fan.ringHalf));
+    const sheets = select(world.sheets || [], position, SHEETS, sheet => away(position, sheet.c) - Math.hypot(sheet.hw, sheet.hh, sheet.thick));
+    const wallFans = select(world.wallFans || [], position, WALL_FANS, fan => away(position, fan.c) - fan.radius);
     const tunnelSlots = new Map(selected[0].map(({ index }, slot) => [index, slot]));
     selected[3] = selected[3].filter(({ value }) => tunnelSlots.has(value.source));
     counts = selected.map(v => v.length);
+    extra = [fans.length, sheets.length, wallFans.length, 0];
     const put = (index, row, values) => data.set(values, (row * ATLAS_WIDTH + index) * 4);
     selected.forEach((items, group) => items.forEach(({ value, index }, slot) => {
       const base = [0, PIPE_BASE, DIRT_BASE, FLOW_BASE][group] + slot;
@@ -15907,25 +16596,53 @@ function create(gfx) {
         put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index, 0]);
       }
     }));
+    fans.forEach(({ value: fan }, slot) => {
+      put(FAN_BASE + slot, 0, [...fan.c, fan.tip]);
+      put(FAN_BASE + slot, 1, [...fan.axis, fan.inner]);
+      put(FAN_BASE + slot, 2, [fan.phase ?? 0, fan.omega, fan.blades, fan.width]);
+      put(FAN_BASE + slot, 3, [fan.ringIn, fan.ringOut, fan.ringHalf, 0]);
+    });
+    sheets.forEach(({ value: sheet }, slot) => {
+      // A curtain is lit by the bore it hangs in, so its lighting cannot jump across a join.
+      let host = 0, nearest = Infinity;
+      selected[0].forEach(({ value }, index) => {
+        const d = distanceToSegment(sheet.c, value.a, value.b) - value.radius;
+        if (d < nearest) { nearest = d; host = index; }
+      });
+      put(SHEET_BASE + slot, 0, [...sheet.c, sheet.hw]);
+      // Curtains are upright, so the unused d.y carries the thickness.
+      put(SHEET_BASE + slot, 1, [sheet.d[0], sheet.thick, sheet.d[2], sheet.hh]);
+      put(SHEET_BASE + slot, 2, [sheet.thick, SHEET_KINDS[sheet.kind] ?? 1, host, 0]);
+    });
+    wallFans.forEach(({ value: fan }, slot) => {
+      put(WALL_BASE + slot, 0, [...fan.c, fan.radius]);
+      put(WALL_BASE + slot, 1, [...fan.n, fan.blades]);
+      put(WALL_BASE + slot, 2, [fan.phase, fan.omega, 0, 0]);
+    });
     gl.bindTexture(gl.TEXTURE_2D, atlas);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ATLAS_WIDTH, 3, gl.RGBA, gl.FLOAT, data);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ATLAS_WIDTH, ATLAS_ROWS, gl.RGBA, gl.FLOAT, data);
     gl.bindTexture(gl.TEXTURE_2D, null);
     last = [...position];
     // This never alters world/collision: the full network remains intact outside the fog.
     clipped = world.tunnels.length - counts[0];
   }
-  function draw(cam, rings, guide, stars = []) {
+  // The clock is the run time, so drawn fan blades are exactly where they collide.
+  function draw(cam, rings, guide, stars = [], clock = 0) {
     if (!world) throw new Error('sewer-flight draw before setWorld');
     if (!last || Math.hypot(...cam.pos.map((v, i) => v - last[i])) > 5) pack(cam.pos);
     gfx.fullscreen(program, {
-      uSewerGeometry: atlas, uSewerCount: counts,
+      uSewerGeometry: atlas, uSewerCount: counts, uSewerCount2: extra, uSewerClock: clock,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uSewerMotion: reducedMotion.matches ? 0 : performance.now() / 1000,
+      uThemeWallA: theme.wallA, uThemeWallB: theme.wallB, uThemeGrout: theme.grout, uThemeLamp: theme.lamp,
+      uThemeWater: theme.water, uThemeFog: theme.fog, uThemeStyle: [theme.style, ...theme.cell, theme.mortar],
+      uThemeExtra: [theme.moss, theme.gloss],
       uBoost: [0.28, 1.0, 0.43], uCollectibleColour: [0.48, 1.0, 0.32],
       ...GAME.overlay.uniforms(rings, guide, stars),
     });
   }
-  return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3], clipped }) };
+  return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3],
+    fans: extra[0], sheets: extra[1], wallFans: extra[2], clipped }) };
 }
 
 GAME.sewerFlightRenderer = { create, inflowSheets };
@@ -17428,7 +18145,7 @@ GAME.cityLiteRenderer=GAME.cityLite;
 // Compatibility Sewer: ordinary depth-tested triangles, never a tunnel/overlay ray shader.
 // The visible shell is the boundary of the same water-clipped capsule union as collision.
 const STRIDE = 11, RANGE = 300, EPS = 0.002;
-const MAX_TUNNELS = 40, MAX_PROPS = 32, MAX_FLOWS = 8;
+const MAX_TUNNELS = 40, MAX_PROPS = 96, MAX_FLOWS = 8;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const add = (a, b) => a.map((v, i) => v + b[i]);
@@ -17441,15 +18158,24 @@ const centroid = t => t[0].map((v, i) => (v + t[1][i] + t[2][i]) / 3);
 const distance2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 const prepared = new WeakMap();
 
+// The code's theme tints the compatibility walls, water and fog.
+function lookOf(world) {
+  const theme = world.theme;
+  if (!theme) return { wall: [0.21, 0.105, 0.062], material: 2, water: [0.013, 0.052, 0.022], curtain: [0.035, 0.15, 0.085], fog: [0.012, 0.030, 0.031] };
+  return { wall: theme.wallA, material: theme.style === 0 || theme.style === 2 ? 2 : 5, water: scale(theme.water, 1.45),
+    curtain: theme.water.map(v => v * 3.5 + 0.005), fog: theme.fog };
+}
+
 function prepare(world) {
   if (prepared.has(world)) return prepared.get(world);
+  const look = lookOf(world);
   const tubes = world.tunnels.map((tube, index) => {
     const delta = sub(tube.b, tube.a), length = Math.hypot(...delta), axis = unit(delta);
     const u = unit(cross(Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [0, 0, 1], axis));
     const bounds = tube.a.map((v, i) => Math.min(v, tube.b[i]) - tube.radius)
       .concat(tube.a.map((v, i) => Math.max(v, tube.b[i]) + tube.radius));
     return { ...tube, index, delta, length, length2: Math.max(length * length, 1e-9), axis, u,
-      v: cross(axis, u), bounds, neighbours: [] };
+      v: cross(axis, u), bounds, neighbours: [], look };
   });
   for (const a of tubes) for (const b of tubes) if (a.index !== b.index
     && a.bounds.every((v, i) => i >= 3 || v <= b.bounds[i + 3] && a.bounds[i + 3] >= b.bounds[i])) a.neighbours.push(b);
@@ -17525,8 +18251,8 @@ function wallColour(tube, p) {
   const along = dot(sub(p, tube.a), tube.axis), phase = tube.index * 13.71;
   const rib = Math.abs((along + phase + 10) % 20 - 10) < 0.75;
   const damp = tube.water === null ? 0 : 1 - clamp((p[1] - tube.water - 2) / 12, 0, 1);
-  const base = rib ? [0.18, 0.20, 0.18] : [0.21, 0.105, 0.062];
-  const style = { colour: base.map((v, i) => v * (1 - damp * 0.58) + [0.014, 0.056, 0.031][i] * damp), material: rib ? 0 : 2 };
+  const base = rib ? [0.18, 0.20, 0.18] : tube.look.wall;
+  const style = { colour: base.map((v, i) => v * (1 - damp * 0.58) + [0.014, 0.056, 0.031][i] * damp), material: rib ? 0 : tube.look.material };
   if (Math.abs(tube.axis[1]) < 0.15) {
     const radial = sub(p, axisPoint(tube, p)), height = dot(radial, tube.v);
     const serviceHeight = (tube.water ?? tube.a[1] - tube.radius * 0.65) - tube.a[1] + 5;
@@ -17585,7 +18311,7 @@ function waterMesh(builder, tube) {
   if (tube.water === null || tube.water === undefined) return;
   const emit = tri => {
     const c = centroid(tri), horizontal = Math.hypot(tube.delta[0], tube.delta[2]);
-    let colour = [0.013, 0.052, 0.022], material = 3;
+    let colour = tube.look.water, material = 3;
     if (horizontal > 0.1 && tube.kind !== 'inlet') {
       const side = [-tube.delta[2] / horizontal, 0, tube.delta[0] / horizontal];
       const section = Math.sqrt(Math.max(0, tube.radius ** 2 - (c[1] - axisPoint(tube, c)[1]) ** 2));
@@ -17667,8 +18393,80 @@ function lampMesh(builder, tube) {
 
 const DIRT_COLOUR = [0.15, 0.105, 0.045];
 const PIPE_COLOURS = { grate: [0.2, 0.09, 0.045], sluice: [0.14, 0.09, 0.05], cable: [0.025, 0.027, 0.03],
-  root: [0.09, 0.06, 0.032], falls: [0.03, 0.11, 0.07] };
+  root: [0.09, 0.06, 0.032], falls: [0.03, 0.11, 0.07], strut: [0.3, 0.2, 0.03], pole: [0.1, 0.11, 0.1] };
 const pipeColour = pipe => PIPE_COLOURS[pipe.kind] || [0.13, 0.17, 0.15];
+const FAN_IRON = [0.11, 0.12, 0.115], FAN_BLADE = [0.16, 0.13, 0.11], WARNING = [0.36, 0.26, 0.02];
+
+// Same basis and blade placement as the simulation, so drawn blades are where they collide.
+function fanBasis(axis) {
+  const e1 = unit(cross(Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], axis));
+  return { e1, e2: cross(axis, e1) };
+}
+const around = (centre, { e1, e2 }, r, angle) => add(centre, add(scale(e1, Math.cos(angle) * r), scale(e2, Math.sin(angle) * r)));
+
+// A curtain is the simulation's upright box; only its faces and ends are visible.
+function sheetMesh(builder, sheet, colour) {
+  const n = [-sheet.d[2], 0, sheet.d[0]], tint = [...colour, sheet.kind === 'falls' || sheet.kind === 'spiral' ? 0.85 : 0.7];
+  const corner = (u, v, y) => [sheet.c[0] + sheet.d[0] * sheet.hw * u + n[0] * sheet.thick * v, sheet.c[1] + sheet.hh * y,
+    sheet.c[2] + sheet.d[2] * sheet.hw * u + n[2] * sheet.thick * v];
+  for (const v of [-1, 1]) builder.quad(corner(-1, v, -1), corner(1, v, -1), corner(1, v, 1), corner(-1, v, 1), tint, scale(n, v), 3);
+  for (const u of [-1, 1]) builder.quad(corner(u, -1, -1), corner(u, 1, -1), corner(u, 1, 1), corner(u, -1, 1), tint, scale(sheet.d, u), 3);
+}
+
+// Fan hubs and open rings: the solid between two coaxial cylinders. An open ring's lip glows.
+function fanRingMesh(builder, fan) {
+  if (!(fan.ringOut > 0)) return;
+  const frame = fanBasis(fan.axis), N = 28, h = fan.ringHalf, open = fan.ringIn > 0;
+  const point = (r, a, s) => add(around(fan.c, frame, r, a), scale(fan.axis, s * h));
+  for (let k = 0; k < N; k++) {
+    const a = k * Math.PI * 2 / N, b = (k + 1) * Math.PI * 2 / N;
+    const ra = around([0, 0, 0], frame, 1, a), rb = around([0, 0, 0], frame, 1, b);
+    builder.quad(point(fan.ringOut, a, -1), point(fan.ringOut, a, 1), point(fan.ringOut, b, 1), point(fan.ringOut, b, -1), FAN_IRON, [ra, ra, rb, rb], 6);
+    if (open) builder.quad(point(fan.ringIn, a, -1), point(fan.ringIn, b, -1), point(fan.ringIn, b, 1), point(fan.ringIn, a, 1),
+      [0.25, 0.11, 0.03], scale(ra, -1), 4);
+    for (const s of [-1, 1]) {
+      if (open) builder.quad(point(fan.ringIn, a, s), point(fan.ringOut, a, s), point(fan.ringOut, b, s), point(fan.ringIn, b, s), FAN_IRON, scale(fan.axis, s), 6);
+      else builder.triangle(add(fan.c, scale(fan.axis, s * h)), point(fan.ringOut, a, s), point(fan.ringOut, b, s), FAN_IRON, scale(fan.axis, s), 6);
+    }
+  }
+}
+
+function fanBladeMesh(builder, fan, time) {
+  const frame = fanBasis(fan.axis);
+  for (let k = 0; k < fan.blades; k++) {
+    const angle = (fan.phase ?? 0) + fan.omega * time + Math.PI * 2 * k / fan.blades;
+    const p0 = around(fan.c, frame, fan.inner, angle), p1 = around(fan.c, frame, fan.tip, angle);
+    const tip = around(fan.c, frame, fan.inner + (fan.tip - fan.inner) * 0.78, angle);
+    builder.tag(6).tube(p0, tip, fan.width, FAN_BLADE, 6, { caps: true });
+    builder.tube(tip, p1, fan.width, WARNING, 6, { caps: true });
+  }
+}
+
+// Wall fans are painted onto the curved wall, never projecting into the flight volume.
+const onWall = (tube, p, lift) => { const centre = axisPoint(tube, p); return add(centre, scale(unit(sub(p, centre)), tube.radius - lift)); };
+function wallFanDisc(builder, fan, tube) {
+  const frame = fanBasis(fan.n), N = 24, hub = fan.radius * 0.2;
+  const at = (r, a, lift) => onWall(tube, around(fan.c, frame, r, a), lift);
+  for (let k = 0; k < N; k++) {
+    const a = k * Math.PI * 2 / N, b = (k + 1) * Math.PI * 2 / N;
+    for (const [r0, r1, colour, lift, material] of [[0, fan.radius * 0.5, [0.006, 0.007, 0.007], 0.05, 0],
+      [fan.radius * 0.5, fan.radius, [0.006, 0.007, 0.007], 0.05, 0], [fan.radius, fan.radius + 0.6, [0.15, 0.16, 0.15], 0.05, 6], [0, hub, [0.17, 0.18, 0.17], 0.12, 6]])
+      builder.quad(at(r0, a, lift), at(r1, a, lift), at(r1, b, lift), at(r0, b, lift), colour, fan.n, material);
+  }
+}
+function wallFanBlades(builder, fan, tube, time) {
+  const frame = fanBasis(fan.n), sector = Math.PI * 2 / fan.blades, width = sector * 0.21;
+  const at = (r, a) => onWall(tube, around(fan.c, frame, r, a), 0.09);
+  for (let k = 0; k < fan.blades; k++) {
+    const mid = fan.phase + fan.omega * time + sector * (k + 0.5);
+    for (let j = 0; j < 3; j++) {
+      const r0 = fan.radius * (0.2 + 0.25 * j), r1 = fan.radius * (0.45 + 0.25 * j);
+      const a0 = mid - r0 / fan.radius * 0.7, a1 = mid - r1 / fan.radius * 0.7;
+      builder.quad(at(r0, a0 - width), at(r1, a1 - width), at(r1, a1 + width), at(r0, a0 + width), [0.17, 0.18, 0.17], fan.n, 6);
+    }
+  }
+}
+const wallHost = (tubes, fan) => tubes.reduce((best, tube) => Math.abs(shellDistance(tube, fan.c)) < Math.abs(shellDistance(best, fan.c)) ? tube : best);
 
 function buildWorld(world, { indices = null, props = true, flows = true } = {}) {
   const tubes = prepare(world), selected = indices === null ? tubes : indices.map(i => tubes[i]).filter(Boolean);
@@ -17677,18 +18475,25 @@ function buildWorld(world, { indices = null, props = true, flows = true } = {}) 
   if (props) {
     for (const pipe of world.pipes || []) opaque.tag(6).capsule(pipe.a, pipe.b, pipe.radius, pipeColour(pipe), 20, 6);
     for (const pile of world.dirt || []) opaque.tag(12).ellipsoid(pile.centre, pile.radii, DIRT_COLOUR, 20, 12);
+    for (const fan of world.fans || []) { fanRingMesh(opaque, fan); fanBladeMesh(opaque, fan, 0); }
+    for (const fan of world.wallFans || []) { const tube = wallHost(tubes, fan); wallFanDisc(opaque, fan, tube); wallFanBlades(opaque, fan, tube, 0); }
   }
-  if (flows) for (const sheet of inflowSheets(world)) flowMesh(flow, sheet);
+  if (flows) {
+    for (const sheet of inflowSheets(world)) flowMesh(flow, sheet);
+    for (const sheet of world.sheets || []) sheetMesh(flow, sheet, tubes[0].look.curtain);
+  }
   return { opaque: opaque.build(), water: water.build(), flow: flow.build(), lamps: lamps.build(),
     stats: { tunnels: selected.length, pipes: props ? (world.pipes || []).length : 0, dirt: props ? (world.dirt || []).length : 0 } };
 }
 
 function create(gfx) {
   const ringLight=GAME.meshRings?.create(gfx);
-  const mesh = GAME.mesh.create(gfx), fog = [0.012, 0.030, 0.031];
+  const mesh = GAME.mesh.create(gfx);
+  let fog = [0.012, 0.030, 0.031], wallHosts = [];
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let world, tubes = [], sheets = [], cache = new Map(), propCache = new Map(), flowCache = new Map(), lastVisible = {};
   const markers = { opaque: mesh.upload(new Float32Array(0), { dynamic: true }), transparent: mesh.upload(new Float32Array(0), { dynamic: true }), xray: mesh.upload(new Float32Array(0), { dynamic: true }) };
+  const spinning = mesh.upload(new Float32Array(0), { dynamic: true });
   const release = map => { for (const value of map.values()) for (const handle of Object.values(value)) if (handle?.vao) mesh.dispose(handle); map.clear(); };
   function evict(map, limit, keep) {
     for (const [key, value] of map) {
@@ -17702,6 +18507,7 @@ function create(gfx) {
     if (!city?.sewer?.tunnels?.length) throw new Error('sewer-lite needs a connected sewer map');
     release(cache); release(propCache); release(flowCache);
     world = city.sewer; tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
+    fog = tubes[0].look.fog; wallHosts = (world.wallFans || []).map(fan => wallHost(tubes, fan));
   }
   function tunnelHandle(index) {
     if (!cache.has(index)) {
@@ -17715,6 +18521,9 @@ function create(gfx) {
     if (!propCache.has(key)) {
       const b = GAME.mesh.builder();
       if (kind === 'pipe') b.tag(6).capsule(value.a, value.b, value.radius, pipeColour(value), 20, 6);
+      else if (kind === 'ring') fanRingMesh(b, value);
+      else if (kind === 'wall') wallFanDisc(b, value, wallHosts[index]);
+      else if (kind === 'sheet') sheetMesh(b, value, tubes[0].look.curtain);
       else b.tag(12).ellipsoid(value.centre, value.radii, DIRT_COLOUR, 20, 12);
       propCache.set(key, { opaque: mesh.upload(b.build()) });
     }
@@ -17746,6 +18555,12 @@ function create(gfx) {
     }
     for (const [index, pile] of (world.dirt || []).entries()) if (Math.hypot(...sub(cam.pos, pile.centre)) - Math.max(...pile.radii) < RANGE)
       result.push({ value: pile, kind: 'dirt', index });
+    for (const [index, fan] of (world.fans || []).entries()) if (fan.ringOut > 0 && Math.hypot(...sub(cam.pos, fan.c)) - fan.ringOut < RANGE)
+      result.push({ value: fan, kind: 'ring', index });
+    for (const [index, fan] of (world.wallFans || []).entries()) if (Math.hypot(...sub(cam.pos, fan.c)) - fan.radius < RANGE)
+      result.push({ value: fan, kind: 'wall', index });
+    for (const [index, sheet] of (world.sheets || []).entries()) if (Math.hypot(...sub(cam.pos, sheet.c)) - Math.hypot(sheet.hw, sheet.hh) < RANGE)
+      result.push({ value: sheet, kind: 'sheet', index });
     return result;
   }
   function nearFlows(cam) { return sheets.map((sheet, index) => ({ sheet, index })).filter(({ sheet }) => Math.hypot(...sub(cam.pos, sheet.a)) < RANGE); }
@@ -17775,7 +18590,8 @@ function create(gfx) {
     evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
   }
-  function draw(cam, rings = [], guide = [], stars = []) {
+  // The clock is the run time, so drawn fan blades are exactly where they collide.
+  function draw(cam, rings = [], guide = [], stars = [], clock = 0) {
     if (!world) throw new Error('sewer-lite draw before setWorld');
     const time = reducedMotion.matches ? 0 : performance.now() / 1000, opts = { fog, density: 0.0105, far: 1000, time, encoded: true };
     mesh.clear(fog);
@@ -17785,12 +18601,21 @@ function create(gfx) {
       mesh.draw(handles.opaque, cam, tunnelOpts); mesh.draw(handles.water, cam, tunnelOpts); mesh.draw(handles.lamps, cam, { ...tunnelOpts, unlit: true });
     }
     const props = nearbyProps(cam), flows = nearFlows(cam);
-    for (const p of props) {
-      const centre = p.kind === 'pipe' ? middle(p.value.a, p.value.b) : p.value.centre;
-      mesh.draw(propHandle(p.value, p.kind, p.index), cam, { ...opts, sewer: surface(nearestTube(centre)) });
-    }
+    const centreOf = p => p.kind === 'pipe' ? middle(p.value.a, p.value.b) : p.value.centre ?? p.value.c;
+    for (const p of props) if (p.kind !== 'sheet')
+      mesh.draw(propHandle(p.value, p.kind, p.index), cam, { ...opts, sewer: surface(nearestTube(centreOf(p))) });
+    const moving = GAME.mesh.builder();
+    for (const fan of world.fans || []) if (Math.hypot(...sub(cam.pos, fan.c)) - fan.tip < RANGE) fanBladeMesh(moving, fan, clock);
+    for (const [index, fan] of (world.wallFans || []).entries()) if (Math.hypot(...sub(cam.pos, fan.c)) - fan.radius < RANGE)
+      wallFanBlades(moving, fan, wallHosts[index], clock);
+    mesh.update(spinning, moving.build());
+    mesh.draw(spinning, cam, { ...opts, sewer: surface(nearestTube(cam.pos)) });
     for (const { sheet, index } of flows) mesh.draw(flowHandle(sheet, index), cam,
       { ...opts, sewer: surface(tubes[sheet.source]), depthWrite: false });
+    // Translucent curtains are drawn far to near.
+    const curtains = props.filter(p => p.kind === 'sheet').sort((a, b) => distance2(cam.pos, b.value.c) - distance2(cam.pos, a.value.c));
+    for (const p of curtains) mesh.draw(propHandle(p.value, p.kind, p.index), cam,
+      { ...opts, sewer: surface(nearestTube(p.value.c)), depthWrite: false });
     const frame = GAME.mesh.markers(rings, guide, stars, { time, cam });
     for (const kind of ['opaque', 'transparent', 'xray']) {
       mesh.update(markers[kind], frame[kind]);
@@ -17802,11 +18627,11 @@ function create(gfx) {
     evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
     lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length,
-      dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, clipped: tubes.length - selected.length,
+      dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, sheets: curtains.length, clipped: tubes.length - selected.length,
       resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true };
   }
   return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
-    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
+    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
 GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, stride: STRIDE };
@@ -19200,7 +20025,7 @@ const syncTouchStick = () => {
   touchStick?.setEnabled(selected && mode === 'playing');
 };
 let seedCode, city, course, run, guide, pilot;
-let collapse = null, surfaceSession = null, collapsePreparation = null;
+let collapse = null, surfaceSession = null, collapsePreparation = null, blastPlan = null;
 let sewerArrival = null;
 let menuEnvironment = params.get('environment') === 'surface' ? 'surface'
   : params.get('environment') === 'sewer' ? GAME.access.sewerUnlocked() ? 'sewer' : 'surface' : GAME.access.environment();
@@ -19212,7 +20037,7 @@ let difficulty = Object.prototype.hasOwnProperty.call(GAME.course.DIFFICULTIES, 
 let requestedLockedExtreme = false;
 const sessionExtremeUnlocks = new Set();
 const extremeUnlockKey = (code, environment = isSewer() ? 'sewer' : 'surface') => environment === 'sewer'
-  ? `neonflight.sewer.unlock.v2.extreme.${code}` : `neonflight.unlock.v${GAME.course.UNLOCK_VERSION}.extreme.${code}`;
+  ? `neonflight.sewer.unlock.v3.extreme.${code}` : `neonflight.unlock.v${GAME.course.UNLOCK_VERSION}.extreme.${code}`;
 function extremeUnlocked(code, environment = isSewer() ? 'sewer' : 'surface') {
   if (sessionExtremeUnlocks.has(`${environment}:${code}`)) return true;
   try { return localStorage.getItem(extremeUnlockKey(code, environment)) === '1'; } catch { return false; }
@@ -19367,6 +20192,7 @@ function newRun() {
 
 function leaveCollapse() {
   GAME.sound.setAlarm(false);
+  blastPlan = null;
   if (!surfaceSession) return;
   hud.clearToasts();
   ({ city, course, run, guide, pilot, boostsTaken, newStars, pendingStars } = surfaceSession);
@@ -19384,10 +20210,48 @@ function enterCollapse() {
   run = GAME.run.create(city, course); run.glider = world.entryGlider;
   guide = GAME.guide.create(course); pilot = { k: 0 };
   renderer.setWorld(city, course.pads); renderer.setCollapse(collapse);
+  blastPlan = planBlasts(collapse, city);
   setMode('playing');
+  GAME.sound.blast('collapseBlast0', 1, 0);
   hud.clearToasts();
   hud.message('COLLAPSE', 'bad', 2);
   hud.toast('Find the way beneath the city', 'bad', 3);
+}
+
+// Every building that starts to topple or sink is a blast: near ones crack and shower debris,
+// far ones roll in as rumbles. Thousands start within seconds, so each moment plays only the
+// loudest one, with a short gap between blasts and a longer one between distant rumbles.
+const BLAST_GAP = 0.16, RUMBLE_GAP = 0.42, BLAST_NEAR = 240;
+function planBlasts(state, world) {
+  const events = [];
+  for (const r of state.motion?.records || []) if (r.kind === 'building') events.push({ at: r.start, x: r.firePoint[0], z: r.firePoint[2], weight: 1.5 });
+  for (const cell of state.fallingCells || []) {
+    const [x, z] = world.cellCenter(cell);
+    events.push({ at: state.falls[cell * 4], x, z, weight: 1 });
+  }
+  events.sort((a, b) => a.at - b.at);
+  return { events, next: 0, pending: null, lastBlast: 0, lastRumble: -Infinity, variant: 0 };
+}
+
+function collapseBlasts() {
+  const plan = blastPlan;
+  if (!plan || !collapse) return;
+  const g = run.glider, t = collapse.time;
+  while (plan.next < plan.events.length && plan.events[plan.next].at <= t) {
+    const e = plan.events[plan.next++], d = Math.hypot(e.x - g.x, e.z - g.z);
+    const loud = e.weight / (1 + (d / 110) ** 2);
+    if (!plan.pending || loud > plan.pending.loud) plan.pending = { ...e, d, loud };
+  }
+  const e = plan.pending;
+  if (!e) return;
+  const near = e.d < BLAST_NEAR;
+  if (t - plan.lastBlast < BLAST_GAP || (!near && t - plan.lastRumble < RUMBLE_GAP)) return;
+  const pan = (-(e.x - g.x) * Math.cos(g.yaw) + (e.z - g.z) * Math.sin(g.yaw)) / Math.max(1, e.d);
+  plan.variant++;
+  if (near) GAME.sound.blast(`collapseBlast${plan.variant % 3}`, Math.max(0.22, Math.min(1, e.loud)), pan * 0.8);
+  else { GAME.sound.blast(`collapseRumble${plan.variant % 2}`, Math.max(0.3, Math.min(0.85, 260 / e.d)), pan * 0.6); plan.lastRumble = t; }
+  plan.lastBlast = t;
+  plan.pending = null;
 }
 
 function revealSewer() {
@@ -19509,7 +20373,7 @@ function handle(events) {
       const offCourse = e.hit.kind === 'offCourse';
       const retryBooster = e.hit.retryBooster !== undefined;
       const what = retryBooster ? 'retry booster' : isSewer() ? { ground: 'hit the water', water: 'hit the water', dirt: 'hit the silt', pipe: 'hit a pipe', wall: 'hit the tunnel',
-        grate: 'hit the grate', sluice: 'hit the sluice gate', cable: 'snagged a cable', falls: 'swept by the falls', offCourse: 'off course' }[e.hit.sewer || e.hit.kind] || 'crashed'
+        grate: 'hit the grate', sluice: 'hit the sluice gate', cable: 'snagged a cable', falls: 'swept by the falls', fan: 'hit a fan', offCourse: 'off course' }[e.hit.sewer || e.hit.kind] || 'crashed'
         : { ground: 'hit the street', tower: 'crashed', bounds: 'left the city', offCourse: 'off course' }[e.hit.kind];
       hud.message(what, 'bad');
       hud.toast(isSewer() ? 'Course lost · restarting from the beginning' : offCourse ? `returning to last gate · +${GAME.run.PENALTY.crash + GAME.run.PENALTY.offCourse} s`
@@ -19585,6 +20449,7 @@ function update(dt) {
       if (!isSewer() && !collapse && mode === 'playing' && GAME.shop.state().collapseKey && course.collapse?.trigger
           && GAME.collapse.through([stepBefore.x, stepBefore.y, stepBefore.z], [run.glider.x, run.glider.y, run.glider.z], course.collapse.trigger)) enterCollapse();
     }
+    if (mode === 'playing') collapseBlasts();
   } else if (mode === 'crashed' && modeTime > crashPause) {
     respawn();
   } else if (mode === 'finished') {
@@ -19601,7 +20466,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => isSewer() ? `neonflight.sewer.best.v2.${difficulty}.${code}`
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v3.${difficulty}.${code}`
   : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
@@ -19659,9 +20524,14 @@ function render(now, w, h) {
   }
   // The menu previews this course from its real starting pose. Fly keeps the same tunnel,
   // camera and masonry through the countdown instead of swapping an underground backdrop.
-  if (isSewer()) sewerFlightRenderer.draw(cam, sewerMenu ? [] : view.rings,
-    sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide, []);
-  else renderer.draw(cam, view.rings, collapse || mode === 'finished' || mode === 'results' ? [] : view.guide,
+  if (isSewer()) {
+    // Fans turn on the run clock: it counts up to zero through the countdown and keeps
+    // running behind crash and finish screens, so the blades never jump.
+    const clock = mode === 'countdown' ? modeTime - countdownLen : mode === 'title' ? now / 1000
+      : mode === 'crashed' || mode === 'finished' || mode === 'results' ? run.time + modeTime : run.time;
+    sewerFlightRenderer.draw(cam, sewerMenu ? [] : view.rings,
+      sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide, [], clock);
+  } else renderer.draw(cam, view.rings, collapse || mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
   const over = Math.max(0, (g.speed - FLIGHT.CRUISE) / (FLIGHT.MAX_SPEED - FLIGHT.CRUISE));
@@ -19844,10 +20714,10 @@ function showTitle() {
     stars: isSewer() ? 0 : GAME.starBank.collected(seedCode, difficulty).length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
   const unlocked = extremeUnlocked(seedCode);
   const sewerDescriptions = {
-    easy: 'Wide cylindrical collectors and gentle connecting passages',
-    medium: 'Smaller connecting tunnels, round pipes and dirt banks',
-    hard: 'Narrow tunnels, tighter rings and frequent pipe obstacles',
-    extreme: 'The smallest tunnels and rings, dense pipes and faster flight',
+    easy: 'Wide tunnels, big rings and only a few pipes',
+    medium: 'Cables, waterfalls and fan hubs to fly through',
+    hard: 'Grates, sluice gates and spinning fan blades',
+    extreme: 'The tightest, densest tunnels and faster fans',
   };
   for (const button of document.querySelectorAll('[data-difficulty]')) {
     button.dataset.surfaceTitle ??= button.title;
