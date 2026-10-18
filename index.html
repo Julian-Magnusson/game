@@ -377,9 +377,10 @@
   #pause-shop { left: auto; right: calc(18px + var(--safe-r)); }
   #shop { z-index: 30; padding: 18px calc(18px + var(--safe-r)) 18px calc(18px + var(--safe-l));
     background: rgba(1, 3, 12, 0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-  .shop-sheet { width: min(880px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; box-sizing: border-box;
+  .shop-sheet { width: min(880px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;
     padding: 26px; text-align: left; border: 1px solid #ffd45a55; border-radius: 8px;
     background: radial-gradient(ellipse at top left, #24303166, transparent 65%), #070e1b; box-shadow: 0 20px 100px #0009; }
+  .shop-content { min-height: 0; overflow-y: auto; touch-action: pan-y; }
   .shop-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
   .shop-heading { flex: 1; }
   .shop-eyebrow { color: var(--gold); font-size: 11px; letter-spacing: 0.23em; text-transform: uppercase; }
@@ -419,18 +420,23 @@
   #shop-message { min-height: 1.5em; margin: 7px 0 0; color: var(--green); font-size: 12px; }
   #shop-message:empty { display: none; }
   #shop-storage { color: var(--amber); }
-  .shop-key-item { display: flex; align-items: center; gap: 20px; margin-top: 14px; padding: 16px 20px;
+  .shop-key-item, .shop-flashlight-item { display: flex; align-items: center; gap: 20px; margin-top: 14px; padding: 16px 20px;
     border: 1px solid #ff696a55; border-radius: 5px; background: linear-gradient(110deg, #ff46460b, #ffffff03); }
+  .shop-flashlight-item { border-color: #82e1be55; background: linear-gradient(110deg, #82e1be0b, #ffffff03); }
+  .shop-flashlight-item .shop-key-copy .shop-badge, #shop-flashlight-owned { color: var(--green); }
+  .shop-flashlight-item .shop-key-art { color: #b8ffe0; filter: drop-shadow(0 0 8px #82e1be44); }
+  #shop-flashlight-owned { display: block; font-size: 12px; }
   .shop-key-art { width: 64px; height: 64px; flex: 0 0 64px; color: #ff7775; filter: drop-shadow(0 0 8px #ff464644); }
   .shop-key-copy { flex: 1; } .shop-key-copy h3 { margin: 4px 0; font-size: 21px; font-weight: 500; }
   .shop-key-copy p { margin: 5px 0; color: #b5c6d6; font-size: 12px; line-height: 1.5; }
   .shop-key-copy #shop-key-hint { color: #ffd3bb; font-size: 21px; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
   #shop-key-context { color: #9baeb9; font-size: 10px; margin: 0 7px 0 0; letter-spacing: 0.07em; }
   .shop-key-copy .shop-badge { color: #ff9e97; font-size: 11px; }
-  #shop-key-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
-  #shop-key-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
-  #shop-key-buy:disabled { opacity: 0.55; }
-  .shop-head { position: sticky; top: -1px; z-index: 1; padding-bottom: 8px; background: #07121f; }
+  #shop-key-price, #shop-flashlight-price { color: var(--gold); white-space: nowrap; font-size: 21px; }
+  #shop-key-buy, #shop-flashlight-buy { min-height: 44px; padding: 10px 14px; border-color: #ff7775; color: #ffe1dc; }
+  #shop-flashlight-buy { border-color: #82e1be; color: #d7ffed; }
+  #shop-key-buy:disabled, #shop-flashlight-buy:disabled { opacity: 0.55; }
+  .shop-head { flex: none; padding-bottom: 8px; background: #07121f; }
   .shop-tabs { display: flex; flex: 0 0 100%; gap: 8px; }
   .shop-tabs button { flex: 1; min-height: 40px; padding: 8px 12px; color: #93a8bd; background: #ffffff05; border: 1px solid #c2def52b; border-radius: 4px; font: inherit; font-size: 12px; cursor: pointer; }
   .shop-tabs [aria-selected="true"] { color: var(--gold); border-color: #ffd45a88; background: #ffd45a0f; }
@@ -445,7 +451,7 @@
   .shop-card-price { color: var(--gold); white-space: nowrap; font-weight: 400; }
   .shop-card button { width: 100%; min-height: 40px; margin-top: 10px; padding: 8px; font-size: 11px; color: #e8f8ff; border-color: #8bcce466; letter-spacing: 0.03em; }
   .shop-card button:disabled { opacity: 0.55; cursor: default; }
-  #shop-message:not(:empty) { position: sticky; bottom: -1px; padding: 8px 10px; background: #07121ff5; border: 1px solid #4dffc044; border-radius: 3px; }
+  #shop-message:not(:empty) { flex: none; padding: 8px 10px; background: #07121ff5; border: 1px solid #4dffc044; border-radius: 3px; }
   @media (max-width: 600px) { .shop-catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } }
   @media (max-height: 500px) { .shop-tabs button { min-height: 36px; padding: 6px; } .shop-card-art { height: 64px; } }
   #environment-switch { margin-top: 16px; display: inline-flex; align-items: center; gap: 10px; min-height: 44px;
@@ -453,8 +459,7 @@
   #environment-switch[hidden], #sewer-note[hidden] { display: none; }
   #environment-switch svg { width: 26px; height: 26px; }
   #sewer-note { max-width: 360px; margin: 18px 0; padding: 0 20px; color: #a6c7be; font-size: 12px; line-height: 1.7; letter-spacing: 0.06em; }
-  .sewer-menu #title-stars { display: none; }
-  .sewer-world .hud-stars, .sewer-world #pause-stars, .sewer-world .res-stars { display: none; }
+  .sewer-world { --star: #8dffad !important; }
   .sewer-rules { display: none; }
   .sewer-world .surface-rules { display: none; }
   .sewer-world .sewer-rules { display: block; }
@@ -467,9 +472,9 @@
     opacity: 0; transition: opacity 0.7s; }
   #sewer-reveal.revealed span { opacity: 1; }
   @media (max-height: 500px) { #environment-switch { margin-top: 8px; min-height: 44px; padding: 6px 14px; }
-    .shop-key-item { padding: 12px; gap: 12px; } }
-  @media (max-width: 600px) { .shop-key-item { flex-wrap: wrap; } .shop-key-art { width: 44px; height: 44px; flex-basis: 44px; }
-    #shop-key-buy { flex: 1; } }
+    .shop-key-item, .shop-flashlight-item { padding: 12px; gap: 12px; } }
+  @media (max-width: 600px) { .shop-key-item, .shop-flashlight-item { flex-wrap: wrap; } .shop-key-art { width: 44px; height: 44px; flex-basis: 44px; }
+    #shop-key-buy, #shop-flashlight-buy { flex: 1; } }
   @media (prefers-reduced-motion: reduce) { #sewer-reveal span { transition: none; } }
   .hud-lift { position: absolute; right: calc(24px + var(--safe-r)); bottom: 118px; min-width: 92px; min-height: 52px;
     padding: 8px 12px; border: 1px solid var(--green); border-radius: 6px; background: #061b20da; color: #caffeb;
@@ -499,6 +504,22 @@
     .shop-footer { margin-top: 10px; }
     #shop-message { margin-top: 3px; }
     .hud-lift { bottom: 86px; right: calc(24px + var(--safe-r)); min-height: 48px; }
+  }
+  @media (max-height: 500px) and (min-width: 650px) {
+    .shop-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 1.25fr) auto auto; gap: 12px; }
+    .shop-tabs { grid-column: 2; grid-row: 1; gap: 6px; }
+    .shop-tabs button { min-height: 44px; }
+    .shop-wallet { grid-column: 3; grid-row: 1; }
+    #shop-done { grid-column: 4; grid-row: 1; }
+    .shop-eyebrow { letter-spacing: 0.1em; }
+    #shop-title { font-size: 22px; letter-spacing: 0.13em; }
+    .shop-section-label { margin: 6px 0; padding-top: 6px; }
+    .shop-item, .shop-inventory { padding: 10px; }
+    .shop-item h3 { margin: 2px 0; }
+    .shop-item p, .shop-inventory p { margin: 3px 0; }
+    .shop-specs { margin: 4px 0; }
+    .shop-buy-row { margin-top: 6px; }
+    .shop-footer { margin-top: 8px; }
   }
   @media (max-width: 600px) and (orientation: portrait) {
     .shop-grid { grid-template-columns: 1fr; }
@@ -676,6 +697,7 @@
       <button id="shop-tab-music" type="button" role="tab" aria-selected="false" aria-controls="shop-music" tabindex="-1">Music</button>
     </div>
     </header>
+    <div class="shop-content">
     <section id="shop-gear" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-gear">
     <div class="shop-section-label"><span>Flight gear</span><span>Earn stars. Gear up.</span></div>
     <div class="shop-grid">
@@ -706,6 +728,11 @@
       </aside>
     </div>
     <div class="shop-footer" id="shop-rules">Finish to save found stars. Using a boost makes this an assisted flight: stars still count, but medals and best times do not.</div>
+    <article class="shop-flashlight-item">
+      <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M17 28l19-12 12 18-19 12z" fill="#183f35" stroke="currentColor" stroke-width="3"/><path d="M18 28L9 41l10 15 12-9M35 16L41 7l15 23-9 5" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M46 10l10-7M52 20l11-1M38 7l2-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <div class="shop-key-copy"><span class="shop-badge">Sewer gear · single use</span><h3>Flashlight</h3><strong id="shop-flashlight-owned">0 / 3 ready</strong><p>Automatically used on your next Sewer flight. Lasts until you crash, finish or leave. Surface flights keep it saved.</p></div>
+      <strong id="shop-flashlight-price">★ 5</strong><button id="shop-flashlight-buy" class="btn" type="button">buy light · 5 ★</button>
+    </article>
     <article class="shop-key-item">
       <svg class="shop-key-art" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="13" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="22" r="5" stroke="currentColor" stroke-width="2"/><path d="M31 31l23 23m-7-7l7-7m-14 0l7-7" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
       <div class="shop-key-copy"><span class="shop-badge">Unlock</span><h3>Collapse Key</h3><p id="shop-key-hint">???</p><span id="shop-key-context"></span></div>
@@ -713,16 +740,17 @@
     </article>
     </section>
     <section id="shop-themes" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-themes" hidden>
-      <div class="shop-section-label"><span>City themes</span><span>4 ★ each</span></div>
+      <div class="shop-section-label"><span>City themes</span><span>2–5 ★</span></div>
       <div id="shop-themes-grid" class="shop-catalog"></div>
-      <p class="shop-footer">Neon Night is included. Buy a theme once, then choose it here or in Settings.</p>
+      <p class="shop-footer">Buy a theme once, then choose it here or in Settings.</p>
     </section>
     <section id="shop-music" class="shop-section" role="tabpanel" aria-labelledby="shop-tab-music" hidden>
       <div class="shop-section-label"><span>Soundtracks</span><span>5 ★ each</span></div>
       <div id="shop-music-grid" class="shop-catalog"></div>
-      <p class="shop-footer">Neon Flight is included. Random in Settings plays your owned surface songs. Undertow is free in The Sewer.</p>
+      <p class="shop-footer" id="shop-music-note">Buy songs once. Random in Settings plays your owned surface songs.</p>
     </section>
     <div id="shop-storage" class="shop-footer" hidden>Shop saving is unavailable. Try opening the online game.</div>
+    </div>
     <div id="shop-message" role="status" aria-live="polite"></div>
   </div>
 </div>
@@ -5751,7 +5779,8 @@ function collect(run, from, to) {
     let clear = true;
     for (let t = 0; t <= dist; t += 0.8) {
       const f = dist ? t / dist : 0;
-      if (GAME.collide.sphere(run.city, b.x + (star.x - b.x) * f, b.y + (star.y - b.y) * f, b.z + (star.z - b.z) * f, 0.15)) { clear = false; break; }
+      const collide = run.course.environment === 'sewer' ? GAME.sewerCourse : GAME.collide;
+      if (collide.sphere(run.city, b.x + (star.x - b.x) * f, b.y + (star.y - b.y) * f, b.z + (star.z - b.z) * f, 0.15, run.time)) { clear = false; break; }
     }
     if (!clear) continue;
     run.stars.add(star.id);
@@ -8953,6 +8982,21 @@ function current(city, x, y, z) {
   return lift;
 }
 
+// The same junction fade drives the flashlight/HUD and both renderers. A lit neighbouring
+// capsule keeps its opening lit; darkness reaches full strength twelve units beyond it.
+function darknessAt(cityOrWorld, p) {
+  const world = cityOrWorld.sewer || cityOrWorld;
+  let dark = false, litDistance = Infinity;
+  for (const tube of world.tunnels) {
+    const distance = Math.max(distanceToSegment(p, tube.a, tube.b) - tube.radius,
+      tube.water === null ? -Infinity : tube.water - p[1]);
+    if (tube.dark) { if (distance <= 0) dark = true; }
+    else litDistance = Math.min(litDistance, Math.max(0, distance));
+  }
+  const blend = clamp(litDistance / 12, 0, 1);
+  return dark ? blend * blend * (3 - 2 * blend) : 0;
+}
+
 function step(run, stick, dt) {
   if (run.crashed || run.finished) return [];
   const events = [], g = run.glider, from = [g.x, g.y, g.z];
@@ -8975,6 +9019,7 @@ function step(run, stick, dt) {
     events.push({ type: 'crash', hit }); return events;
   }
   run.lastSafePosition = [g.x, g.y, g.z];
+  events.push(...GAME.stars.collect(run, from, to));
   const gate = run.course.gates[run.next];
   if (gate) {
     const crossed = GAME.collapse.crossing(from, to, gate);
@@ -9046,11 +9091,12 @@ function phaseFans(pending, run, pilot) {
 
 function prove(city, course, mistakes = null) {
   const run = GAME.run.create(city, course), pilot = { k: 0 }, events = [], path = [];
+  const routed = mistakes?.line ? { ...course, line: mistakes.line } : course;
   const crashes = [...(mistakes?.crashAt || [])], random = GAME.rng.stream(city.seed, 'sewer-shaky');
   const pending = (city.sewer.fans || []).filter(fan => fan.phase === null);
   let wobble = { x: 0, y: 0 }, tick = 0, elapsed = 0, failures = 0;
   while (!run.finished && elapsed < course.par * 3 + 30) {
-    const stick = steer(pilot, run.glider, course);
+    const stick = steer(pilot, run.glider, routed);
     if (pending.length) phaseFans(pending, run, pilot);
     if (mistakes?.noise) {
       if (tick % 30 === 0) wobble = { x: (random() * 2 - 1) * mistakes.noise, y: (random() * 2 - 1) * mistakes.noise };
@@ -9065,7 +9111,7 @@ function prove(city, course, mistakes = null) {
     if (tick++ % 8 === 0 && !run.crashed) path.push({ x: run.glider.x, y: run.glider.y, z: run.glider.z });
     if (run.crashed) {
       failures++;
-      if (!mistakes || failures > 8) break;
+      if (!mistakes || (!mistakes.noise && !mistakes.crashAt?.length) || failures > 8) break;
       respawn(run);
       pilot.k = 0;
     }
@@ -9083,6 +9129,60 @@ function pack(city, course) {
   return { city, course: Object.fromEntries(Object.entries(course).filter(([, v]) => typeof v !== 'function')) };
 }
 const unpack = data => restore(data.city, data.course);
+
+function placeStars(city, course, seed) {
+  const count = GAME.stars.COUNTS[course.difficulty], L = course.line, rng = GAME.rng.stream(seed, `sewer-stars:${course.difficulty}`);
+  const markers = [0, ...course.gates.map(g => g.s)], candidates = [];
+  for (let k = 40; k < L.n - 40; k += 8) {
+    const s = k * SAMPLE, range = course.sections.find(section => s >= section.s0 && s <= section.s1);
+    if (!range) continue;
+    const before = markers.filter(v => v < s).at(-1) ?? 0, after = markers.find(v => v >= s) ?? course.length;
+    const span = Math.floor(Math.min(116, s - before - 22, after - s - 26) / SAMPLE);
+    if (span * SAMPLE < 48) continue;
+    const a = Math.max(0, k - 3), b = Math.min(L.n - 1, k + 3), dx = L.x[b] - L.x[a], dz = L.z[b] - L.z[a], length = Math.hypot(dx, dz);
+    if (length < 1) continue;
+    const side = [-dz / length, 0, dx / length], offsets = range.shaft === undefined
+      ? range.radius >= 25 ? [18, 14] : [14, 12] : [22, 16];
+    for (const magnitude of offsets) for (const sign of [-1, 1]) for (const dy of [0, 5, -5]) {
+      const offset = magnitude * sign, star = { id: -1, s, x: L.x[k] + side[0] * offset, y: L.y[k] + dy, z: L.z[k] + side[2] * offset,
+        radius: GAME.stars.RADIUS, phase: rng() * Math.PI * 2,
+        detour: { k, span, dx: side[0] * offset, dy, dz: side[2] * offset } };
+      if (sphere(city, star.x, star.y, star.z, GAME.stars.RADIUS + 0.7)) continue;
+      if (course.proof.path.some((p, i) => i && Math.abs(p.x - star.x) < 22 && Math.abs(p.y - star.y) < 22 && Math.abs(p.z - star.z) < 22
+        && GAME.stars.segmentDistance(star, course.proof.path[i - 1], p) < GAME.stars.RACE_CLEARANCE)) continue;
+      const routed = GAME.stars.detourLine(course, [star]);
+      let clear = true;
+      for (let j = k - span; j <= k + span; j += 2) if (sphere(city, routed.x[j], routed.y[j], routed.z[j], GAME.flight.FLIGHT.RADIUS + 0.6)) { clear = false; break; }
+      if (!clear) continue;
+      candidates.push({ star, score: -Math.hypot(offset, dy) * 2 + rng() * 18 });
+    }
+  }
+  let attempts = 0;
+  function pick(chosen) {
+    if (chosen.length === count) return chosen;
+    const id = chosen.length, target = course.length * (id + 1) / (count + 1);
+    const ranked = candidates.slice().sort((a, b) => Math.abs(a.star.s - target) + a.score - Math.abs(b.star.s - target) - b.score);
+    for (const candidate of ranked) {
+      if (attempts >= 64) break;
+      const star = { ...candidate.star, id };
+      if (chosen.some(other => Math.abs(other.s - star.s) < (other.detour.span + star.detour.span) * SAMPLE + 32)) continue;
+      const stars = [...chosen, star], trial = { ...course, stars };
+      attempts++;
+      const proof = prove(city, trial, { line: GAME.stars.detourLine(trial) });
+      if (!proof.finished || proof.crashes || proof.missed || proof.events.filter(e => e.type === 'star').length !== stars.length) continue;
+      const result = pick(stars);
+      if (result) { course.starProof = proof; return result; }
+    }
+    return null;
+  }
+  const stars = pick([]);
+  if (!stars) return false;
+  course.stars = stars; course.starTries = attempts;
+  // Store the final complete collection route, not a recursive prefix's successful trial.
+  course.starProof = prove(city, course, { line: GAME.stars.detourLine(course) });
+  return course.starProof.finished && !course.starProof.crashes && !course.starProof.missed
+    && course.starProof.events.filter(e => e.type === 'star').length === count;
+}
 
 function build(seed, difficulty, attempt) {
   const profile = PROFILES[difficulty], look = GAME.rng.stream(seed, 'sewer-look');
@@ -9481,7 +9581,8 @@ function build(seed, difficulty, attempt) {
     if (range.shaft === undefined) continue;
     const tube = shafts[range.shaft], owner = ranges.indexOf(range), Rs = tube.radius, lo = tube.a[1], hi = tube.b[1];
     const [ax, , az] = tube.a, R = profile.main, sAt = f => range.s0 + (range.s1 - range.s0) * f;
-    const crossing = profile.shaftFans > 0 && (range.shaft + fanParity) % 2 === 1, reach = Rs - 6.5;
+    const crossing = profile.shaftFans > 0, reach = Rs - 2.8;
+    const fanMotion = GAME.rng.stream(seed, `sewer-giant-fans:${attempt}:${range.shaft}`);
     // Curtains reach down to the lowest water around them, including a joining tunnel's channel.
     const bottom = Math.min(tube.water, ...tunnels.filter((_, i) => Math.abs(owners[i] - owner) === 1).map(t => t.water)) - 1;
     const dome = rho => hi + Math.sqrt(Math.max(0, Rs * Rs - rho * rho));
@@ -9527,12 +9628,13 @@ function build(seed, difficulty, attempt) {
         placed.push(f);
         const p = at(s).p;
         fans.push({ c: [ax, p[1], az], axis: [0, 1, 0], tip: reach, inner: 5, blades: 3, width: 1.7,
-          omega: travel * profile.shaftOmega, phase: null, s, cross: p, ringIn: 0, ringOut: 6, ringHalf: 2.2, kind: 'shaft' });
+          omega: (fanMotion.chance(0.5) ? travel : -travel) * profile.shaftOmega * fanMotion.range(0.58, 1.1),
+          phase: null, s, cross: p, ringIn: 0, ringOut: 6, ringHalf: 2.2, kind: 'shaft' });
       }
     }
     pipes.push({ a: [ax, tube.water - 1, az], b: [ax, hi + Rs + 1, az], radius: 2.4, kind: 'pole', s: null });
     const domeY = hi + R + 9, domeTip = Math.sqrt(Math.max(0, Rs * Rs - (domeY + 1.5 - hi) ** 2)) - 2;
-    fans.push({ c: [ax, domeY, az], axis: [0, 1, 0], tip: Math.min(domeTip, crossing ? reach : innermost - 3), inner: 5,
+    fans.push({ c: [ax, domeY, az], axis: [0, 1, 0], tip: domeTip, inner: 5,
       blades: r.int(4, 6), width: 1.5, omega: (r.chance(0.5) ? 1 : -1) * r.range(0.22, 0.4), phase: r.range(0, Math.PI * 2),
       s: null, cross: null, ringIn: 0, ringOut: 6.5, ringHalf: 2, kind: 'dome' });
     for (let j = r.int(3, 6), tries = 0; j > 0 && tries < 40; tries++) {
@@ -9583,19 +9685,31 @@ function build(seed, difficulty, attempt) {
   const city = { environment: 'sewer', seed, difficulty, size: 4096, maxHeight: 260, obstacles: pipes,
     sewer: { tunnels, pipes, dirt, inflows, shafts, sheets, fans, wallFans, theme: { ...theme }, startY: 80,
       minY: Math.min(...tunnels.map(tube => tube.water ?? Infinity)) } };
+  const dark = GAME.rng.stream(seed, `sewer-dark:${attempt}`), darkRanges = new Set();
+  if (difficulty === 'hard' || difficulty === 'extreme') {
+    const eligible = ranges.map((range, index) => ({ range, index })).filter(({ range, index }) => index > 0 && range.straight && range.s0 > 280);
+    const limit = difficulty === 'extreme' ? 3 : 2;
+    for (let j = 0; j < Math.min(limit, eligible.length); j++) {
+      const chosen = dark.int(j, eligible.length - 1); [eligible[j], eligible[chosen]] = [eligible[chosen], eligible[j]];
+      darkRanges.add(eligible[j].index);
+    }
+  }
+  tunnels.forEach((tube, index) => { tube.dark = darkRanges.has(owners[index]); });
+  ranges.forEach((range, index) => { range.dark = darkRanges.has(index); });
   const counts = {};
   for (const h of hazards) counts[h.type] = (counts[h.type] || 0) + 1;
   counts.curtains = sheets.length; counts.fans = fans.length; counts.wallFans = wallFans.length;
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
     par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length + sheets.length + fans.length,
-    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 3 };
+    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 4 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
     return { failure: JSON.stringify({ attempt, finished: course.proof.finished, gate: course.proof.gate,
       crashes: course.proof.crashes, missed: course.proof.missed, last: course.proof.events.at(-1) }) };
   }
+  if (!placeStars(city, course, seed)) return { failure: `no reachable sewer star detours on attempt ${attempt}` };
   return { city, course };
 }
 
@@ -9614,7 +9728,7 @@ function generate(seed, difficulty = 'medium') {
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
   sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
-  PROFILES, STYLES, THEMES, SAMPLE };
+  darknessAt, placeStars, PROFILES, STYLES, THEMES, SAMPLE };
 
 })();
 </script>
@@ -9704,7 +9818,7 @@ const SCHEMA = {
   masterVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 1, format: percent, label: 'Volume', group: 'Sound' },
   musicVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.8, format: percent, label: 'Music', group: 'Sound' },
   musicTrack: { type: 'choice', default: 'neon-flight', label: 'Song', group: 'Sound',
-    note: 'Random picks from your owned surface songs for each new flight. Undertow plays only in the Sewer.',
+    note: 'Random picks from your owned surface songs for each new flight.',
     options: [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])] },
   effectsVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, format: percent, label: 'Effects', group: 'Sound' },
 };
@@ -9734,13 +9848,13 @@ function choiceStatus(key, id) {
   if (key === 'theme') {
     const locked = !ownsTheme(id);
     return { locked, available: !locked, icon: THEME_ICONS[id] || '◈',
-      note: locked ? `${GAME.shop?.THEME_PRICE ?? 4} stars in the shop` : '' };
+      note: locked ? `${GAME.shop?.themePrice?.(id) ?? 4} stars in the shop` : '' };
   }
   if (key === 'musicTrack') {
     if (id === 'undertow') {
       const locked = !GAME.access?.sewerUnlocked();
-      return { locked, available: !locked && inSewer(), icon: '≈',
-        note: locked ? 'Discover the Sewer' : inSewer() ? 'Free in the Sewer' : 'The Sewer only' };
+      return { locked, available: !locked && inSewer(), hidden: !inSewer(), icon: '≈',
+        note: inSewer() ? 'Free in the Sewer' : '' };
     }
     const locked = id !== 'random' && !ownsMusic(id);
     return { locked, available: !locked && !inSewer(), icon: id === 'random' ? '⤨' : '♫',
@@ -9749,6 +9863,7 @@ function choiceStatus(key, id) {
   return { locked: false, available: true, icon: '', note: '' };
 }
 const choiceAvailable = (key, id) => choiceStatus(key, id).available;
+const choiceOptions = key => SCHEMA[key].options.filter(([id]) => !choiceStatus(key, id).hidden);
 
 function valid(key, v) {
   const s = SCHEMA[key];
@@ -9821,7 +9936,7 @@ function refreshCosmetics() {
 }
 
 GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, updateSongOptions,
-  displayValue, choiceStatus, choiceAvailable, refreshCosmetics,
+  displayValue, choiceStatus, choiceAvailable, choiceOptions, refreshCosmetics,
   onSchemaChange: fn => schemaListeners.add(fn), onChange: fn => listeners.add(fn), all: () => ({ ...values }) };
 
 })();
@@ -9834,12 +9949,15 @@ GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, updateSongOpti
 // New claims use one key per slot so different tabs cannot overwrite each other's finds.
 const PREFIX = 'neonflight.star.v2.';
 const LEGACY = 'neonflight.star.v1.';
-const keyFor = (code, id) => `${PREFIX}${code}.${id}`;
+const SEWER = 'neonflight.star.sewer.v1.';
+const validEnvironment = environment => environment === 'surface' || environment === 'sewer';
+const keyFor = (code, id, environment = 'surface') => `${environment === 'sewer' ? SEWER : PREFIX}${code}.${id}`;
 let records = new Map(), claims = new Set(), legacyCredit = 0;
 const sessionClaims = new Set();
 function sharedKey(key) {
   const current = /^neonflight\.star\.v2\.([0-9A-HJ-NP-Z]{1,6})\.([0-2])$/.exec(key);
   if (current) return key;
+  if (/^neonflight\.star\.sewer\.v1\.([0-9A-HJ-NP-Z]{1,6})\.([0-2])$/.test(key)) return key;
   const old = /^neonflight\.star\.v1\.([0-9A-HJ-NP-Z]{1,6})\.(easy|medium|hard|extreme)\.([0-2])$/.exec(key);
   return old && Number(old[3]) < GAME.stars.COUNTS[old[2]] ? keyFor(old[1], Number(old[3])) : null;
 }
@@ -9867,9 +9985,9 @@ function load() {
   try { records = readSaved(); rebuild(); }
   catch { /* the current session still keeps its stars */ }
 }
-function claim(code, difficulty, id) {
-  const key = keyFor(code, id);
-  if (!Object.hasOwn(GAME.stars.COUNTS, difficulty) || !Number.isInteger(id)
+function claim(code, difficulty, id, environment = 'surface') {
+  const key = keyFor(code, id, environment);
+  if (!validEnvironment(environment) || !Object.hasOwn(GAME.stars.COUNTS, difficulty) || !Number.isInteger(id)
       || id < 0 || id >= GAME.stars.COUNTS[difficulty] || !sharedKey(key)) throw new Error('invalid star claim');
   load(); // Also sees another tab's claim before its storage event arrives.
   if (claims.has(key)) return false;
@@ -9879,15 +9997,17 @@ function claim(code, difficulty, id) {
   rebuild();
   return true;
 }
-const collected = (code, difficulty) => Array.from({ length: GAME.stars.COUNTS[difficulty] }, (_, id) => id)
-  .filter(id => claims.has(keyFor(code, id)));
-// Flight pickups are provisional. Only a completed surface race can turn them into wallet stars.
+const collected = (code, difficulty, environment = 'surface') => Array.from({ length: GAME.stars.COUNTS[difficulty] }, (_, id) => id)
+  .filter(id => validEnvironment(environment) && claims.has(keyFor(code, id, environment)));
+// Flight pickups are provisional. Only a completed race can turn them into wallet stars.
 function finish(code, difficulty, run, found = run?.stars) {
-  if (!run?.finished || run.crashed || run.course?.environment === 'sewer' || run.course?.collapse === true
+  if (!run?.finished || run.crashed || run.course?.collapse === true
       || run.next !== run.course.gates.length) return [];
+  const environment = run.course.environment ?? 'surface';
+  if (!validEnvironment(environment)) return [];
   const awarded = [];
   for (const star of run.course.stars) {
-    if (found.has(star.id) && run.stars.has(star.id) && claim(code, difficulty, star.id)) awarded.push(star.id);
+    if (found.has(star.id) && run.stars.has(star.id) && claim(code, difficulty, star.id, environment)) awarded.push(star.id);
   }
   return awarded;
 }
@@ -9914,33 +10034,58 @@ GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claim
 // write cannot charge for an item without granting it. Web Locks serialize purchases/uses across tabs.
 const KEY = 'neonflight.shop.v1';
 const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
+const FLASHLIGHT = Object.freeze({ price: 5, capacity: 3 });
 const COLLAPSE_KEY = Object.freeze({ price: 10 });
+// Four stars was the original price for every theme. Keep historical payments in the
+// ledger so a later price change never refunds old purchases or charges them again.
 const THEME_PRICE = 4, MUSIC_PRICE = 5;
+const THEME_PRICES = Object.freeze({ sunset: 2, rain: 4, toxic: 3, arctic: 5,
+  amber: 2, overgrown: 5, aurora: 3, ember: 2 });
+const themePrice = id => id === 'neon' ? 0 : Object.hasOwn(THEME_PRICES, id) ? THEME_PRICES[id] : undefined;
 // Shop loads before the theme and audio modules. Keep only paid IDs here: the starting
 // theme/song and the Sewer's free Undertow are never entries in the spending ledger.
-const PAID_THEMES = Object.freeze(['sunset', 'rain', 'toxic', 'arctic', 'amber', 'overgrown', 'aurora', 'ember']);
+const PAID_THEMES = Object.freeze(Object.keys(THEME_PRICES));
 const PAID_MUSIC = Object.freeze(['skyline-rush', 'midnight-drift', 'afterburn']);
 const listeners = new Set();
-const emptyLedger = () => ({ bought: 0, used: 0, collapseKey: false, themes: [], music: [] });
+const emptyLedger = () => ({ bought: 0, used: 0, flashlightBought: 0, flashlightUsed: 0,
+  collapseKey: false, themes: [], themePrices: {}, music: [] });
 let ledger = emptyLedger(), storageOK = true;
 const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0)
-  + save.themes.length * THEME_PRICE + save.music.length * MUSIC_PRICE;
+  + save.flashlightBought * FLASHLIGHT.price
+  + Object.values(save.themePrices).reduce((sum, price) => sum + price, 0) + save.music.length * MUSIC_PRICE;
 function ownedIds(value, catalog) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > catalog.length || new Set(value).size !== value.length
       || !value.every(id => catalog.includes(id))) throw new Error('invalid shop ownership');
   return value.slice();
 }
+function paidThemePrices(value, themes) {
+  if (value === undefined) return Object.fromEntries(themes.map(id => [id, THEME_PRICE]));
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).length !== themes.length
+      || !themes.every(id => Object.hasOwn(value, id) && [THEME_PRICE, themePrice(id)].includes(value[id]))) {
+    throw new Error('invalid theme payments');
+  }
+  return Object.fromEntries(themes.map(id => [id, value[id]]));
+}
+function validInventory(bought, used, capacity) {
+  return Number.isSafeInteger(bought) && Number.isSafeInteger(used)
+    && used >= 0 && bought >= used && bought - used <= capacity;
+}
 function read() {
   const raw = localStorage.getItem(KEY);
   if (raw === null) return emptyLedger();
   const value = JSON.parse(raw);
-  if (!value || !Number.isSafeInteger(value.bought) || !Number.isSafeInteger(value.used)
-      || value.used < 0 || value.bought < value.used || value.bought > (Number.MAX_SAFE_INTEGER - COLLAPSE_KEY.price) / LIFT.price
-      || value.bought - value.used > LIFT.capacity
+  const flashlightBought = value?.flashlightBought === undefined ? 0 : value.flashlightBought;
+  const flashlightUsed = value?.flashlightUsed === undefined ? 0 : value.flashlightUsed;
+  if (!value || !validInventory(value.bought, value.used, LIFT.capacity)
+      || (value.flashlightBought === undefined) !== (value.flashlightUsed === undefined)
+      || !validInventory(flashlightBought, flashlightUsed, FLASHLIGHT.capacity)
       || (value.collapseKey !== undefined && typeof value.collapseKey !== 'boolean')) throw new Error('invalid shop save');
   const save = { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true,
+    flashlightBought, flashlightUsed,
     themes: ownedIds(value.themes, PAID_THEMES), music: ownedIds(value.music, PAID_MUSIC) };
+  save.themePrices = paidThemePrices(value.themePrices, save.themes);
   if (!Number.isSafeInteger(spending(save))) throw new Error('invalid shop spending');
   return save;
 }
@@ -9952,6 +10097,7 @@ function refresh() {
 function state() {
   return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
     spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
+    flashlights: ledger.flashlightBought - ledger.flashlightUsed,
     themes: ledger.themes.slice(), music: ledger.music.slice(),
     available: storageOK && !!navigator.locks?.request };
 }
@@ -9978,6 +10124,14 @@ function buyLift() {
     return { ok: true };
   });
 }
+function buyFlashlight() {
+  return transaction((next, earned) => {
+    if (next.flashlightBought - next.flashlightUsed >= FLASHLIGHT.capacity) return { ok: false, message: 'Your flashlight inventory is full.' };
+    if (earned - spending(next) < FLASHLIGHT.price) return { ok: false, message: 'Find more stars to buy this flashlight.' };
+    next.flashlightBought++;
+    return { ok: true };
+  });
+}
 function buyCollapseKey() {
   return transaction((next, earned) => {
     if (next.collapseKey) return { ok: false, message: 'You already own the Collapse Key.' };
@@ -9997,10 +10151,11 @@ function buyCatalogItem(kind, id, catalog, price) {
     if (next[kind].includes(id)) return { ok: false, message: 'You already own this item.' };
     if (earned - spending(next) < price) return { ok: false, message: 'Find more stars to unlock this item.' };
     next[kind].push(id);
+    if (kind === 'themes') next.themePrices[id] = price;
     return { ok: true };
   });
 }
-const buyTheme = id => buyCatalogItem('themes', id, PAID_THEMES, THEME_PRICE);
+const buyTheme = id => buyCatalogItem('themes', id, PAID_THEMES, themePrice(id));
 const buyMusic = id => buyCatalogItem('music', id, PAID_MUSIC, MUSIC_PRICE);
 function useLift(canUse, activate) {
   return transaction(next => {
@@ -10009,9 +10164,17 @@ function useLift(canUse, activate) {
     return { ok: true, activate };
   });
 }
+function useFlashlight(canUse, activate) {
+  return transaction(next => {
+    if (!canUse() || next.flashlightBought <= next.flashlightUsed) return { ok: false };
+    next.flashlightUsed++;
+    return { ok: true, activate };
+  });
+}
 window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
-GAME.shop = { LIFT, COLLAPSE_KEY, THEME_PRICE, MUSIC_PRICE, state, refresh, buyLift, buyCollapseKey,
-  ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, onChange: fn => listeners.add(fn) };
+GAME.shop = { LIFT, FLASHLIGHT, COLLAPSE_KEY, THEME_PRICE, THEME_PRICES, themePrice, MUSIC_PRICE,
+  state, refresh, buyLift, buyFlashlight, buyCollapseKey,
+  ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, useFlashlight, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -15865,7 +16028,7 @@ uniform vec3 uCamPos, uCamRight, uCamUp, uCamFwd;
 uniform vec2 uTanHalf;
 uniform highp sampler2D uSewerGeometry;
 uniform vec4 uSewerCount, uSewerCount2;
-uniform float uSewerMotion, uSewerClock;
+uniform float uSewerMotion, uSewerClock, uSewerDarkness, uFlashlight;
 uniform vec3 uThemeWallA, uThemeWallB, uThemeGrout, uThemeLamp, uThemeWater, uThemeFog;
 uniform vec4 uThemeStyle;
 uniform vec2 uThemeExtra;
@@ -16106,6 +16269,17 @@ vec3 sewerLamp(int index, float rung) {
   return centre + normalize(frame[0] * side * 0.93 + frame[1] * 0.37) * a.w * 0.999;
 }
 
+// One camera-forward light; no extra tracing or nested light loops are required.
+float sewerFlashlight(vec3 p) {
+  vec3 q = p - uCamPos;
+  float distance = length(q), cone = smoothstep(0.82, 0.97, dot(q, uCamFwd) / max(distance, 0.001));
+  return uFlashlight * cone * (1.0 - smoothstep(75.0, 135.0, distance)) / (1.0 + distance * distance * 0.00013);
+}
+float sewerVisibility(vec3 p, float dark) {
+  float nearLight = 1.0 - smoothstep(6.0, 25.0, length(p - uCamPos));
+  return mix(1.0, max(nearLight * 0.72, sewerFlashlight(p)), dark);
+}
+
 vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour) {
   vec4 a = sewerData(index, 0), b = sewerData(index, 1);
   mat3 frame = sewerFrame(a.xyz, b.xyz);
@@ -16113,7 +16287,8 @@ vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour
   float along = dot(p - a.xyz, frame[2]);
   float rung = floor((along + phase) / spacing + 0.5) * spacing - phase;
   lamp = sewerLamp(index, rung);
-  lampColour = uThemeLamp;
+  float dark = sewerData(index, 2).w;
+  lampColour = uThemeLamp * (1.0 - dark);
   vec3 light = vec3(0.31, 0.40, 0.39) * (0.78 + n.y * 0.16);
   // Pools from both neighbouring lamps make the vault feel continuous through long collectors.
   for (int j = -1; j <= 1; j++) {
@@ -16123,6 +16298,10 @@ vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour
   }
   vec3 centre = sewerAxisPoint(p, a.xyz, b.xyz);
   light += vec3(0.08, 0.15, 0.15) * (0.4 + max(dot(normalize(centre - p), n), 0.0));
+  vec3 view = normalize(uCamPos - p);
+  float nearLight = 1.0 - smoothstep(6.0, 25.0, length(p - uCamPos));
+  light = mix(light, vec3(0.11, 0.13, 0.12) * nearLight * max(dot(n, view), 0.15), dark);
+  light += vec3(2.8, 2.65, 2.3) * sewerFlashlight(p) * max(dot(n, view), 0.12);
   return light;
 }
 
@@ -16337,7 +16516,7 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
       float threads = pow(0.5 + 0.5 * sin(around * 9.0 + fall * 5.0), 6.0);
       col = vec3(0.016, 0.07, 0.042) * (0.7 + fall * 0.6) + vec3(0.03, 0.09, 0.07) * threads;
       col = col * (light * 0.55 + 0.45) + vec3(0.05, 0.12, 0.10) * rim;
-      return col;
+      return col * sewerVisibility(p, sewerData(index, 2).w);
     } else if (material > 3.5) {
       // Roots: knotted bark with pale tips.
       float bark = pulseAA(u / 0.35 + grain * 1.5, 0.35, pixel / 0.35);
@@ -16409,7 +16588,7 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     vec3 delta = lamp - p;
     col += lampColour * pow(max(dot(reflect(-normalize(delta), h.n), -rd), 0.0), 30.0) * wet * 0.35 / (1.0 + length(delta) * 0.04);
   }
-  return col;
+  return col * sewerVisibility(p, sewerData(index, 2).w);
 }
 
 vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) {
@@ -16459,6 +16638,7 @@ vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) 
         colour += lampColour * spec * 0.35 / (1.0 + length(delta) * 0.04);
         colour += vec3(0.025, 0.067, 0.039) * tube(p.y - b.w, 0.20, pixel);
       }
+      if (face != 0) colour *= sewerVisibility(p, sewerData(int(sewerData(FLOW_BASE + i, 2).z), 2).w);
       result = vec4(colour, alpha * opacity); nearest = t; depth = t;
     }
   }
@@ -16501,7 +16681,7 @@ vec4 sewerCurtain(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth)
   float edge = 1.0 - smoothstep(a.w - 0.4, a.w + pixel, abs(local.x));
   // Curtains in the way are dense; those along the walls are thinner films.
   float opacity = c.y < 0.5 || c.y > 2.5 ? 0.82 + flowing * 0.12 : 0.6 + flowing * 0.2;
-  return vec4(colour, opacity * edge);
+  return vec4(colour * sewerVisibility(p, sewerData(int(c.z + 0.5), 2).w), opacity * edge);
 }
 
 void main() {
@@ -16510,7 +16690,7 @@ void main() {
   vec3 rd = normalize(uCamFwd + ndc.x * uTanHalf.x * uCamRight + ndc.y * uTanHalf.y * uCamUp);
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   SewerHit hit = sewerTrace(ro, rd);
-  vec3 fog = uThemeFog;
+  vec3 fog = mix(uThemeFog, vec3(0.0002, 0.0004, 0.00035), uSewerDarkness);
   vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
   float haze = 1.0 - exp(-hit.t * 0.0105);
   col = mix(col, fog, haze);
@@ -16540,6 +16720,20 @@ function distanceToSegment(p, a, b) {
   return Math.hypot(...q.map((v, i) => v - along * axis[i]));
 }
 
+// Overlapping lit bores remain bright; only the interior beyond their mouths fades to black.
+function darknessAt(world, position) {
+  let dark = false, litDistance = Infinity;
+  for (const tube of world.tunnels) {
+    const distance = Math.max(distanceToSegment(position, tube.a, tube.b) - tube.radius,
+      tube.water === null || tube.water === undefined ? -Infinity : tube.water - position[1]);
+    if (tube.dark) dark ||= distance <= 0;
+    else litDistance = Math.min(litDistance, distance);
+  }
+  if (!dark) return 0;
+  const blend = Math.max(0, Math.min(1, litDistance / 12));
+  return blend * blend * (3 - 2 * blend);
+}
+
 // Each source inlet and inflow share their mouth. Derive rendering from that actual cylinder;
 // the old decorative descending capsule must not determine either the width or water height.
 function inflowSheets(world) {
@@ -16564,9 +16758,11 @@ function create(gfx) {
   const data = new Float32Array(ATLAS_WIDTH * ATLAS_ROWS * 4);
   const atlas = gfx.createTexture(ATLAS_WIDTH, ATLAS_ROWS, { format: 'rgba32f', filter: 'nearest', data });
   let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME;
+  let darkness = 0, lightEnabled = false;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
     world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = world.theme || DEFAULT_THEME;
+    darkness = 0; lightEnabled = false;
   }
   const away = (position, centre) => Math.hypot(...centre.map((v, i) => v - position[i]));
   function select(items, position, maximum, distance) {
@@ -16593,7 +16789,7 @@ function create(gfx) {
         put(base, 0, [...value.a, value.radius]);
         put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : group === 3 ? value.receivingWater : 0]);
         const kind = group === 1 ? PIPE_MATERIALS[value.kind] || 0 : value.kind === 'inlet' ? 3 : /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
-        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index, 0]);
+        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index, group === 0 && value.dark ? 1 : 0]);
       }
     }));
     fans.forEach(({ value: fan }, slot) => {
@@ -16627,11 +16823,13 @@ function create(gfx) {
     clipped = world.tunnels.length - counts[0];
   }
   // The clock is the run time, so drawn fan blades are exactly where they collide.
-  function draw(cam, rings, guide, stars = [], clock = 0) {
+  function draw(cam, rings, guide, stars = [], clock = 0, { flashlight = false } = {}) {
     if (!world) throw new Error('sewer-flight draw before setWorld');
     if (!last || Math.hypot(...cam.pos.map((v, i) => v - last[i])) > 5) pack(cam.pos);
+    darkness = darknessAt(world, cam.pos); lightEnabled = !!flashlight;
     gfx.fullscreen(program, {
       uSewerGeometry: atlas, uSewerCount: counts, uSewerCount2: extra, uSewerClock: clock,
+      uSewerDarkness: darkness, uFlashlight: lightEnabled ? 1 : 0,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uSewerMotion: reducedMotion.matches ? 0 : performance.now() / 1000,
       uThemeWallA: theme.wallA, uThemeWallB: theme.wallB, uThemeGrout: theme.grout, uThemeLamp: theme.lamp,
@@ -16642,10 +16840,10 @@ function create(gfx) {
     });
   }
   return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3],
-    fans: extra[0], sheets: extra[1], wallFans: extra[2], clipped }) };
+    fans: extra[0], sheets: extra[1], wallFans: extra[2], clipped, darkness, flashlight: lightEnabled }) };
 }
 
-GAME.sewerFlightRenderer = { create, inflowSheets };
+GAME.sewerFlightRenderer = { create, inflowSheets, darknessAt };
 
 })();
 
@@ -16679,11 +16877,11 @@ const fragment = `
 in vec3 vPosition, vNormal;
 in vec4 vColour;
 in float vDepth, vMaterial;
-uniform vec3 uFog, uLight, uTint, uCamPos, uAmbient, uSunColour, uWindowWarm, uWindowCool, uNeon;
+uniform vec3 uFog, uLight, uTint, uCamPos, uCamFwd, uAmbient, uSunColour, uWindowWarm, uWindowCool, uNeon;
 uniform vec3 uSkyZenith, uSkyHorizon, uFogHigh;
 uniform vec3 uTunnelOrigin, uTunnelAxis, uTunnelRight, uTunnelUp;
 uniform vec4 uTunnel, uTheme;
-uniform float uDensity, uAlpha, uUnlit, uTimeLite, uEncoded, uUnderground;
+uniform float uDensity, uAlpha, uUnlit, uTimeLite, uEncoded, uUnderground, uTunnelDark, uSewerDarkness, uFlashlight;
 uniform sampler2D uStreetMirror;
 uniform vec2 uSceneSize, uMirrorSize;
 uniform float uMirrorEnabled, uMirrorClip;
@@ -16706,7 +16904,7 @@ vec3 lampPosition(float station) {
   return uTunnelOrigin+uTunnelAxis*(station*20.0-uTunnel.w)+radial*(uTunnel.x-0.30);
 }
 vec3 lamp(float station,vec3 n,vec3 view,float specular) {
-  if(station<1.0 || station*20.0-uTunnel.w>=uTunnel.z) return vec3(0.0);
+  if(uTunnelDark>0.5 || station<1.0 || station*20.0-uTunnel.w>=uTunnel.z) return vec3(0.0);
   vec3 position=lampPosition(station);
   if(position.y<uTunnel.y+1.0) return vec3(0.0);
   vec3 d=position-vPosition; float distance2=dot(d,d); vec3 l=d*inversesqrt(max(distance2,0.0001));
@@ -16716,7 +16914,7 @@ vec3 lamp(float station,vec3 n,vec3 view,float specular) {
   return vec3(1.0,0.48,0.16)*falloff*(diffuse+highlight*specular*2.0);
 }
 vec3 reflectedLamp(float station,vec3 view,float wave) {
-  if(station<1.0 || station*20.0-uTunnel.w>=uTunnel.z) return vec3(0.0);
+  if(uTunnelDark>0.5 || station<1.0 || station*20.0-uTunnel.w>=uTunnel.z) return vec3(0.0);
   vec3 position=lampPosition(station);
   if(position.y<uTunnel.y+1.0) return vec3(0.0);
   position.y=2.0*vPosition.y-position.y;
@@ -16729,6 +16927,8 @@ void main() {
   if(uMirrorClip>0.5 && (vPosition.y<0.045 || vMaterial==11.0)) discard;
   vec3 n=vMaterial==13.0?vec3(0,1,0):normalize(vNormal), col=vColour.rgb, emission=vec3(0.0);
   vec3 view=normalize(uCamPos-vPosition);
+  float distance=length(uCamPos-vPosition), nearLight=1.0-smoothstep(6.0,25.0,distance);
+  float beam=uFlashlight*smoothstep(0.82,0.97,dot(-view,uCamFwd))*(1.0-smoothstep(75.0,135.0,distance))/(1.0+distance*distance*0.00013);
   float mat=floor(vMaterial+0.1), shine=0.0, coverage=1.0;
   float along=dot(vPosition-uTunnelOrigin,uTunnelAxis);
   vec3 radial=vPosition-uTunnelOrigin-uTunnelAxis*along;
@@ -16859,6 +17059,8 @@ void main() {
     lighting=vec3(0.32,0.30,0.25)+lamp(station,n,view,shine)+lamp(station+1.0,n,view,shine);
     // Quiet near-field fill keeps lethal pipes/dirt readable between the warm wall fixtures.
     lighting+=vec3(0.34,0.37,0.34)*max(dot(n,view),0.0)/(1.0+vDepth*vDepth*0.0004);
+    lighting=mix(lighting,vec3(0.11,0.13,0.12)*nearLight*max(dot(n,view),0.15),uTunnelDark);
+    lighting+=vec3(2.8,2.65,2.3)*beam*max(dot(n,view),0.12);
   } else {
     lighting=uAmbient*mix(0.48,1.40,n.y*0.5+0.5)+uSunColour*max(dot(n,uLight),0.0);
     float highlight=pow(max(dot(n,normalize(uLight+view+vec3(0.00001))),0.0),48.0)*shine;
@@ -16866,13 +17068,15 @@ void main() {
   }
   vec3 radiance=col*mix(lighting,vec3(1.0),uUnlit)+emission;
   if(uUnderground>0.5 && mat==3.0) radiance+=vec3(0.018,0.055,0.035)*pow(max(0.0,1.0-abs(dot(n,view))),4.0);
-  float distance=length(uCamPos-vPosition), heightFog=1.0;
+  radiance*=mix(1.0,max(nearLight*0.72,beam),uTunnelDark);
+  float heightFog=1.0;
   if(uUnderground<0.5) {
     float k=(vPosition.y-uCamPos.y)*0.008;
     heightFog=0.30+0.70*exp(-max(uCamPos.y,0.0)*0.008)*(abs(k)>0.001?(1.0-exp(-k))/k:1.0);
   }
   float fog=1.0-exp(-max(distance-25.0,0.0)*uDensity*heightFog);
   vec3 fogColour=mix(uFog,uFogHigh,smoothstep(-0.1,0.4,-view.y));
+  fogColour=mix(fogColour,vec3(0.0002,0.0004,0.00035),uSewerDarkness);
   radiance=mix(radiance*uTint,fogColour,fog);
   if(uEncoded>0.5) radiance=radiance/(vec3(1.0)+radiance);
   fragColor=vec4(radiance,vColour.a*uAlpha*coverage);
@@ -17019,7 +17223,9 @@ class Builder {
 const cache=new WeakMap();
 function create(gfx) {
   if(cache.has(gfx)) return cache.get(gfx);
-  const {gl}=gfx, program=gfx.program('geometry-lite',fragment,vertex,{library:false});
+  // Keep the material stage within its existing upload budget without changing line numbers.
+  const compactFragment=fragment.replace(/\/\/[^\n]*/g,'').replace(/^[ \t]+/gm,'');
+  const {gl}=gfx, program=gfx.program('geometry-lite',compactFragment,vertex,{library:false});
   const skyProgram=gfx.program('sky-lite',skyFragment,undefined,{library:false,optional:true});
   const handles=new Set();
   function guard(operation) {
@@ -17059,13 +17265,14 @@ function create(gfx) {
   }
   function draw(h,cam,{fog=[0.03,0.04,0.06],density=0.002,near=0.25,far=1800,unlit=false,
     alpha=1,depthTest=true,depthWrite=true,cull=false,colour=[1,1,1],time=0,theme=null,sewer=null,encoded=false,
-    mirror=null,mirrorClip=false}={}) {
+    mirror=null,mirrorClip=false,darkness=0,flashlight=false}={}) {
     guard('drawing mesh');if(!h||!h.count)return;
     const sun=theme?.sun, ambient=theme?theme.sky.horizon.map((v,i)=>0.18+v*1.5+(theme.growth&&i===1?0.08:0)):[0.50,0.55,0.65];
     program.use().setAll({uCamPos:cam.pos,uCamRight:cam.right,uCamUp:cam.up,uCamFwd:cam.fwd,
       uTanHalf:cam.tanHalf,uClip:[near,far],uFog:fog,uDensity:density,uTint:colour,uAlpha:alpha,
       uUnlit:unlit?1:0,uLight:unit(sun?.dir||[-0.4,0.8,-0.25]),uTimeLite:time,
       uEncoded:encoded?1:0,uUnderground:sewer?1:0,uAmbient:ambient,
+      uTunnelDark:sewer?.dark?1:0,uSewerDarkness:sewer?darkness:0,uFlashlight:sewer&&flashlight?1:0,
       uSunColour:sun?sun.top.map(v=>0.16+v/(1+Math.max(...sun.top))*0.85):[0.10,0.12,0.20],
       uWindowWarm:theme?.windows?.[0]||[1,0.60,0.30],uWindowCool:theme?.windows?.[1]||[0.55,0.78,1],
       uNeon:theme?.neon?.[0]||[0.10,0.50,0.60],uTheme:[theme?.growth||0,theme?.snow||0,theme?.wetness||0,theme?.soot||0],
@@ -18197,6 +18404,17 @@ function dryDistance(tube, p) {
 function insideDry(world, p, skipIndex = -1, margin = 0) {
   return prepare(world).some(tube => tube.index !== skipIndex && dryDistance(tube, p) < -margin);
 }
+function darknessAt(world, position) {
+  let dark = false, litDistance = Infinity;
+  for (const tube of prepare(world)) {
+    const distance = dryDistance(tube, position);
+    if (tube.dark) dark ||= distance <= 0;
+    else litDistance = Math.min(litDistance, distance);
+  }
+  if (!dark) return 0;
+  const blend = clamp(litDistance / 12, 0, 1);
+  return blend * blend * (3 - 2 * blend);
+}
 
 function clipPolygon(poly, signed) {
   const out = [];
@@ -18383,7 +18601,8 @@ function lampMesh(builder, tube) {
     // Flush metal surrounds/cages sit on the already-solid wall, around a warm glass pane.
     builder.quad(point(-0.78, -1.24), point(0.78, -1.24), point(0.78, 1.24), point(-0.78, 1.24), [0.050, 0.075, 0.064], normal, 6);
     const lightOffset = scale(normal, 0.005);
-    builder.quad(add(point(-0.66, -1.10), lightOffset), add(point(0.66, -1.10), lightOffset), add(point(0.66, 1.10), lightOffset), add(point(-0.66, 1.10), lightOffset), [2.8, 1.25, 0.35], normal, 4);
+    builder.quad(add(point(-0.66, -1.10), lightOffset), add(point(0.66, -1.10), lightOffset), add(point(0.66, 1.10), lightOffset), add(point(-0.66, 1.10), lightOffset),
+      tube.dark ? [0.018, 0.024, 0.021] : [2.8, 1.25, 0.35], normal, tube.dark ? 9 : 4);
     for (let y = -0.9; y < 1.1; y += 0.3) {
       const offset = scale(normal, 0.011);
       builder.quad(add(point(-0.66, y), offset), add(point(0.66, y), offset), add(point(0.66, y + 0.045), offset), add(point(-0.66, y + 0.045), offset), [0.04, 0.050, 0.036], normal, 0);
@@ -18396,6 +18615,7 @@ const PIPE_COLOURS = { grate: [0.2, 0.09, 0.045], sluice: [0.14, 0.09, 0.05], ca
   root: [0.09, 0.06, 0.032], falls: [0.03, 0.11, 0.07], strut: [0.3, 0.2, 0.03], pole: [0.1, 0.11, 0.1] };
 const pipeColour = pipe => PIPE_COLOURS[pipe.kind] || [0.13, 0.17, 0.15];
 const FAN_IRON = [0.11, 0.12, 0.115], FAN_BLADE = [0.16, 0.13, 0.11], WARNING = [0.36, 0.26, 0.02];
+const COURSE_COLOURS = { collectibleStar: [0.48, 1.0, 0.32], booster: [0.28, 1.0, 0.43] };
 
 // Same basis and blade placement as the simulation, so drawn blades are where they collide.
 function fanBasis(axis) {
@@ -18437,8 +18657,9 @@ function fanBladeMesh(builder, fan, time) {
     const angle = (fan.phase ?? 0) + fan.omega * time + Math.PI * 2 * k / fan.blades;
     const p0 = around(fan.c, frame, fan.inner, angle), p1 = around(fan.c, frame, fan.tip, angle);
     const tip = around(fan.c, frame, fan.inner + (fan.tip - fan.inner) * 0.78, angle);
-    builder.tag(6).tube(p0, tip, fan.width, FAN_BLADE, 6, { caps: true });
-    builder.tube(tip, p1, fan.width, WARNING, 6, { caps: true });
+    // The simulation sweeps rounded capsules, including the blade tips of the largest fans.
+    builder.tag(6).capsule(p0, tip, fan.width, FAN_BLADE, 8, 3);
+    builder.capsule(tip, p1, fan.width, WARNING, 8, 3);
   }
 }
 
@@ -18532,7 +18753,7 @@ function create(gfx) {
   function surface(tube) {
     return { origin: tube.a, axis: tube.axis, right: tube.u, up: tube.v, length: tube.length,
       radius: tube.radius, water: tube.water ?? Math.min(tube.a[1], tube.b[1]) - tube.radius,
-      phase: tube.index * 13.71 % 20 };
+      phase: tube.index * 13.71 % 20, dark: !!tube.dark };
   }
   function nearestTube(p) {
     let found = null, best = Infinity;
@@ -18591,14 +18812,18 @@ function create(gfx) {
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
   }
   // The clock is the run time, so drawn fan blades are exactly where they collide.
-  function draw(cam, rings = [], guide = [], stars = [], clock = 0) {
+  function draw(cam, rings = [], guide = [], stars = [], clock = 0, { flashlight = false } = {}) {
     if (!world) throw new Error('sewer-lite draw before setWorld');
-    const time = reducedMotion.matches ? 0 : performance.now() / 1000, opts = { fog, density: 0.0105, far: 1000, time, encoded: true };
-    mesh.clear(fog);
+    const darkness = darknessAt(world, cam.pos), darkFog = [0.0002, 0.0004, 0.00035];
+    const cameraFog = fog.map((v, i) => v + (darkFog[i] - v) * darkness);
+    const time = reducedMotion.matches ? 0 : performance.now() / 1000,
+      opts = { fog, density: 0.0105, far: 1000, time, encoded: true, darkness, flashlight };
+    mesh.clear(cameraFog);
     const selected = tubes.filter(tube => shellDistance(tube, cam.pos) < RANGE);
     for (const tube of selected) {
       const handles = tunnelHandle(tube.index), tunnelOpts = { ...opts, sewer: surface(tube) };
-      mesh.draw(handles.opaque, cam, tunnelOpts); mesh.draw(handles.water, cam, tunnelOpts); mesh.draw(handles.lamps, cam, { ...tunnelOpts, unlit: true });
+      mesh.draw(handles.opaque, cam, tunnelOpts); mesh.draw(handles.water, cam, tunnelOpts);
+      mesh.draw(handles.lamps, cam, { ...tunnelOpts, unlit: !tube.dark });
     }
     const props = nearbyProps(cam), flows = nearFlows(cam);
     const centreOf = p => p.kind === 'pipe' ? middle(p.value.a, p.value.b) : p.value.centre ?? p.value.c;
@@ -18616,10 +18841,11 @@ function create(gfx) {
     const curtains = props.filter(p => p.kind === 'sheet').sort((a, b) => distance2(cam.pos, b.value.c) - distance2(cam.pos, a.value.c));
     for (const p of curtains) mesh.draw(propHandle(p.value, p.kind, p.index), cam,
       { ...opts, sewer: surface(nearestTube(p.value.c)), depthWrite: false });
-    const frame = GAME.mesh.markers(rings, guide, stars, { time, cam });
+    const frame = GAME.mesh.markers(rings, guide, stars, { time, cam, theme: COURSE_COLOURS });
     for (const kind of ['opaque', 'transparent', 'xray']) {
       mesh.update(markers[kind], frame[kind]);
-      mesh.draw(markers[kind], cam, { ...opts, unlit: true, depthWrite: kind === 'opaque', depthTest: kind !== 'xray', alpha: kind === 'xray' ? 0.18 : 1 });
+      // Course lights are the player's remaining navigation aid when the fixtures are off.
+      mesh.draw(markers[kind], cam, { ...opts, fog: cameraFog, unlit: true, depthWrite: kind === 'opaque', depthTest: kind !== 'xray', alpha: kind === 'xray' ? 0.18 : 1 });
     }
     ringLight?.draw(cam,rings,{time,encoded:true,far:opts.far});
     mesh.finish();
@@ -18628,13 +18854,13 @@ function create(gfx) {
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
     lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length,
       dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, sheets: curtains.length, clipped: tubes.length - selected.length,
-      resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true };
+      resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true, darkness, flashlight: !!flashlight };
   }
   return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
     dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
-GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, stride: STRIDE };
+GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, stride: STRIDE };
 
 })();
 
@@ -19108,8 +19334,37 @@ function create(root, { touch, onPause, onLift }) {
   pauseBtn.setAttribute('aria-label', 'pause');
   // Finish the tap before replacing the HUD; otherwise its release can click a pause-screen
   // control (such as Shop) that appears under the same finger.
-  pauseBtn.addEventListener('pointerdown', e => e.stopPropagation());
-  pauseBtn.addEventListener('click', e => { e.stopPropagation(); onPause(); });
+  let pausePointer = null, completedPausePointer = null;
+  pauseBtn.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    completedPausePointer = null;
+    // A second finger receives pointer events but no compatibility click while the steering
+    // finger is held. Complete that tap explicitly; primary taps and keyboard use click below.
+    if (e.pointerType === 'touch' && !e.isPrimary && pausePointer === null) {
+      e.preventDefault();
+      pausePointer = e.pointerId;
+      pauseBtn.setPointerCapture(pausePointer);
+    }
+  });
+  pauseBtn.addEventListener('pointerup', e => {
+    if (e.pointerId !== pausePointer) return;
+    pausePointer = null;
+    e.preventDefault();
+    e.stopPropagation();
+    if (pauseBtn.contains(document.elementFromPoint(e.clientX, e.clientY))) {
+      completedPausePointer = e.pointerId;
+      onPause();
+    }
+  });
+  for (const type of ['pointercancel', 'lostpointercapture'])
+    pauseBtn.addEventListener(type, e => { if (e.pointerId === pausePointer) pausePointer = null; });
+  pauseBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    // Some browsers also synthesize a click for this secondary pointer. Its tap was handled
+    // above; a fresh pointerdown clears the marker, and keyboard activation has detail 0.
+    if (completedPausePointer !== null && e.detail !== 0) { completedPausePointer = null; return; }
+    onPause();
+  });
   const lift = el('button', 'hud-lift', hud);
   lift.id = 'use-lift'; lift.hidden = true;
   const liftLabel = el('strong', '', lift);
@@ -19378,12 +19633,13 @@ function choiceRow(parent, key, s) {
   let buttons = [], options = '';
   if (s.note) el('span', 'set-help', row, s.note);
   return v => {
-    if (options !== JSON.stringify(s.options)) {
+    const choices = GAME.settings.choiceOptions(key);
+    if (options !== JSON.stringify(choices)) {
       const focused = list.contains(document.activeElement);
-      options = JSON.stringify(s.options);
+      options = JSON.stringify(choices);
       list.replaceChildren();
-      list.style.gridTemplateColumns = `repeat(${s.options.length <= 4 ? s.options.length : 3}, 1fr)`;
-      buttons = s.options.map(([id, label]) => {
+      list.style.gridTemplateColumns = `repeat(${choices.length <= 4 ? choices.length : 3}, 1fr)`;
+      buttons = choices.map(([id, label]) => {
         const b = el('button', 'set-option', list);
         if (key === 'theme' || key === 'musicTrack') {
           const icon = el('span', 'set-option-icon', b);
@@ -19402,7 +19658,7 @@ function choiceRow(parent, key, s) {
     }
     buttons.forEach((b, i) => {
       const status = GAME.settings.choiceStatus(key, b.dataset.value);
-      const label = s.options[i][1];
+      const label = choices[i][1];
       b.disabled = !status.available;
       b.classList.toggle('locked', status.locked);
       b.setAttribute('aria-disabled', String(!status.available));
@@ -19494,7 +19750,7 @@ GAME.settingsPanel = { create: createSettingsPanel };
 // ---- src/ui/shop-panel.js ----
 // A focused shop overlay. Opening it from pause never resumes or recalibrates the flight.
 function create(panel, { touch, collapseHint = () => null }) {
-  const q = selector => panel.querySelector(selector), buy = q('#shop-buy'), keyBuy = q('#shop-key-buy');
+  const q = selector => panel.querySelector(selector), buy = q('#shop-buy'), keyBuy = q('#shop-key-buy'), flashlightBuy = q('#shop-flashlight-buy');
   const { el } = GAME.hud;
   let origin = null, opener = null, busy = null;
   const tabs = [...panel.querySelectorAll('[role="tab"]')];
@@ -19505,7 +19761,7 @@ function create(panel, { touch, collapseHint = () => null }) {
       q('#' + tab.getAttribute('aria-controls')).hidden = !selected;
     }
     q('#shop-message').textContent = '';
-    q('.shop-sheet').scrollTop = 0;
+    q('.shop-content').scrollTop = 0;
   }
   for (const [i, tab] of tabs.entries()) {
     tab.addEventListener('click', () => selectTab(tab.getAttribute('aria-controls')));
@@ -19554,10 +19810,20 @@ function create(panel, { touch, collapseHint = () => null }) {
     });
     cards.push({ kind, item, card, status, price, button });
   }
-  GAME.themes.list.forEach((theme, index) => addCard('theme', theme, index));
-  GAME.songs.forEach((song, index) => addCard('music', song, index));
+  GAME.themes.list.forEach((theme, index) => { if (theme.id !== 'neon') addCard('theme', theme, index); });
+  GAME.songs.forEach((song, index) => { if (!['neon-flight', 'undertow'].includes(song.id)) addCard('music', song, index); });
   q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
   function render() {
+    const inSewer = GAME.access.environment() === 'sewer';
+    const sewerCard = cards.find(c => c.kind === 'music' && c.item.id === 'undertow');
+    if (inSewer && !sewerCard) {
+      const index = GAME.songs.findIndex(song => song.id === 'undertow');
+      if (index >= 0) addCard('music', GAME.songs[index], index);
+    } else if (!inSewer && sewerCard) {
+      sewerCard.card.remove(); cards.splice(cards.indexOf(sewerCard), 1);
+    }
+    q('#shop-music-note').textContent = inSewer ? 'Undertow is free to use in The Sewer.'
+      : 'Buy songs once. Random in Settings plays your owned surface songs.';
     const s = GAME.shop.state(), item = GAME.shop.LIFT;
     q('#shop-balance').textContent = `★ ${s.balance}`;
     q('#shop-owned').textContent = `${s.lifts} / ${item.capacity} ready`;
@@ -19573,6 +19839,15 @@ function create(panel, { touch, collapseHint = () => null }) {
     if (hadFocus && buy.disabled) q('#shop-done').focus();
     buy.textContent = busy === 'lift' ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
       : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
+    const flashlight = GAME.shop.FLASHLIGHT;
+    q('#shop-flashlight-owned').textContent = `${s.flashlights} / ${flashlight.capacity} ready`;
+    q('#shop-flashlight-price').textContent = `★ ${flashlight.price}`;
+    const flashlightHadFocus = document.activeElement === flashlightBuy;
+    flashlightBuy.disabled = !!busy || !s.available || s.flashlights >= flashlight.capacity || s.balance < flashlight.price;
+    if (flashlightHadFocus && flashlightBuy.disabled) q('#shop-done').focus();
+    flashlightBuy.textContent = busy === 'flashlight' ? 'saving…' : !s.available ? 'unavailable'
+      : s.flashlights >= flashlight.capacity ? 'inventory full' : s.balance < flashlight.price
+      ? `need ${flashlight.price - s.balance} more ★` : `buy light · ${flashlight.price} ★`;
     const key = GAME.shop.COLLAPSE_KEY;
     const hint = collapseHint();
     const seconds = hint ? Math.max(0, Math.ceil(hint.seconds - 1e-7)) : null;
@@ -19589,14 +19864,13 @@ function create(panel, { touch, collapseHint = () => null }) {
     for (const { kind, item, card, status, price, button } of cards) {
       const isTheme = kind === 'theme', sewerSong = item.id === 'undertow';
       const owned = isTheme ? GAME.shop.ownsTheme(item.id) : GAME.shop.ownsMusic(item.id);
-      const included = item.id === 'neon' || item.id === 'neon-flight';
-      const cost = isTheme ? GAME.shop.THEME_PRICE : GAME.shop.MUSIC_PRICE;
+      const cost = isTheme ? GAME.shop.themePrice(item.id) : GAME.shop.MUSIC_PRICE;
       const key = isTheme ? 'theme' : 'musicTrack';
       const usable = GAME.settings.choiceAvailable(key, item.id);
       const selected = usable && GAME.settings.displayValue(key) === item.id;
       card.classList.toggle('owned', owned);
-      status.textContent = included ? 'Included' : sewerSong ? 'Sewer soundtrack' : owned ? 'Owned' : '🔒 Locked';
-      price.textContent = included ? 'Free' : sewerSong ? 'Free in Sewer' : `★ ${cost}`;
+      status.textContent = sewerSong ? 'Sewer soundtrack' : owned ? 'Owned' : '🔒 Locked';
+      price.textContent = sewerSong ? 'Free in Sewer' : `★ ${cost}`;
       button.disabled = !!busy || (owned ? !usable || selected : sewerSong || !s.available || s.balance < cost);
       button.textContent = busy === `${kind}:${item.id}` ? 'saving…' : selected ? 'selected'
         : owned ? usable ? isTheme ? 'use theme' : 'play song' : 'Sewer only'
@@ -19611,10 +19885,11 @@ function create(panel, { touch, collapseHint = () => null }) {
     busy = id ? `${kind}:${id}` : kind; render();
     try {
       const result = await (kind === 'key' ? GAME.shop.buyCollapseKey() : kind === 'theme' ? GAME.shop.buyTheme(id)
-        : kind === 'music' ? GAME.shop.buyMusic(id) : GAME.shop.buyLift());
+        : kind === 'music' ? GAME.shop.buyMusic(id) : kind === 'flashlight' ? GAME.shop.buyFlashlight() : GAME.shop.buyLift());
       const name = cards.find(c => c.kind === kind && c.item.id === id)?.item.name;
       q('#shop-message').textContent = result.ok
-        ? kind === 'key' ? 'Collapse Key saved.' : kind === 'lift' ? 'Lift Boost added to your inventory.' : `${name} unlocked.`
+        ? kind === 'key' ? 'Collapse Key saved.' : kind === 'lift' ? 'Lift Boost added to your inventory.'
+        : kind === 'flashlight' ? 'Flashlight saved for your next Sewer flight.' : `${name} unlocked.`
         : result.message;
     } catch { q('#shop-message').textContent = 'Could not save your purchase. Please try again.'; }
     finally { busy = null; render(); }
@@ -19629,6 +19904,7 @@ function create(panel, { touch, collapseHint = () => null }) {
   }
   buy.addEventListener('click', () => purchase('lift'));
   keyBuy.addEventListener('click', () => purchase('key'));
+  flashlightBuy.addEventListener('click', () => purchase('flashlight'));
   q('#shop-done').addEventListener('click', close);
   panel.addEventListener('click', e => { if (e.target === panel) close(); });
   panel.addEventListener('keydown', e => {
@@ -20030,6 +20306,8 @@ let sewerArrival = null;
 let menuEnvironment = params.get('environment') === 'surface' ? 'surface'
   : params.get('environment') === 'sewer' ? GAME.access.sewerUnlocked() ? 'sewer' : 'surface' : GAME.access.environment();
 const isSewer = () => course?.environment === 'sewer';
+const starEnvironment = () => isSewer() ? 'sewer' : 'surface';
+const savedStars = () => GAME.starBank.collected(seedCode, difficulty, starEnvironment());
 const environmentCourses = new Map();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const worldOptions = environment => ({ environment, collapse: environment !== 'sewer' });
@@ -20119,7 +20397,7 @@ async function loadCourse(seed, selectedDifficulty = difficulty, environment = c
     console.log(`[game] ${environment} course ${seedCode} ${difficulty}: ${course.gates.length} gates, ${course.length.toFixed(0)} u, par ${course.par.toFixed(1)} s, ${cached ? 'cached' : 'generated'} in ${(performance.now() - t0).toFixed(0)} ms`);
     return true;
   } catch (error) {
-    if (error.code?.startsWith('GFX_') || graphics.recovering || GAME.gfx.contextLost()) throw error;
+    if ((typeof error?.code === 'string' && error.code.startsWith('GFX_')) || graphics.recovering || GAME.gfx.contextLost()) throw error;
     if (error.name === 'AbortError') return false;
     if (!course) throw error;
     console.warn(`[game] course load failed: ${error.message}`);
@@ -20145,6 +20423,7 @@ let boostsTaken = 0;
 let newStars = 0;
 let pendingStars = new Set();
 let usingLift = false;
+let flashlightActive = false;
 // Buying a key while paused must add the secret to this course without replacing its run.
 async function ensureCollapsePrepared() {
   if (graphics.recovering || !course || isSewer() || collapse || courseLoading || !GAME.shop.state().collapseKey || !['hard', 'extreme'].includes(difficulty)
@@ -20182,9 +20461,10 @@ function newRun() {
   boostsTaken = 0;
   newStars = 0;
   pendingStars = new Set();
+  flashlightActive = false;
   soundtrack?.reset();
   run = GAME.run.create(city, course);
-  if (!isSewer()) for (const id of GAME.starBank.collected(seedCode, difficulty)) run.stars.add(id);
+  for (const id of savedStars()) run.stars.add(id);
   stepBefore = null;
   guide = GAME.guide.create(course);
   pilot = { k: 0 };
@@ -20292,7 +20572,7 @@ async function arriveInSewer() {
     sewerArrival = null;
   } catch (error) {
     sewerArrival = null;
-    if (error.code?.startsWith('GFX_') || graphics.recovering || GAME.gfx.contextLost()) {
+    if ((typeof error?.code === 'string' && error.code.startsWith('GFX_')) || graphics.recovering || GAME.gfx.contextLost()) {
       fail(error); return;
     }
     $('sewer-reveal').classList.add('hidden');
@@ -20319,6 +20599,7 @@ let stepBefore = null;         // the glider one step back, while steps run back
 
 function setMode(m) {
   flowVersion++;
+  if (['title', 'crashed', 'finished', 'results', 'sewer-reveal'].includes(m)) flashlightActive = false;
   mode = m; modeTime = 0; acc = 0; stepBefore = null; soundtrack.mode(m);
   stage.classList.toggle('sewer-menu', isSewer() && m === 'title');
   // The portrait reminder is useful before Fly, but must not cover a run if the phone rotates.
@@ -20357,7 +20638,7 @@ function handle(events) {
   const sewer = events.some(e => e.type === 'sewer');
   events = events.filter(e => e.type !== 'sewer');
   // If another tab saved this slot during the flight step, suppress the duplicate pickup feedback.
-  events = events.filter(e => e.type !== 'star' || (!isSewer() && !GAME.starBank.collected(seedCode, difficulty).includes(e.star)));
+  events = events.filter(e => e.type !== 'star' || !savedStars().includes(e.star));
   soundtrack.events(events);
   for (const e of events) {
     if (e.type === 'gate') { GAME.guide.onGate(guide, e.gate, run.time); hud.gatePassed(); }
@@ -20383,7 +20664,7 @@ function handle(events) {
       crashPause = offCourse ? OFF_COURSE_PAUSE : retryBooster ? BOOSTER_RETRY_PAUSE : CRASH_PAUSE;
       setMode('crashed');
     } else if (e.type === 'finish') {
-      if (!isSewer() && !collapse) {
+      if (!collapse) {
         newStars = GAME.starBank.finish(seedCode, difficulty, run, pendingStars).length;
         pendingStars.clear();
         GAME.shop.refresh();
@@ -20530,7 +20811,8 @@ function render(now, w, h) {
     const clock = mode === 'countdown' ? modeTime - countdownLen : mode === 'title' ? now / 1000
       : mode === 'crashed' || mode === 'finished' || mode === 'results' ? run.time + modeTime : run.time;
     sewerFlightRenderer.draw(cam, sewerMenu ? [] : view.rings,
-      sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide, [], clock);
+      sewerMenu || mode === 'finished' || mode === 'results' ? [] : view.guide,
+      sewerMenu ? [] : course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), clock, { flashlight: flashlightActive });
   } else renderer.draw(cam, view.rings, collapse || mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
@@ -20595,7 +20877,7 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
   // Another tab can bank a find too; saved stars become faint and cannot be picked up again.
-  if (!isSewer() && !collapse) for (const id of GAME.starBank.collected(seedCode, difficulty)) {
+  if (!collapse) for (const id of savedStars()) {
     run.stars.add(id);
     if (pendingStars.delete(id) && !run.finished) newStars = pendingStars.size;
   }
@@ -20711,7 +20993,7 @@ function showTitle() {
   const best = readBest(seedCode), medals = medalLadder(course);
   resetCopy($('title-copy'));
   GAME.hud.showTitle(overlay, { code: seedCode, difficulty, gates: course.gates.length, medals, best, bestMedal: best === null ? null : medalFor(best, medals),
-    stars: isSewer() ? 0 : GAME.starBank.collected(seedCode, difficulty).length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
+    stars: savedStars().length, starTotal: course.stars.length, starBank: GAME.starBank.total() });
   const unlocked = extremeUnlocked(seedCode);
   const sewerDescriptions = {
     easy: 'Wide tunnels, big rings and only a few pipes',
@@ -21075,14 +21357,30 @@ async function fly({ calibrate = false, seed = null } = {}) {
     // Course/menu actions can cancel the worker while its old Fly callback is pending.
     if (request !== flowVersion || course !== intendedCourse || mode !== originMode || courseLoading) return;
     requireGraphics();
-    clearControlFailure();
-    stage.classList.remove('sewer-menu');
-    hideScreens();
-    hud.show(true);
-    newRun();
-    GAME.sound.prepareRun();
-    startCountdown(COUNT_TICKS);
-    if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
+    const launchFlight = equipped => {
+      clearControlFailure();
+      stage.classList.remove('sewer-menu');
+      hideScreens();
+      hud.show(true);
+      newRun();
+      flashlightActive = equipped;
+      GAME.sound.prepareRun();
+      startCountdown(COUNT_TICKS);
+      if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
+      if (equipped) hud.toast('Flashlight on · this Sewer flight', 'good', 3);
+    };
+    if (isSewer() && GAME.shop.state().flashlights > 0) {
+      // Start inside the saved transaction's callback. A delayed lock promise must not spend
+      // an item, then let another menu action cancel its flight before the continuation runs.
+      const result = await GAME.shop.useFlashlight(() => !graphics.recovering && !GAME.gfx.contextLost() && !courseLoading
+        && request === flowVersion && course === intendedCourse && mode === originMode,
+      () => launchFlight(true));
+      if (result.ok) return;
+      if (request !== flowVersion || course !== intendedCourse || mode !== originMode || courseLoading) return;
+      requireGraphics();
+      if (!result.ok && result.message) { showControlFailure(new Error(result.message)); return; }
+    }
+    launchFlight(false);
   } finally {
     flightStarting = false;
     if (!graphics.recovering) { startBtn.disabled = false; startBtn.textContent = 'fly'; }
@@ -21301,6 +21599,7 @@ async function boot() {
     environment: isSewer() ? 'sewer' : 'surface', menuEnvironment, sewerUnlocked: GAME.access.sewerUnlocked(), collapseActive: !!collapse,
     sewer: isSewer() ? { tunnels: city.sewer.tunnels.length, pipes: city.sewer.pipes.length, dirt: city.sewer.dirt.length,
       inflows: city.sewer.inflows.length, shafts: city.sewer.shafts.length,
+      fans: city.sewer.fans?.length ?? 0, darkTunnels: city.sewer.tunnels.filter(t => t.dark).length,
       waterHeight: GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y),
       inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS) } : null,
     collapse: collapse ? { time: collapse.time, progress: collapse.progress, portal: structuredClone(collapse.portal), fallingBuildings:collapse.fallingCells?.length||0, hazards: collapse.hazards,
@@ -21326,9 +21625,9 @@ async function boot() {
     checkpointPose: isSewer() ? GAME.sewerCourse.respawnPose(run) : GAME.run.respawnPose(run), crashed: run.crashed ? { ...run.crashed } : null, gates: course.gates.length,
     time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, boundary: { ...run.boundary }, boosts: boostsTaken, level: resolution.scale,
     proof: course.proof, medals: collapse ? [] : medalLadder(course),
-    stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id), saved: !isSewer() && GAME.starBank.collected(seedCode, difficulty).includes(s.id) })),
+    stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id), saved: savedStars().includes(s.id) })),
     newStars, pendingStars: [...pendingStars], starBank: GAME.starBank.total(),
-    shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift,
+    shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift, flashlightActive,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
     view: { ...drawn, theme: isSewer() ? 'sewer' : renderer.theme.id, maxPixels: resolution.maxPixels,
       sewerVisible: isSewer() ? sewerFlightRenderer.visible() : undefined },

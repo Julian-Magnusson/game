@@ -127,13 +127,21 @@ Course and flight summaries show collected slots without a lifetime “Stars sav
 Shop shows the stars still available to spend after purchases.
 
 Shop has **Gear**, **Themes** and **Music** tabs. **Neon Night** and **Neon Flight** are included
-at the start. Other themes cost **4 stars each**; **Skyline Rush**, **Midnight Drift** and
+at the start and appear only in Settings. Synthwave Sunset, Amber Haze and Ember City cost
+**2 stars**; Toxic Haze and Aurora Night cost **3**; Tokyo Rain costs **4**; Arctic Dawn and
+Overgrown City cost **5**. **Skyline Rush**, **Midnight Drift** and
 **Afterburn** cost **5 stars each**. Purchases are saved once per browser, and settings reset
 keeps ownership. Select owned items in Shop or Settings; locked Settings choices have dimmed
 icons and a lock. Random music plays only your owned surface songs. **Undertow** is free upon
-discovering The Sewer, plays exclusively underground, and is the Sewer's only song. Your
+discovering The Sewer, plays exclusively underground, and is the Sewer's only song. It is hidden
+from surface Settings and Shop. Your
 surface music preference returns when you go back up. Existing boosts, keys, star claims and
 spending are preserved; cosmetic purchases do not change medals or count as assisted flights.
+Themes purchased before the price update retain their original payment in the wallet ledger.
+
+The Gear tab also sells a **Flashlight** for **5 stars**, with space for three spares. One lights
+your next Sewer flight automatically and lasts until you crash, finish or leave. Pause/resume
+keeps the same light; surface flights and automatic crash restarts never consume another.
 
 The **Collapse Key** costs **10 stars**. Its mysterious **MM:SS** hint changes with the selected
 Hard/Extreme course and difficulty.
@@ -157,6 +165,12 @@ connecting tunnels, and winding upward/downward chambers. Dodge round pipes and 
 the murky green water causes a crash, like the street above. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
 underground, with records kept separate from the city.
+Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Hard and
+Extreme include sections with failed lights, leaving rings and nearby obstacles visible; a
+flashlight reveals the tunnel ahead. Easy and Medium keep working lights. Sewer courses have
+**1 star on Easy/Medium, 2 on Hard and 3 on Extreme**. Finish to save them; crashing or leaving
+discards pending finds. Saved slots are shared across Sewer difficulties and kept separate from
+surface slots, while both environments fund the same shop wallet.
 Completing Collapse gives 2.5 seconds of black, the white **The Sewer** chapter card, then opens
 the Sewer menu directly. The menu previews the actual starting
 tunnel, keeping the same scenery through **3, 2, 1, Go**. Brickwork, arch detail, lamps, services,
