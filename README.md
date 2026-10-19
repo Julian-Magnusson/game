@@ -162,12 +162,21 @@ to the fifth ring inside. A Collapse crash returns to the normal surface course.
 
 Once discovered, **The Sewer** has playable courses through cylindrical collectors, smaller
 connecting tunnels, and winding upward/downward chambers. Dodge round pipes and dirt banks;
-the murky green water causes a crash, like the street above. Every underground crash restarts
+ordinary murky green water causes a crash, like the street above. Marked flooded sections let
+you dive into wide underwater mazes. A big red arrow painted on a barricade points down into
+the water; the barrier and submerged tunnel roofs prevent staying above the maze. At each
+fork, a small cyan glow marks the correct passage. Wrong branches have capped turning rooms
+so you can turn back. Race rings and navigation arrows stay hidden underwater.
+An oxygen bar holds **40 seconds** of air and refills after surfacing. Pause freezes it;
+running out restarts the course. Mazes occur occasionally on Easy/Medium, twice on Hard and
+three times on Extreme. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
-underground, with records kept separate from the city.
+underground, with records kept separate from the city. The new layout uses version-4 Sewer
+records; existing Extreme unlocks, saved stars and shop purchases stay intact.
 Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Hard and
 Extreme include sections with failed lights, leaving rings and nearby obstacles visible; a
-flashlight reveals the tunnel ahead. Easy and Medium keep working lights. Sewer courses have
+flashlight reveals the tunnel ahead. Actual scene lighting fades over about 0.8 seconds in
+both directions. Easy and Medium keep working lights. Sewer courses have
 **1 star on Easy/Medium, 2 on Hard and 3 on Extreme**. Finish to save them; crashing or leaving
 discards pending finds. Saved slots are shared across Sewer difficulties and kept separate from
 surface slots, while both environments fund the same shop wallet.
