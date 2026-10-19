@@ -669,8 +669,9 @@
     <section class="info-section"><h3>Course rules</h3>
       <p class="surface-rules">Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p class="surface-rules">Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
-      <p class="sewer-rules">Follow the rings through collectors, connecting tunnels and shafts. Moving air supports a level glide; rising shafts have an updraft. Ordinary green water, walls and obstacles cause a crash.</p>
-      <p class="sewer-rules">Red painted downward arrows mark flooded mazes. Dive below the barricades and follow the faint glow at forks to find air. Your <strong>40 seconds of oxygen</strong> refill in air; running out causes a crash and full course restart.</p>
+      <p class="sewer-rules">Follow the rings through collectors, connecting tunnels and shafts. Moving air supports a level glide; rising shafts have an updraft. Watch for rotating poles in the big shafts. Ordinary green water, walls and obstacles cause a crash.</p>
+      <p class="sewer-rules">Red painted downward arrows mark flooded mazes. Dive below the barricades; the entrance shutter closes behind you. Follow the <b>bright cyan lights</b> through the forks to the <b>single air outlet</b>, and dodge the pipes underwater.</p>
+      <p class="sewer-rules">Your <strong>40 seconds of oxygen</strong> refill in air; running out causes a crash and full course restart. Unlit sections fade into darkness and back out again. A flashlight lights up nearby obstacles and reaches much farther underwater.</p>
       <p class="surface-rules">A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
       <p class="sewer-rules">A missed gate adds <strong>2 seconds</strong>. Any crash restarts the entire course with a fresh timer.</p>
       <p class="surface-rules">Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
@@ -679,6 +680,7 @@
     <section class="info-section"><h3>Star shop</h3>
       <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
       <p>Using one makes the flight <strong>assisted</strong>: stars still save when you finish, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
+      <p class="sewer-rules">A <b>Flashlight</b> costs <b>5 stars</b> for <b>five Sewer flights</b>. Each Fly uses one charge, lasting until you crash, finish or leave. Pause keeps the same light; surface flights keep your saved charges.</p>
     </section>
     <section class="info-section"><h3>Difficulty</h3>
       <ul class="info-difficulties surface-rules">
@@ -687,7 +689,7 @@
         <li><strong>Hard:</strong> more narrow turns and obstacles; smaller rings.</li>
         <li><strong>Extreme:</strong> tight streets and wooded parks, smaller rings and faster flight.</li>
       </ul>
-      <p class="sewer-rules">Higher difficulties narrow the tunnels and rings and add more pipe obstacles and dirt banks. Hard and Extreme add more flooded mazes; Extreme also raises flight speed. Sewer times and Extreme unlocks are saved separately from the surface.</p>
+      <p class="sewer-rules">Higher difficulties narrow the tunnels and rings and add more pipe obstacles, dirt banks and rotating shaft poles. Pole speeds and directions change with difficulty. Hard and Extreme add more flooded mazes; Extreme also raises flight speed. Sewer times and Extreme unlocks are saved separately from the surface.</p>
       <p id="extreme-status" role="status"></p>
     </section>
     <section class="info-section orientation-info"><h3>Screen orientation</h3>
@@ -751,7 +753,7 @@
           <path d="M32 9V3M18 10L14 6M46 10L50 6" stroke-width="2"/>
         </g>
       </svg>
-      <div class="shop-key-copy"><span class="shop-badge">Sewer gear · single use</span><h3>Flashlight</h3><strong id="shop-flashlight-owned">0 / 3 ready</strong><p>Automatically used on your next Sewer flight. Lasts until you crash, finish or leave. Surface flights keep it saved.</p></div>
+      <div class="shop-key-copy"><span class="shop-badge">Sewer gear · five uses</span><h3>Flashlight</h3><strong id="shop-flashlight-owned">0 / 15 uses left</strong><p>Five Sewer flights per light. One use starts with Fly and lasts until you crash, finish or leave. Surface flights keep your uses saved.</p></div>
       <strong id="shop-flashlight-price">★ 5</strong><button id="shop-flashlight-buy" class="btn" type="button">buy light · 5 ★</button>
     </article>
     <article class="shop-key-item">
@@ -5399,7 +5401,7 @@ function create(city, course) {
     taken: new Set(),     // boosters actually collected since the last return before them
     stars: new Set(),     // never re-armed by a crash; the browser also restores previously banked stars
     ...(course.environment === 'sewer' ? { oxygen: 40, maxOxygen: 40, underwater: false,
-      underwaterTime: 0, minimumOxygen: 40 } : {}),
+      underwaterTime: 0, minimumOxygen: 40, mazeSeals: [] } : {}),
     crashed: null, finished: false,
   };
 }
@@ -8838,6 +8840,7 @@ GAME.collapse = { prepare, begin, entryGlider, step, steer, approachSteer, prove
 // ordinary water clips the dry air, while explicit flooded mazes stay enclosed and swimmable.
 const SAMPLE = 4, DT = 1 / 120;
 const OXYGEN = 40, OXYGEN_REFILL = 8;
+const SHUTTER_SECONDS = 0.65;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -8884,7 +8887,18 @@ const THEMES = [
   { id: 'iron', style: 4, cell: [3.6, 2.2], mortar: 0.03, wallA: [0.16, 0.085, 0.05], wallB: [0.075, 0.072, 0.07],
     grout: [0.028, 0.024, 0.02], lamp: [2.35, 0.62, 0.26], water: [0.016, 0.012, 0.018], fog: [0.028, 0.013, 0.012], moss: 0.35, gloss: 0.45 },
 ];
-const PIPE_HITS = { grate: 'grate', sluice: 'sluice', cable: 'cable', root: 'cable', falls: 'falls', strut: 'fan', 'maze-barrier': 'maze-barrier' };
+const PIPE_HITS = { grate: 'grate', sluice: 'sluice', cable: 'cable', root: 'cable', falls: 'falls', strut: 'fan',
+  'maze-barrier': 'maze-barrier', 'maze-shutter': 'maze-barrier' };
+
+// Entry shutters are real moving pipes. The same endpoints feed collision and both renderers;
+// an unarmed gate is tucked into the masonry and absent from the traversable volume.
+function pipePose(pipe, mazeSeals, time = 0) {
+  if (pipe.seal === undefined) return pipe;
+  const started = mazeSeals?.[pipe.seal];
+  if (started === null || started === undefined) return null;
+  const offset = (pipe.slide || 72) * (1 - clamp((time - started) / SHUTTER_SECONDS, 0, 1));
+  return { ...pipe, a: [pipe.a[0], pipe.a[1] + offset, pipe.a[2]], b: [pipe.b[0], pipe.b[1] + offset, pipe.b[2]] };
+}
 
 // Fans share one blade basis with the shader: blade k points along e1·cos θ + e2·sin θ.
 function fanBasis(axis) {
@@ -8929,7 +8943,7 @@ function distanceToSegment(point, a, b) {
 
 // Curtains, hubs and rings are static. Blades turn with the run clock, so they only collide when
 // a time is given (flight steps), never in the static layout and respawn checks.
-function sphere(city, x, y, z, radius, time) {
+function sphere(city, x, y, z, radius, time, mazeSeals = null) {
   const p = [x, y, z], world = city.sewer;
   let inShell = false, safe = false;
   for (const tube of world.tunnels) {
@@ -8941,7 +8955,8 @@ function sphere(city, x, y, z, radius, time) {
   }
   if (!safe) return { kind: inShell ? 'ground' : 'tower', sewer: inShell ? 'water' : 'wall' };
   for (let i = 0; i < world.pipes.length; i++) {
-    const pipe = world.pipes[i];
+    const pipe = pipePose(world.pipes[i], mazeSeals, time);
+    if (!pipe) continue;
     if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: PIPE_HITS[pipe.kind] || 'pipe', pipe: i };
   }
   for (let i = 0; i < world.dirt.length; i++) {
@@ -9048,7 +9063,15 @@ function step(run, stick, dt) {
   GAME.flight.step(g, stick, dt, () => current(run.city, g.x, g.y, g.z)
     + GAME.flight.FLIGHT.TURN_SINK * Math.abs(stick.x) + power);
   run.time += dt;
-  const to = [g.x, g.y, g.z], hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS, run.time);
+  const to = [g.x, g.y, g.z];
+  run.mazeSeals ??= [];
+  for (const maze of run.city.sewer.mazes || []) {
+    if (run.mazeSeals[maze.id] !== undefined || !maze.shutter || !underwaterAt(run.city, to)) continue;
+    const beyond = dot(subtract(to, maze.shutter.centre), maze.shutter.normal);
+    if (beyond > 12 && distanceToSegment(to, maze.shutter.centre, maze.forks[0].position) < 35)
+      run.mazeSeals[maze.id] = run.time;
+  }
+  const hit = sphere(run.city, g.x, g.y, g.z, GAME.flight.FLIGHT.RADIUS, run.time, run.mazeSeals);
   if (hit) {
     run.crashed = hit; run.crashes++; run.retries++;
     // Keep the crash camera in the enclosed air. At maximum speed the attempted position can
@@ -9102,6 +9125,7 @@ function respawnPose(run) {
 function respawn(run) {
   // A lost underground attempt starts a completely new race, with no checkpoint return.
   Object.assign(run, GAME.run.create(run.city, run.course));
+  run.mazeSeals = [];
   run.lastSafePosition = [run.glider.x, run.glider.y, run.glider.z];
 }
 
@@ -9392,10 +9416,13 @@ function build(seed, difficulty, attempt) {
     const wrongBranch = transform(local(-hand * 54, -90, 240 + 108 * Math.sqrt(0.75)));
     const worldForward = normalize(subtract(transform(local(0, 0, 1)), transform(local(0, 0, 0))));
     const arrow = transform(local(0, 1, 60));
-    // A tiny roof light marks the near part of the correct bend, visible before either fork
-    // is committed to. A light on its far side wall would be hidden by the inside corner.
-    const cueFraction = 0.25, cueAlong = 240 + 180 * cueFraction, cueAcross = hand * 110 * eased(cueFraction);
-    const cue = transform(local(cueAcross, -90 + 27, cueAlong));
+    // The seal sits after the last air above the descent. Its grille also spans the widened
+    // turning room here, so neither a side detour nor a lift boost can reach that old air.
+    const shutterCentre = transform(local(0, -90 * ramp(110 / 190), 110));
+    // A small light marks the near part of the correct bend at a readable flight level.
+    // Its far side wall would be hidden by the inside corner before the choice is made.
+    const cueFraction = 0.12, cueAlong = 240 + 180 * cueFraction, cueAcross = hand * 110 * eased(cueFraction);
+    const cue = transform(local(cueAcross, -90 + 9, cueAlong));
     const cueDirection = normalize(subtract(transform(local(cueAcross + hand * 0.5, -90, cueAlong + 1)),
       transform(local(cueAcross - hand * 0.5, -90, cueAlong - 1))));
     const crossings = [];
@@ -9406,9 +9433,12 @@ function build(seed, difficulty, attempt) {
     mazes.push({ id, entrance: transform(start), exit: transform(route.at(-1)), waterEntry: transform(crossings[0]), waterExit: transform(crossings.at(-1)),
       water, s0: first, s1: distance, tunnels: [...routeTunnels, ...wrongTunnels], routeTunnels, wrongTunnels,
       forks: [{ position: fork, correct, wrong: wrongBranch, deadEnd: transform(deadEnd) }],
-      cues: [{ position: cue, direction: cueDirection, radius: 2.5 }],
+      cues: [{ position: cue, direction: cueDirection, radius: 2.5 },
+        { position: transform(local(hand * 110 * (1 - eased(0.4)), -81, 420 + 230 * 0.4)), direction: worldForward, radius: 2.5 },
+        { position: transform(local(0, -90 * (1 - ramp(0.25)) + 9, 650 + 320 * 0.25)), direction: worldForward, radius: 2.5 }],
       downArrow: { p: arrow, n: worldForward.map(v => -v), width: 18, height: 18 },
       barrier: { centre: arrow, normal: worldForward.map(v => -v), width: 64, height: 68, down: [0, -1, 0] },
+      shutter: { centre: shutterCentre, normal: worldForward, seconds: SHUTTER_SECONDS },
       returnTurnTunnels, deadEnd: { position: transform(deadEnd), tunnel: rooms[0], tunnels: rooms, width: 236, length: 176, height: 56 }, hand });
     ranges.push({ s0: first, s1: distance, kind: 'maze', radius, water, straight: false, flooded: true, maze: id });
     return true;
@@ -9526,6 +9556,16 @@ function build(seed, difficulty, attempt) {
       pipes.push({ a: [centre[0] - side[0] * 32, y, centre[2] - side[2] * 32],
         b: [centre[0] + side[0] * 32, y, centre[2] + side[2] * 32], radius: 1.5, kind: 'maze-barrier', maze: maze.id, s: maze.s0 + 108 });
     }
+    // A dense sliding grille closes the only entrance behind the diver. Bars extend past
+    // the rounded wall, so neither its side nor its ceiling offers a second route into air.
+    const gate = maze.shutter.centre;
+    maze.shutter.pipes = [];
+    for (let y = gate[1] - 70; y <= gate[1] + 70; y += 4.7) {
+      maze.shutter.pipes.push(pipes.length);
+      pipes.push({ a: [gate[0] - side[0] * 130, y, gate[2] - side[2] * 130],
+        b: [gate[0] + side[0] * 130, y, gate[2] + side[2] * 130], radius: 2.5,
+        kind: 'maze-shutter', maze: maze.id, seal: maze.id, slide: 160, s: maze.s0 + 220 });
+    }
   }
   const shuffle = list => {
     for (let k = list.length - 1; k > 0; k--) { const j = r.int(0, k); [list[k], list[j]] = [list[j], list[k]]; }
@@ -9631,6 +9671,28 @@ function build(seed, difficulty, attempt) {
     hh: (top - bottom) / 2, thick, kind });
   const across = (c, side, u, y, direction = null, along = 0) => [c[0] + side[0] * u + (direction ? direction[0] * along : 0), y,
     c[2] + side[2] * u + (direction ? direction[2] * along : 0)];
+  // Broad submerged service pipes make the lower network feel occupied. Their central gaps
+  // stay generous, and both the planned line and the optional wrong-fork return remain open.
+  const submergedPipes = { easy: 2, medium: 3, hard: 4, extreme: 5 }[difficulty];
+  for (const maze of mazes) {
+    maze.obstaclePipes = [];
+    const begin = maze.s0 + 480, end = maze.s1 - 380;
+    for (let j = 0; j < submergedPipes; j++) {
+      const s = begin + (end - begin) * (j + 0.5) / submergedPipes, { p: c, side, direction } = at(s);
+      const sign = j % 2 ? -1 : 1, height = c[1] + sign * 10, diagonal = j % 3 === 1;
+      const pipe = { a: across(c, side, -26, height - (diagonal ? 3 : 0)),
+        b: across(c, side, 26, height + (diagonal ? 3 : 0)), radius: difficulty === 'easy' ? 1.5 : 2,
+        kind: 'maze-pipe', maze: maze.id, s };
+      if (!underwaterAt({ tunnels }, [c[0], height, c[2]])
+        || !clearOf(p => distanceToSegment(p, pipe.a, pipe.b), s - 80, s + 80, 7)
+        || maze.cues.some(cue => distanceToSegment(cue.position, pipe.a, pipe.b) < 9)) continue;
+      maze.obstaclePipes.push(pipes.length); pipes.push(pipe);
+      // A short return elbow anchors it in the side wall instead of leaving a floating rod.
+      const elbow = { a: [...pipe.b], b: across(c, side, 26, height, direction, 13), radius: pipe.radius * 0.8,
+        kind: 'maze-pipe', maze: maze.id, s };
+      maze.obstaclePipes.push(pipes.length); pipes.push(elbow);
+    }
+  }
   for (const h of hazards) {
     const { p: c, side, direction } = frame(base, h.s), R = h.range.radius, water = h.range.water, s = h.s;
     const lp = at(s).p, ly = lp[1], lu = (lp[0] - c[0]) * side[0] + (lp[2] - c[2]) * side[2];
@@ -9785,6 +9847,21 @@ function build(seed, difficulty, attempt) {
           phase: null, s, cross: p, ringIn: 0, ringOut: 6, ringHalf: 2.2, kind: 'shaft' });
       }
     }
+    // Two-ended sweeper poles rotate across every large cylindrical room, including Easy.
+    // More levels and faster alternating motors distinguish all four difficulties. Phases
+    // are calibrated by the same real-speed pilot used to prove every other moving hazard.
+    const poleCount = { easy: 2, medium: 3, hard: 4, extreme: 5 }[difficulty];
+    const poleSpeed = { easy: 0.16, medium: 0.25, hard: 0.38, extreme: 0.5 }[difficulty];
+    for (let j = 0; j < poleCount; j++) {
+      let f = (j + 0.5) / poleCount;
+      // Avoid a ring's immediate plane; the poles remain hazards between the navigation gates.
+      for (let tries = 0; tries < 8 && gates.some(g => Math.abs(g.s - sAt(f)) < 22); tries++) f += 0.012;
+      const s = sAt(f), p = at(s).p;
+      fans.push({ c: [ax, p[1], az], axis: [0, 1, 0], tip: reach, inner: 3.2, blades: 2,
+        width: difficulty === 'easy' ? 0.65 : difficulty === 'medium' ? 0.8 : 1,
+        omega: (j % 2 ? -1 : 1) * (range.shaft % 2 ? -1 : 1) * poleSpeed * fanMotion.range(0.8, 1.12),
+        phase: null, s, cross: p, ringIn: 0, ringOut: 3.8, ringHalf: 1.4, kind: 'shaft-poles' });
+    }
     pipes.push({ a: [ax, tube.water - 1, az], b: [ax, hi + Rs + 1, az], radius: 2.4, kind: 'pole', s: null });
     const domeY = hi + R + 9, domeTip = Math.sqrt(Math.max(0, Rs * Rs - (domeY + 1.5 - hi) ** 2)) - 2;
     fans.push({ c: [ax, domeY, az], axis: [0, 1, 0], tip: domeTip, inner: 5,
@@ -9881,7 +9958,7 @@ function generate(seed, difficulty = 'medium') {
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
   sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
-  darknessAt, underwaterAt, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL };
+  darknessAt, underwaterAt, pipePose, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
 
 })();
 </script>
@@ -10187,7 +10264,7 @@ GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claim
 // write cannot charge for an item without granting it. Web Locks serialize purchases/uses across tabs.
 const KEY = 'neonflight.shop.v1';
 const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
-const FLASHLIGHT = Object.freeze({ price: 5, capacity: 3 });
+const FLASHLIGHT = Object.freeze({ price: 5, capacity: 3, uses: 5 });
 const COLLAPSE_KEY = Object.freeze({ price: 10 });
 // Four stars was the original price for every theme. Keep historical payments in the
 // ledger so a later price change never refunds old purchases or charges them again.
@@ -10200,7 +10277,7 @@ const themePrice = id => id === 'neon' ? 0 : Object.hasOwn(THEME_PRICES, id) ? T
 const PAID_THEMES = Object.freeze(Object.keys(THEME_PRICES));
 const PAID_MUSIC = Object.freeze(['skyline-rush', 'midnight-drift', 'afterburn']);
 const listeners = new Set();
-const emptyLedger = () => ({ bought: 0, used: 0, flashlightBought: 0, flashlightUsed: 0,
+const emptyLedger = () => ({ bought: 0, used: 0, flashlightVersion: 2, flashlightBought: 0, flashlightUsed: 0,
   collapseKey: false, themes: [], themePrices: {}, music: [] });
 let ledger = emptyLedger(), storageOK = true;
 const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0)
@@ -10225,18 +10302,32 @@ function validInventory(bought, used, capacity) {
   return Number.isSafeInteger(bought) && Number.isSafeInteger(used)
     && used >= 0 && bought >= used && bought - used <= capacity;
 }
+function flashlightInventory(value) {
+  const hasBought = value.flashlightBought !== undefined, hasUsed = value.flashlightUsed !== undefined;
+  if (hasBought !== hasUsed || (value.flashlightVersion !== undefined && value.flashlightVersion !== 2)
+      || (value.flashlightVersion === 2 && !hasBought)) throw new Error('invalid flashlight save');
+  const bought = hasBought ? value.flashlightBought : 0, used = hasUsed ? value.flashlightUsed : 0;
+  // Keep lifetime purchases for the wallet. Old saves spent one entire light per flight;
+  // convert only their remaining devices to five charges, without refunding old uses.
+  if (!Number.isSafeInteger(bought) || !Number.isSafeInteger(bought * FLASHLIGHT.uses)) throw new Error('invalid flashlight purchases');
+  if (value.flashlightVersion === undefined) {
+    if (!validInventory(bought, used, FLASHLIGHT.capacity)) throw new Error('invalid legacy flashlight save');
+    return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used * FLASHLIGHT.uses };
+  }
+  if (!validInventory(bought * FLASHLIGHT.uses, used, FLASHLIGHT.capacity * FLASHLIGHT.uses)) {
+    throw new Error('invalid flashlight uses');
+  }
+  return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used };
+}
+const flashlightUses = save => save.flashlightBought * FLASHLIGHT.uses - save.flashlightUsed;
 function read() {
   const raw = localStorage.getItem(KEY);
   if (raw === null) return emptyLedger();
   const value = JSON.parse(raw);
-  const flashlightBought = value?.flashlightBought === undefined ? 0 : value.flashlightBought;
-  const flashlightUsed = value?.flashlightUsed === undefined ? 0 : value.flashlightUsed;
   if (!value || !validInventory(value.bought, value.used, LIFT.capacity)
-      || (value.flashlightBought === undefined) !== (value.flashlightUsed === undefined)
-      || !validInventory(flashlightBought, flashlightUsed, FLASHLIGHT.capacity)
       || (value.collapseKey !== undefined && typeof value.collapseKey !== 'boolean')) throw new Error('invalid shop save');
   const save = { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true,
-    flashlightBought, flashlightUsed,
+    ...flashlightInventory(value),
     themes: ownedIds(value.themes, PAID_THEMES), music: ownedIds(value.music, PAID_MUSIC) };
   save.themePrices = paidThemePrices(value.themePrices, save.themes);
   if (!Number.isSafeInteger(spending(save))) throw new Error('invalid shop spending');
@@ -10250,7 +10341,7 @@ function refresh() {
 function state() {
   return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
     spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
-    flashlights: ledger.flashlightBought - ledger.flashlightUsed,
+    flashlights: Math.ceil(flashlightUses(ledger) / FLASHLIGHT.uses), flashlightUses: flashlightUses(ledger),
     themes: ledger.themes.slice(), music: ledger.music.slice(),
     available: storageOK && !!navigator.locks?.request };
 }
@@ -10279,8 +10370,11 @@ function buyLift() {
 }
 function buyFlashlight() {
   return transaction((next, earned) => {
-    if (next.flashlightBought - next.flashlightUsed >= FLASHLIGHT.capacity) return { ok: false, message: 'Your flashlight inventory is full.' };
+    if (flashlightUses(next) + FLASHLIGHT.uses > FLASHLIGHT.capacity * FLASHLIGHT.uses) {
+      return { ok: false, message: 'Use more of your saved light before buying another five uses.' };
+    }
     if (earned - spending(next) < FLASHLIGHT.price) return { ok: false, message: 'Find more stars to buy this flashlight.' };
+    if (!Number.isSafeInteger((next.flashlightBought + 1) * FLASHLIGHT.uses)) return { ok: false, message: 'Could not save another flashlight.' };
     next.flashlightBought++;
     return { ok: true };
   });
@@ -10319,7 +10413,7 @@ function useLift(canUse, activate) {
 }
 function useFlashlight(canUse, activate) {
   return transaction(next => {
-    if (!canUse() || next.flashlightBought <= next.flashlightUsed) return { ok: false };
+    if (!canUse() || flashlightUses(next) <= 0) return { ok: false };
     next.flashlightUsed++;
     return { ok: true, activate };
   });
@@ -16440,8 +16534,8 @@ vec3 sewerLamp(int index, float rung) {
 // One camera-forward light; no extra tracing or nested light loops are required.
 float sewerFlashlight(vec3 p) {
   vec3 q = p - uCamPos;
-  float distance = length(q), cone = smoothstep(0.82, 0.97, dot(q, uCamFwd) / max(distance, 0.001));
-  return uFlashlight * cone * (1.0 - smoothstep(75.0, 135.0, distance)) / (1.0 + distance * distance * 0.00013);
+  float distance = length(q), cone = smoothstep(mix(0.82, 0.67, uUnderwater), mix(0.97, 0.94, uUnderwater), dot(q, uCamFwd) / max(distance, 0.001));
+  return uFlashlight * cone * (1.0 - smoothstep(mix(75.0, 160.0, uUnderwater), mix(135.0, 240.0, uUnderwater), distance)) / (1.0 + distance * distance * mix(0.00013, 0.000025, uUnderwater));
 }
 float sewerVisibility(vec3 p) {
   float nearLight = 1.0 - smoothstep(6.0, 25.0, length(p - uCamPos));
@@ -16469,7 +16563,7 @@ vec3 sewerLighting(vec3 p, vec3 n, int index, out vec3 lamp, out vec3 lampColour
   vec3 view = normalize(uCamPos - p);
   float nearLight = 1.0 - smoothstep(6.0, 25.0, length(p - uCamPos));
   light = mix(light, vec3(0.11, 0.13, 0.12) * nearLight * max(dot(n, view), 0.15), dark);
-  light += vec3(2.8, 2.65, 2.3) * sewerFlashlight(p) * max(dot(n, view), 0.12);
+  light += vec3(2.8, 2.65, 2.3) * mix(1.0, 2.5, uUnderwater) * sewerFlashlight(p) * max(dot(n, view), 0.12);
   return light;
 }
 
@@ -16866,7 +16960,8 @@ void main() {
   SewerHit hit = sewerTrace(ro, rd);
   vec3 fog = mix(uThemeFog, vec3(0.0002, 0.0004, 0.00035), uSewerDarkness);
   vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
-  float haze = 1.0 - exp(-hit.t * 0.0105);
+  float beam = sewerFlashlight(ro + rd * hit.t);
+  float haze = 1.0 - exp(-hit.t * mix(0.0105, 0.003, beam * uUnderwater));
   col = mix(col, fog, haze);
   float inflowDepth, curtainDepth;
   vec4 inflow = sewerInflow(ro, rd, hit.t, pixAngle, inflowDepth);
@@ -16875,8 +16970,8 @@ void main() {
   float nearDepth = min(curtainDepth, inflowDepth), farDepth = max(curtainDepth, inflowDepth);
   col = mix(col, mix(farLayer.rgb, fog, 1.0 - exp(-farDepth * 0.0105)), farLayer.a);
   col = mix(col, mix(nearLayer.rgb, fog, 1.0 - exp(-nearDepth * 0.0105)), nearLayer.a);
-  // Suspended silt and short green extinction make the enclosed flooded maze unmistakable.
-  col = mix(col, mix(col * vec3(0.72, 0.95, 0.62), vec3(0.004, 0.025, 0.014), 1.0 - exp(-hit.t * 0.035)), uUnderwater);
+  // The purchased beam cuts through the silt; outside it the water stays murky.
+  col = mix(col, mix(col * vec3(0.72, 0.95, 0.62), vec3(0.004, 0.025, 0.014), 1.0 - exp(-hit.t * mix(0.035, 0.008, beam))), uUnderwater);
   vec2 siltUV = vUv * vec2(68.0, 38.0) + ro.xz * 0.03 + vec2(0.08, -0.14) * uSewerMotion;
   vec2 mote = fract(siltUV) - 0.5;
   float silt = step(0.985, hash12(floor(siltUV))) * exp(-dot(mote, mote) * 120.0) * step(5.0, hit.t);
@@ -16884,7 +16979,8 @@ void main() {
   vec3 cueDelta = uMazeCue.xyz - ro;
   float cueDepth = dot(cueDelta, rd), cueDistance = length(cueDelta - rd * cueDepth);
   float cue = exp(-cueDistance * cueDistance / max(uMazeCue.w * uMazeCue.w, 0.001));
-  col += vec3(0.025, 0.52, 0.34) * cue * exp(-max(cueDepth, 0.0) * mix(0.0105, 0.025, uUnderwater))
+  float halo = exp(-cueDistance * cueDistance / 10.56);
+  col += (vec3(0.3, 3.6, 1.9) * cue + vec3(0.018, 0.22, 0.13) * halo) * exp(-max(cueDepth, 0.0) * 0.0065)
     * step(0.01, uMazeCue.w) * step(0.1, cueDepth) * step(cueDepth, hit.t);
   // Existing ring/guide/stars have the same depth and controls as surface flight.
   float markerDepth = hit.t;
@@ -16926,7 +17022,7 @@ function mazeFeatures(world, cam) {
   const arrows = mazes.map(maze => maze.downArrow).filter(a => a?.p?.length === 3 && a.n?.length === 3 && a.width > 0 && a.height > 0);
   arrows.sort((a, b) => distance(a.p) - distance(b.p));
   const candidates = mazes.flatMap(maze => maze.cues || []).map(cue => ({ source: cue, p: point(cue) }))
-    .filter(cue => cue.p?.length === 3 && distance(cue.p) < 130 && cue.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
+    .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && cue.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
   return { downArrow: arrows[0] && distance(arrows[0].p) < FAR + 20 ? arrows[0] : null,
     cue: candidates[0] ? { p: candidates[0].p, radius: Math.max(0.35, Math.min(0.65, candidates[0].source.radius || 0.65)) } : null };
@@ -16956,21 +17052,22 @@ function create(gfx) {
   const data = new Float32Array(ATLAS_WIDTH * ATLAS_ROWS * 4);
   const atlas = gfx.createTexture(ATLAS_WIDTH, ATLAS_ROWS, { format: 'rgba32f', filter: 'nearest', data });
   let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME;
-  let darkness = 0, darknessTarget = 0, lastLightTime = null, lightEnabled = false, water = 0, air = 1;
+  let darkness = 0, darknessTarget = 0, lastLightTime = null, lightEnabled = false, water = 0, air = 1, lastSeals = '', lastSealMoving = false;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
     world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = world.theme || DEFAULT_THEME;
-    darkness = 0; darknessTarget = 0; lastLightTime = null; lightEnabled = false; water = 0; air = 1;
+    darkness = 0; darknessTarget = 0; lastLightTime = null; lightEnabled = false; water = 0; air = 1; lastSeals = ''; lastSealMoving = false;
   }
   const away = (position, centre) => Math.hypot(...centre.map((v, i) => v - position[i]));
   function select(items, position, maximum, distance) {
     return items.map((value, index) => ({ value, index, distance: Math.max(0, distance(value)) }))
       .filter(v => v.distance <= FAR + 20).sort((a, b) => a.distance - b.distance || a.index - b.index).slice(0, maximum);
   }
-  function pack(position) {
+  function pack(position, mazeSeals, clock) {
     data.fill(0);
     const segment = value => distanceToSegment(position, value.a, value.b) - value.radius;
-    const selected = [select(world.tunnels, position, TUNNELS, segment), select(world.pipes || [], position, PIPES, segment),
+    const pipes = (world.pipes || []).map(pipe => pipe.seal === undefined ? pipe : GAME.sewerCourse.pipePose(pipe, mazeSeals, clock)).filter(Boolean);
+    const selected = [select(world.tunnels, position, TUNNELS, segment), select(pipes, position, PIPES, segment),
       select(world.dirt || [], position, DIRT, d => away(position, d.centre) - Math.max(...d.radii)), select(flows, position, INFLOWS, segment)];
     const fans = select(world.fans || [], position, FANS, fan => away(position, fan.c) - Math.max(fan.tip + fan.width, fan.ringOut + fan.ringHalf));
     const sheets = select(world.sheets || [], position, SHEETS, sheet => away(position, sheet.c) - Math.hypot(sheet.hw, sheet.hh, sheet.thick));
@@ -17022,9 +17119,11 @@ function create(gfx) {
     clipped = world.tunnels.length - counts[0];
   }
   // The clock is the run time, so drawn fan blades are exactly where they collide.
-  function draw(cam, rings, guide, stars = [], clock = 0, { flashlight = false, underwater = false, oxygen = 1 } = {}) {
+  function draw(cam, rings, guide, stars = [], clock = 0, { flashlight = false, underwater = false, oxygen = 1, mazeSeals = [] } = {}) {
     if (!world) throw new Error('sewer-flight draw before setWorld');
-    if (!last || Math.hypot(...cam.pos.map((v, i) => v - last[i])) > 5) pack(cam.pos);
+    const sealKey = mazeSeals.join('|'), movingSeal = mazeSeals.some(start => start !== null && start !== undefined && clock - start < 1);
+    if (!last || sealKey !== lastSeals || movingSeal || lastSealMoving || Math.hypot(...cam.pos.map((v, i) => v - last[i])) > 5) pack(cam.pos, mazeSeals, clock);
+    lastSeals = sealKey; lastSealMoving = movingSeal;
     const now = performance.now() / 1000, elapsed = lastLightTime === null ? 0 : Math.max(0, Math.min(0.1, now - lastLightTime));
     lastLightTime = now; darknessTarget = darknessAt(world, cam.pos);
     // The same continuous level drives lamps, material lighting, visibility and fog both ways.
@@ -17137,7 +17236,7 @@ void main() {
   vec3 n=vMaterial==13.0?vec3(0,1,0):normalize(vNormal), col=vColour.rgb, emission=vec3(0.0);
   vec3 view=normalize(uCamPos-vPosition);
   float distance=length(uCamPos-vPosition), nearLight=1.0-smoothstep(6.0,25.0,distance);
-  float beam=uFlashlight*smoothstep(0.82,0.97,dot(-view,uCamFwd))*(1.0-smoothstep(75.0,135.0,distance))/(1.0+distance*distance*0.00013);
+  float beam=uFlashlight*smoothstep(mix(0.82,0.67,uUnderwater),mix(0.97,0.94,uUnderwater),dot(-view,uCamFwd))*(1.0-smoothstep(mix(75.0,160.0,uUnderwater),mix(135.0,240.0,uUnderwater),distance))/(1.0+distance*distance*mix(0.00013,0.000025,uUnderwater));
   float mat=floor(vMaterial+0.1), shine=0.0, coverage=1.0;
   float along=dot(vPosition-uTunnelOrigin,uTunnelAxis);
   vec3 radial=vPosition-uTunnelOrigin-uTunnelAxis*along;
@@ -17275,7 +17374,7 @@ void main() {
     // Quiet near-field fill keeps lethal pipes/dirt readable between the warm wall fixtures.
     lighting+=vec3(0.34,0.37,0.34)*max(dot(n,view),0.0)/(1.0+vDepth*vDepth*0.0004);
     lighting=mix(lighting,vec3(0.11,0.13,0.12)*nearLight*max(dot(n,view),0.15),uTunnelDark);
-    lighting+=vec3(2.8,2.65,2.3)*beam*max(dot(n,view),0.12);
+    lighting+=vec3(2.8,2.65,2.3)*mix(1.0,2.5,uUnderwater)*beam*max(dot(n,view),0.12);
   } else {
     lighting=uAmbient*mix(0.48,1.40,n.y*0.5+0.5)+uSunColour*max(dot(n,uLight),0.0);
     float highlight=pow(max(dot(n,normalize(uLight+view+vec3(0.00001))),0.0),48.0)*shine;
@@ -17289,11 +17388,11 @@ void main() {
     float k=(vPosition.y-uCamPos.y)*0.008;
     heightFog=0.30+0.70*exp(-max(uCamPos.y,0.0)*0.008)*(abs(k)>0.001?(1.0-exp(-k))/k:1.0);
   }
-  float fog=1.0-exp(-max(distance-25.0,0.0)*uDensity*heightFog);
+  float fog=1.0-exp(-max(distance-25.0,0.0)*uDensity*heightFog*mix(1.0,0.286,beam*uUnderwater));
   vec3 fogColour=mix(uFog,uFogHigh,smoothstep(-0.1,0.4,-view.y));
   fogColour=mix(fogColour,vec3(0.0002,0.0004,0.00035),uSewerDarkness);
   radiance=mix(radiance*uTint,fogColour,fog);
-  radiance=mix(radiance,mix(radiance*vec3(0.72,0.95,0.62),vec3(0.004,0.025,0.014),1.0-exp(-distance*0.035)),uUnderwater);
+  radiance=mix(radiance,mix(radiance*vec3(0.72,0.95,0.62),vec3(0.004,0.025,0.014),1.0-exp(-distance*mix(0.035,0.008,beam))),uUnderwater);
   if(uEncoded>0.5) radiance=radiance/(vec3(1.0)+radiance);
   fragColor=vec4(radiance,vColour.a*uAlpha*coverage);
 }`;
@@ -18641,7 +18740,7 @@ function mazeFeatures(world, cam) {
   const arrows = mazes.map(maze => maze.downArrow).filter(a => a?.p?.length === 3 && a.n?.length === 3 && a.width > 0 && a.height > 0);
   arrows.sort((a, b) => distance(a.p) - distance(b.p));
   const candidates = mazes.flatMap(maze => maze.cues || []).map(cue => ({ source: cue, p: point(cue) }))
-    .filter(cue => cue.p?.length === 3 && distance(cue.p) < 130 && dot(sub(cue.p, cam.pos), cam.fwd) > 0);
+    .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && dot(sub(cue.p, cam.pos), cam.fwd) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
   return { downArrow: arrows[0] && distance(arrows[0].p) < RANGE ? arrows[0] : null,
     cue: candidates[0] ? { p: candidates[0].p, radius: clamp(candidates[0].source.radius || 0.65, 0.35, 0.65) } : null };
@@ -18941,7 +19040,7 @@ function buildWorld(world, { indices = null, props = true, flows = true } = {}) 
   const opaque = GAME.mesh.builder(), water = GAME.mesh.builder(), flow = GAME.mesh.builder(), lamps = GAME.mesh.builder();
   for (const tube of selected) { shellMesh(opaque, tube); waterMesh(water, tube); lampMesh(lamps, tube); }
   if (props) {
-    for (const pipe of world.pipes || []) opaque.tag(6).capsule(pipe.a, pipe.b, pipe.radius, pipeColour(pipe), 20, 6);
+    for (const pipe of world.pipes || []) if (pipe.seal === undefined) opaque.tag(6).capsule(pipe.a, pipe.b, pipe.radius, pipeColour(pipe), 20, 6);
     for (const pile of world.dirt || []) opaque.tag(12).ellipsoid(pile.centre, pile.radii, DIRT_COLOUR, 20, 12);
     for (const fan of world.fans || []) { fanRingMesh(opaque, fan); fanBladeMesh(opaque, fan, 0); }
     for (const fan of world.wallFans || []) { const tube = wallHost(tubes, fan); wallFanDisc(opaque, fan, tube); wallFanBlades(opaque, fan, tube, 0); }
@@ -18951,7 +19050,7 @@ function buildWorld(world, { indices = null, props = true, flows = true } = {}) 
     for (const sheet of world.sheets || []) sheetMesh(flow, sheet, tubes[0].look.curtain);
   }
   return { opaque: opaque.build(), water: water.build(), flow: flow.build(), lamps: lamps.build(),
-    stats: { tunnels: selected.length, pipes: props ? (world.pipes || []).length : 0, dirt: props ? (world.dirt || []).length : 0 } };
+    stats: { tunnels: selected.length, pipes: props ? (world.pipes || []).filter(pipe => pipe.seal === undefined).length : 0, dirt: props ? (world.dirt || []).length : 0 } };
 }
 
 function create(gfx) {
@@ -19021,6 +19120,7 @@ function create(gfx) {
   function nearbyProps(cam) {
     const result = [];
     for (const [index, pipe] of (world.pipes || []).entries()) {
+      if (pipe.seal !== undefined) continue;
       const meta = { ...pipe, delta: sub(pipe.b, pipe.a), length2: Math.max(distance2(pipe.a, pipe.b), 1e-9) };
       if (shellDistance(meta, cam.pos) < RANGE) result.push({ value: pipe, kind: 'pipe', index });
     }
@@ -19062,7 +19162,7 @@ function create(gfx) {
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
   }
   // The clock is the run time, so drawn fan blades are exactly where they collide.
-  function draw(cam, rings = [], guide = [], stars = [], clock = 0, { flashlight = false, underwater = false, oxygen = 1 } = {}) {
+  function draw(cam, rings = [], guide = [], stars = [], clock = 0, { flashlight = false, underwater = false, oxygen = 1, mazeSeals = [] } = {}) {
     if (!world) throw new Error('sewer-lite draw before setWorld');
     const now = performance.now() / 1000, elapsed = lastLightTime === null ? 0 : clamp(now - lastLightTime, 0, 0.1);
     lastLightTime = now; darknessTarget = darknessAt(world, cam.pos);
@@ -19085,6 +19185,13 @@ function create(gfx) {
     for (const p of props) if (p.kind !== 'sheet')
       mesh.draw(propHandle(p.value, p.kind, p.index), cam, { ...opts, sewer: surface(nearestTube(centreOf(p))) });
     const moving = GAME.mesh.builder();
+    let shutters = 0;
+    for (const pipe of world.pipes || []) if (pipe.seal !== undefined) {
+      const pose = GAME.sewerCourse.pipePose(pipe, mazeSeals, clock);
+      if (pose && Math.hypot(...sub(cam.pos, middle(pose.a, pose.b))) - Math.hypot(...sub(pose.a, pose.b)) * 0.5 < RANGE) {
+        moving.tag(GAME.mesh.MATERIAL.METAL).capsule(pose.a, pose.b, pose.radius, pipeColour(pipe), 20, 6); shutters++;
+      }
+    }
     for (const fan of world.fans || []) if (Math.hypot(...sub(cam.pos, fan.c)) - fan.tip < RANGE) fanBladeMesh(moving, fan, clock);
     for (const [index, fan] of (world.wallFans || []).entries()) if (Math.hypot(...sub(cam.pos, fan.c)) - fan.radius < RANGE)
       wallFanBlades(moving, fan, wallHosts[index], clock);
@@ -19106,16 +19213,20 @@ function create(gfx) {
     }
     if (features.cue) {
       const b = GAME.mesh.builder().tag(GAME.mesh.MATERIAL.LIGHT), { p, radius } = features.cue;
-      b.ellipsoid(p, [radius, radius, radius], [0.025, 0.52, 0.34], 8, 4);
+      b.ellipsoid(p, [radius, radius, radius], [0.107, 1.286, 0.679], 8, 4);
+      const right = scale(cam.right, 4.6), up = scale(cam.up, 4.6);
+      b.tag(GAME.mesh.MATERIAL.SPRITE).quad(sub(sub(p, right), up), add(sub(p, up), right),
+        add(add(p, right), up), add(sub(p, right), up), [0.018, 0.22, 0.13, 0.7], [[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]]);
       mesh.update(cueMesh, b.build());
-      mesh.draw(cueMesh, cam, { ...opts, fog: cameraFog, unlit: true });
+      // The emitter scatters through water, while real depth still hides it behind masonry.
+      mesh.draw(cueMesh, cam, { ...opts, fog: cameraFog, density: 0.0065, underwater: 0, unlit: true, depthWrite: false });
     }
     ringLight?.draw(cam,rings,{time,encoded:true,far:opts.far});
     mesh.finish();
     evict(cache, MAX_TUNNELS, new Set(selected.map(t => t.index)));
     evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
-    lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length,
+    lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length + shutters,
       dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, sheets: curtains.length, clipped: tubes.length - selected.length,
       resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true,
       darkness, darknessTarget, underwater: water, oxygen: clamp(Number(oxygen) || 0, 0, 1), flashlight: !!flashlight };
@@ -20129,7 +20240,7 @@ function create(panel, { touch, collapseHint = () => null }) {
     buy.textContent = busy === 'lift' ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
       : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
     const flashlight = GAME.shop.FLASHLIGHT;
-    q('#shop-flashlight-owned').textContent = `${s.flashlights} / ${flashlight.capacity} ready`;
+    q('#shop-flashlight-owned').textContent = `${s.flashlightUses} / ${flashlight.capacity * flashlight.uses} uses left`;
     q('#shop-flashlight-price').textContent = `★ ${flashlight.price}`;
     const flashlightHadFocus = document.activeElement === flashlightBuy;
     flashlightBuy.disabled = !!busy || !s.available || s.flashlights >= flashlight.capacity || s.balance < flashlight.price;
@@ -20178,7 +20289,7 @@ function create(panel, { touch, collapseHint = () => null }) {
       const name = cards.find(c => c.kind === kind && c.item.id === id)?.item.name;
       q('#shop-message').textContent = result.ok
         ? kind === 'key' ? 'Collapse Key saved.' : kind === 'lift' ? 'Lift Boost added to your inventory.'
-        : kind === 'flashlight' ? 'Flashlight saved for your next Sewer flight.' : `${name} unlocked.`
+        : kind === 'flashlight' ? 'Five flashlight uses saved for your next Sewer flights.' : `${name} unlocked.`
         : result.message;
     } catch { q('#shop-message').textContent = 'Could not save your purchase. Please try again.'; }
     finally { busy = null; render(); }
@@ -20953,7 +21064,7 @@ function handle(events) {
       crashPause = offCourse ? OFF_COURSE_PAUSE : retryBooster ? BOOSTER_RETRY_PAUSE : CRASH_PAUSE;
       setMode('crashed');
     } else if (e.type === 'dive') {
-      hud.toast('Follow the faint glow', 'good', 3);
+      hud.toast('Follow the cyan lights', 'good', 3);
     } else if (e.type === 'surface') {
       hud.toast('Oxygen refilling', 'good', 2);
     } else if (e.type === 'finish') {
@@ -21040,7 +21151,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => isSewer() ? `neonflight.sewer.best.v4.${difficulty}.${code}`
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v5.${difficulty}.${code}`
   : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
@@ -21109,7 +21220,8 @@ function render(now, w, h) {
     sewerFlightRenderer.draw(cam, sewerMenu || underwater ? [] : view.rings,
       sewerMenu || underwater || mode === 'finished' || mode === 'results' ? [] : view.guide,
       sewerMenu ? [] : course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })), clock,
-      { flashlight: flashlightActive, underwater, oxygen: run.maxOxygen ? run.oxygen / run.maxOxygen : 1 });
+      { flashlight: flashlightActive, underwater, oxygen: run.maxOxygen ? run.oxygen / run.maxOxygen : 1,
+        mazeSeals: run.mazeSeals });
   } else renderer.draw(cam, view.rings, collapse || mode === 'finished' || mode === 'results' ? [] : view.guide,
     course.stars.map(s => ({ ...s, collected: run.stars.has(s.id) })));
   const post = GAME.post.defaults();
@@ -21900,9 +22012,10 @@ async function boot() {
       fans: city.sewer.fans?.length ?? 0, darkTunnels: city.sewer.tunnels.filter(t => t.dark).length,
       underwater: GAME.sewerCourse.underwaterAt(city, [run.glider.x, run.glider.y, run.glider.z]),
       oxygen: run.oxygen, maxOxygen: run.maxOxygen,
+      mazeSeals: [...run.mazeSeals],
       mazes: structuredClone(city.sewer.mazes ?? []),
       waterHeight: GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y),
-      inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS) } : null,
+      inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS, run.time, run.mazeSeals) } : null,
     collapse: collapse ? { time: collapse.time, progress: collapse.progress, portal: structuredClone(collapse.portal), fallingBuildings:collapse.fallingCells?.length||0, hazards: collapse.hazards,
       gateRadii: course.gates.map(g => g.radius),
       streets: course.escapeGeometry ? { clearedCells: course.escapeGeometry.clearedCells.length,
