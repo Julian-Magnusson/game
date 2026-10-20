@@ -9431,12 +9431,13 @@ function build(seed, difficulty, attempt) {
     // The seal sits after the last air above the descent. Its grille also spans the widened
     // turning room here, so neither a side detour nor a lift boost can reach that old air.
     const shutterCentre = transform(local(0, -90 * ramp(110 / 190), 110));
-    // A small light marks the near part of the correct bend at a readable flight level.
-    // Its far side wall would be hidden by the inside corner before the choice is made.
-    const cueFraction = 0.12, cueAlong = 240 + 180 * cueFraction, cueAcross = hand * 110 * eased(cueFraction);
+    // The decision light sits inside the correct mouth, distinctly to its side of the split.
+    // It remains visible on approach rather than hiding beyond the bend's inside wall.
+    const cueFraction = 0.36, cueAlong = 240 + 180 * cueFraction, cueAcross = hand * 110 * eased(cueFraction);
     const cue = transform(local(cueAcross, -90 + 9, cueAlong));
-    const cueDirection = normalize(subtract(transform(local(cueAcross + hand * 0.5, -90, cueAlong + 1)),
-      transform(local(cueAcross - hand * 0.5, -90, cueAlong - 1))));
+    const cueSlope = hand * 110 * Math.PI * Math.sin(Math.PI * cueFraction) / (2 * 180);
+    const cueDirection = normalize(subtract(transform(local(cueAcross + cueSlope, -90, cueAlong + 1)),
+      transform(local(cueAcross - cueSlope, -90, cueAlong - 1))));
     const skullAngle = 0.7, skullU = -hand * 108 * (1 - Math.cos(skullAngle)), skullW = 240 + 108 * Math.sin(skullAngle);
     const skullHeading = normalize(subtract(transform(local(skullU - hand * Math.sin(skullAngle), -90, skullW + Math.cos(skullAngle))),
       transform(local(skullU, -90, skullW))));
@@ -16660,7 +16661,11 @@ vec3 sewerSpillRipples(vec3 p, float pixel) {
     if (float(i) >= uSewerCount.w) break;
     vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1);
     if (abs(p.y - b.w) > 0.03) continue;
-    vec3 axis = normalize(b.xyz - a.xyz), delta = p - b.xyz;
+    vec3 axis = normalize(b.xyz - a.xyz);
+    vec4 lip = sewerData(FLOW_BASE + i, 3);
+    vec3 landing = a.xyz + axis * ((lip.y + lip.z) * 0.5 + sewerData(FLOW_BASE + i, 2).w);
+    landing.y = b.w;
+    vec3 delta = p - landing;
     float across = abs(dot(delta, vec3(-axis.z, 0.0, axis.x)));
     float d = length(vec2(dot(delta, axis), max(across - a.w, 0.0)));
     if (d > 5.5) continue;
@@ -16683,7 +16688,28 @@ vec3 sewerSpillRipples(vec3 p, float pixel) {
   return glow;
 }
 
-vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
+// Match the triangle renderer's rounded union of inner water channels. This is a single
+// bounded surface-classification loop, separate from tracing and all light/primitive loops.
+float sewerBankDistance(vec3 p) {
+  float nearest = EMPTY, next = EMPTY; vec3 nearestAxis = vec3(0.0, 0.0, 1.0), nextAxis = nearestAxis;
+  for (int i = 0; i < TUNNELS; i++) {
+    if (float(i) >= uSewerCount.x) break;
+    vec4 a = sewerData(i, 0), b = sewerData(i, 1);
+    if (b.w < -99999.0 || abs(b.w - p.y) > 0.1) continue;
+    vec3 axis = normalize(b.xyz - a.xyz), centre = sewerAxisPoint(p, a.xyz, b.xyz);
+    if ((p.y - centre.y) * (p.y - centre.y) > a.w * a.w) continue;
+    float section = sqrt(max(0.0, a.w * a.w - (p.y - centre.y) * (p.y - centre.y)));
+    bool banked = sewerData(i, 2).y < 1.5 && abs(axis.y) < 0.1 && sewerData(i, 3).x < 0.5;
+    float d = length(p.xz - centre.xz) - section * (banked ? 0.64 : 1.0);
+    if (d < nearest) { next = nearest; nextAxis = nearestAxis; nearest = d; nearestAxis = axis; }
+    else if (d < next) { next = d; nextAxis = axis; }
+  }
+  float rounding = 3.0 * sqrt(max(0.0, 1.0 - abs(dot(nearestAxis, nextAxis))));
+  float h = max(rounding - abs(next - nearest), 0.0) / max(rounding, 0.00001);
+  return nearest - h * h * rounding * 0.25;
+}
+
+vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
   if (h.kind == 8) {
     if (dot(h.n, uWarningN.xyz) < 0.5) return vec3(0.045, 0.055, 0.045);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), uWarningN.xyz));
@@ -16832,21 +16858,19 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
     col = mix(col, vec3(0.035, 0.090, 0.024), scum * 0.47);
     col += vec3(0.010, 0.023, 0.010) * tube(wave - 1.2, 0.10, pixel * 0.5);
     float kind = sewerData(index, 2).y;
-    if (kind < 1.5 && abs(frame[2].y) < 0.1) {
+    if (kind < 1.5 && abs(frame[2].y) < 0.1 && sewerData(index, 3).x < 0.5) {
       // The outer portions of this already-solid ground plane are wet masonry ledges.
       // Keeping them at the exact water height preserves every collision and race proof.
-      float halfSection = sqrt(max(0.0, a.w * a.w - (p.y - axisPoint.y) * (p.y - axisPoint.y)));
-      float across = abs(dot(radial, frame[0])), channel = halfSection * 0.64;
-      float bank = smoothstep(channel - pixel, channel + pixel, across);
+      float edgeDistance = bankEdge, bank = smoothstep(-pixel, pixel, edgeDistance);
       vec2 tiles = vec2(dot(radial, frame[0]) / 1.5, along / 2.4);
       vec2 edges = min(fract(tiles), 1.0 - fract(tiles)) * vec2(1.5, 2.4);
       float joints = 1.0 - smoothstep(0.027, 0.06 + pixel, min(edges.x, edges.y));
       vec3 stone = vec3(0.11, 0.13, 0.12) * (0.78 + grain * 0.25) * (1.0 - joints * 0.66);
       stone = mix(stone, vec3(0.027, 0.066, 0.040), smoothstep(0.42, 0.75, grime) * 0.52);
-      float gutter = bandAA(across - channel - 0.65, 0.18, pixel);
+      float gutter = bandAA(edgeDistance - 0.65, 0.18, pixel);
       float slot = bandAA(mod(along + 0.16, 0.32) - 0.16, 0.06, pixel);
       stone *= 1.0 - gutter * (0.24 + slot * 0.71);
-      stone *= 1.0 - bandAA(across - channel - 0.11, 0.07, pixel) * 0.65;
+      stone *= 1.0 - bandAA(edgeDistance - 0.11, 0.07, pixel) * 0.65;
       stone *= light;
       stone += lampColour * spec * 0.18;
       col = mix(col, stone, bank);
@@ -16960,58 +16984,73 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
   return col * sewerVisibility(p);
 }
 
+// Inflow water is always full-width. Keep its primitive loop independent of bank searches.
+vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
+  return sewerSurface(h, p, rd, pixel, -EMPTY);
+}
+
 vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) {
-  vec4 result = vec4(0.0); float nearest = wall;
+  float nearest = wall; int selected = -1, chosenFace = 0; vec3 chosenNormal = vec3(0.0, 1.0, 0.0);
   depth = wall;
+  // Search only primitive planes here. Material/lighting functions run once after the search,
+  // keeping the Windows shader compiler from expanding them inside every lip-panel loop.
   for (int i = 0; i < INFLOWS; i++) {
     if (float(i) >= uSewerCount.w) break;
-    vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1);
-    vec3 axis = normalize(b.xyz - a.xyz), acrossAxis = vec3(-axis.z, 0.0, axis.x);
-    float lengthAB = length(b.xyz - a.xyz);
-    for (int face = 0; face < 2; face++) {
-      float denominator = face == 0 ? rd.y : dot(rd, axis);
+    vec4 a = sewerData(FLOW_BASE + i, 0), b = sewerData(FLOW_BASE + i, 1), lip = sewerData(FLOW_BASE + i, 3);
+    vec3 axis = normalize(b.xyz - a.xyz), side = vec3(-axis.z, 0.0, axis.x);
+    for (int face = 0; face < 4; face++) {
+      float left = -a.w + 2.0 * a.w * float(max(face - 1, 0)) / 3.0, right = left + 2.0 * a.w / 3.0;
+      float first = lip[max(face - 1, 0)], last = lip[max(face, 1)];
+      float dropSlope = sewerData(FLOW_BASE + i, 2).w / max(a.y - b.w, 0.0001);
+      vec3 normal = normalize(axis - side * (last - first) / max(right - left, 0.0001) + vec3(0.0, dropSlope, 0.0));
+      vec3 corner = a.xyz + axis * first + side * left;
+      float denominator = face == 0 ? rd.y : dot(rd, normal);
       if (abs(denominator) < 0.000001) continue;
-      float t = face == 0 ? (a.y - ro.y) / denominator : dot(b.xyz - ro, axis) / denominator;
+      float t = face == 0 ? (a.y - ro.y) / denominator : dot(corner - ro, normal) / denominator;
       if (t <= 0.001 || t > nearest + 0.005) continue;
       vec3 p = ro + rd * t;
-      float along = dot(p - a.xyz, axis), across = abs(dot(p - a.xyz, acrossAxis));
-      float pixel = max(t * pixAngle, 0.002);
-      if (across > a.w + pixel) continue;
-      float alpha = 1.0 - smoothstep(a.w - pixel, a.w + pixel, across);
-      vec3 colour; float opacity = 0.94;
+      float along = dot(p - a.xyz, axis), across = dot(p - a.xyz, side), pixel = max(t * pixAngle, 0.002);
+      if (abs(across) > a.w + pixel) continue;
       if (face == 0) {
-        if (along < -pixel || along > lengthAB + pixel) continue;
-        // The complete source water chord stays horizontal at its unchanged waterline.
-        SewerHit water; water.t = t; water.kind = 2; water.index = int(sewerData(FLOW_BASE + i, 2).z); water.n = vec3(0.0, 1.0, 0.0);
-        colour = sewerSurface(water, p, rd, pixel);
-        float streak = pulseAA(along / 1.6 - uSewerMotion * 0.85, 0.12, pixel / 1.6);
-        colour += vec3(0.006, 0.021, 0.008) * streak;
-        alpha *= smoothstep(-pixel, pixel, along) * (1.0 - smoothstep(lengthAB - pixel, lengthAB + pixel, along));
-      } else {
-        if (p.y < b.w - pixel || p.y > a.y + pixel) continue;
-        // At the lip, the same wide sheet falls as a thin curtain into the real collector.
-        // Its receiving height is rendering metadata; the underlying tunnel air is unchanged.
-        alpha *= smoothstep(b.w - pixel, b.w + pixel, p.y) * (1.0 - smoothstep(a.y - pixel, a.y + pixel, p.y));
-        vec3 n = -sign(denominator) * axis, lamp, lampColour;
-        vec3 light = sewerLighting(p, n, int(sewerData(FLOW_BASE + i, 2).z), lamp, lampColour);
-        float acrossCoordinate = dot(p - b.xyz, acrossAxis);
-        float grain = tnoise(vec3(acrossCoordinate * 1.8, p.y * 0.24 + uSewerMotion * 2.2, float(i) * 3.7));
-        float flowing = tnoise(vec3(acrossCoordinate * 0.45, p.y * 1.1 + uSewerMotion * 5.0, float(i) * 4.9));
-        float streams = pow(0.5 + 0.5 * sin(acrossCoordinate * 5.1 + grain * 4.2), 5.0);
-        colour = vec3(0.012, 0.057, 0.030) * (0.70 + grain * 0.55) * (light * 0.65 + 0.42);
-        colour += vec3(0.010, 0.037, 0.027) * streams * (0.30 + flowing * 0.65);
-        // A thin falling film exposes the damp masonry behind its irregular moving streaks.
-        opacity = 0.63 + flowing * 0.10;
-        vec3 delta = lamp - p;
-        float spec = pow(max(dot(reflect(-normalize(delta), n), -rd), 0.0), 22.0);
-        colour += lampColour * spec * 0.35 / (1.0 + length(delta) * 0.04);
-        colour += vec3(0.025, 0.067, 0.039) * tube(p.y - b.w, 0.20, pixel);
-      }
-      if (face != 0) colour *= sewerVisibility(p);
-      result = vec4(colour, alpha * opacity); nearest = t; depth = t;
+        float width = clamp((across / a.w + 1.0) * 1.5, 0.0, 3.0);
+        int part = min(int(floor(width)), 2);
+        if (along < -pixel || along > mix(lip[part], lip[part + 1], width - float(part)) + pixel) continue;
+      } else if (across < left - pixel || across > right + pixel || p.y < b.w - pixel || p.y > a.y + pixel) continue;
+      nearest = t; selected = i; chosenFace = face;
+      chosenNormal = face == 0 ? vec3(0.0, 1.0, 0.0) : -sign(denominator) * normal;
     }
   }
-  return result;
+  if (selected < 0) return vec4(0.0);
+  depth = nearest;
+  vec4 a = sewerData(FLOW_BASE + selected, 0), b = sewerData(FLOW_BASE + selected, 1);
+  vec3 axis = normalize(b.xyz - a.xyz), side = vec3(-axis.z, 0.0, axis.x), p = ro + rd * nearest;
+  float along = dot(p - a.xyz, axis), across = dot(p - a.xyz, side), pixel = max(nearest * pixAngle, 0.002);
+  float alpha = 1.0 - smoothstep(a.w - pixel, a.w + pixel, abs(across)), opacity = 0.94;
+  int source = int(sewerData(FLOW_BASE + selected, 2).z);
+  vec3 colour;
+  if (chosenFace == 0) {
+    // One uninterrupted source-water plane reaches the actual union lip. Neither this edge
+    // nor the adjacent curtain fades to zero, so their shared seam cannot become a gap.
+    SewerHit water; water.t = nearest; water.kind = 2; water.index = source; water.n = vec3(0.0, 1.0, 0.0);
+    colour = sewerSurface(water, p, rd, pixel);
+    float streak = pulseAA(along / 1.6 - uSewerMotion * 0.85, 0.12, pixel / 1.6);
+    colour += vec3(0.006, 0.021, 0.008) * streak;
+  } else {
+    alpha *= smoothstep(b.w - pixel, b.w + pixel, p.y);
+    vec3 lamp, lampColour, light = sewerLighting(p, chosenNormal, source, lamp, lampColour);
+    float grain = tnoise(vec3(across * 1.8, p.y * 0.24 + uSewerMotion * 2.2, float(selected) * 3.7));
+    float flowing = tnoise(vec3(across * 0.45, p.y * 1.1 + uSewerMotion * 5.0, float(selected) * 4.9));
+    float streams = pow(0.5 + 0.5 * sin(across * 5.1 + grain * 4.2), 5.0);
+    colour = vec3(0.012, 0.057, 0.030) * (0.70 + grain * 0.55) * (light * 0.65 + 0.42);
+    colour += vec3(0.010, 0.037, 0.027) * streams * (0.30 + flowing * 0.65);
+    opacity = 0.63 + flowing * 0.10;
+    vec3 delta = lamp - p;
+    float spec = pow(max(dot(reflect(-normalize(delta), chosenNormal), -rd), 0.0), 22.0);
+    colour += lampColour * spec * 0.35 / (1.0 + length(delta) * 0.04);
+    colour += vec3(0.025, 0.067, 0.039) * tube(p.y - b.w, 0.20, pixel);
+    colour *= sewerVisibility(p);
+  }
+  return vec4(colour, alpha * opacity);
 }
 
 // Curtains of falling water are the simulation's upright boxes, drawn as translucent moving
@@ -17060,7 +17099,8 @@ void main() {
   float pixAngle = 2.0 * uTanHalf.y / uRes.y;
   SewerHit hit = sewerTrace(ro, rd);
   vec3 fog = mix(uThemeFog, vec3(0.0002, 0.0004, 0.00035), uSewerDarkness);
-  vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002)) : fog * 0.7;
+  float bankEdge = hit.kind == 2 ? sewerBankDistance(ro + rd * hit.t) : -EMPTY;
+  vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002), bankEdge) : fog * 0.7;
   float beam = sewerFlashlight(ro + rd * hit.t);
   float haze = 1.0 - exp(-hit.t * mix(0.0105, 0.003, beam * uUnderwater));
   col = mix(col, fog, haze);
@@ -17140,17 +17180,106 @@ function mazeFeatures(world, cam) {
 // Each source inlet and inflow share their mouth. Derive rendering from that actual cylinder;
 // the old decorative descending capsule must not determine either the width or water height.
 function inflowSheets(world) {
+  const distance = (p, tube) => {
+    const d = tube.b.map((v, i) => v - tube.a[i]), q = p.map((v, i) => v - tube.a[i]);
+    const t = Math.max(0, Math.min(1, q.reduce((sum, v, i) => sum + v * d[i], 0) / Math.max(1e-12, d.reduce((sum, v) => sum + v * v, 0))));
+    return Math.hypot(...q.map((v, i) => v - d[i] * t));
+  };
   const inlets = world.tunnels.map((tube, index) => ({ tube, index })).filter(({ tube }) => tube.kind === 'inlet');
   return (world.inflows || []).flatMap(flow => {
     const source = inlets.find(({ tube }) => tube.a.every((v, i) => Math.abs(v - flow.a[i]) < 1e-5));
     if (!source || !Number.isFinite(source.tube.water)) return [];
     const { tube, index } = source, dx = tube.b[0] - tube.a[0], dz = tube.b[2] - tube.a[2], length = Math.hypot(dx, dz);
     if (length < 1e-5) return [];
-    const a = [tube.a[0], tube.water, tube.a[2]];
-    const radius = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2));
-    const receivingWater = flow.b[1] - 0.6; // Existing generation stores collector water +0.6.
-    return [{ a, b: [a[0] - dx / length * 7, a[1], a[2] - dz / length * 7], radius,
-      receivingWater, source: index }];
+    const receivingWater = flow.b[1] - 0.6, axis = [-dx / length, 0, -dz / length], side = [-axis[2], 0, axis[0]];
+    const chord = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2));
+    const receivers = world.tunnels.filter(other => other !== tube && other.kind !== 'inlet'
+      && Number.isFinite(other.water) && Math.abs(other.water - receivingWater) < 0.01
+      && distance(tube.a, other) < other.radius + tube.radius + 12);
+    if (!receivers.length || chord < 0.001) return [];
+    const point = (along, across) => [tube.a[0] + axis[0] * along + side[0] * across, tube.water,
+      tube.a[2] + axis[2] * along + side[2] * across];
+    // The inlet's nominal endpoint is buried in the collector's curved wall. Find the actual
+    // air-union rim at each side coordinate; a fixed extension leaves a floating waterfall.
+    const seam = across => {
+      const inside = along => receivers.some(other => distance(point(along, across), other) <= other.radius);
+      let before = -Math.min(length * 0.5, tube.radius * 4 + 8);
+      if (inside(before)) return null;
+      const limit = tube.radius * 4 + Math.max(...receivers.map(other => other.radius)) + 8;
+      for (let after = before + 0.5; after <= limit; after += 0.5) {
+        if (!inside(after)) { before = after; continue; }
+        for (let k = 0; k < 24; k++) {
+          const middle = (before + after) * 0.5;
+          if (inside(middle)) after = middle; else before = middle;
+        }
+        return { along: after, p: point(after, across) };
+      }
+      return null;
+    };
+    const roots = [-chord, 0, chord].map(seam).filter(Boolean);
+    if (!roots.length) return [];
+    const start = Math.min(...roots.map(value => value.along)) - 1;
+    const open = across => {
+      const edge = seam(across);
+      return edge && distance(edge.p, tube) <= tube.radius + 1e-7 && distance(point(start, across), tube) <= tube.radius + 1e-7;
+    };
+    if (!open(0)) return [];
+    // Rounded caps can bury the outer corners of the nominal chord in masonry. Use the
+    // complete visible opening, rather than drawing water through those solid corners.
+    const edge = sign => {
+      if (open(sign * chord)) return sign * chord;
+      let inner = 0, outer = chord;
+      for (let k = 0; k < 24; k++) {
+        const middle = (inner + outer) * 0.5;
+        if (open(sign * middle)) inner = middle; else outer = middle;
+      }
+      return sign * inner;
+    };
+    const left = edge(-1), right = edge(1), radius = (right - left) * 0.5, centre = (left + right) * 0.5;
+    if (radius < 0.001) return [];
+    const profile = Array.from({ length: 4 }, (_, k) => seam(left + (right - left) * k / 3));
+    if (profile.some(value => !value)) return [];
+    // Adjacent receiver capsules can make a concave rim. Keep the three linear panels on
+    // its air side, with a small measured cushion instead of leaving a gap into masonry.
+    let curvePad = 0;
+    for (let k = 0; k <= 48; k++) {
+      const span = k / 16, part = Math.min(2, Math.floor(span)), f = span - part;
+      const actual = seam(left + (right - left) * span / 3);
+      if (!actual) return [];
+      curvePad = Math.max(curvePad, actual.along - (profile[part].along * (1 - f) + profile[part + 1].along * f));
+    }
+    const spill = 0.23 + curvePad;
+    const lip = profile.map(value => value.along + spill - start), a = point(start, centre);
+    const b = a.map((v, i) => v + axis[i] * Math.max(...lip));
+    // Land inside the receiving water channel, never on its service banks. A conservative
+    // individual capsule test stays inside the rounded channel union used by both renderers.
+    const channel = p => receivers.some(other => {
+      const d = other.b.map((v, i) => v - other.a[i]), q = p.map((v, i) => v - other.a[i]);
+      const length2 = Math.max(1e-12, d.reduce((sum, v) => sum + v * v, 0));
+      const t = Math.max(0, Math.min(1, q.reduce((sum, v, i) => sum + v * d[i], 0) / length2));
+      const height = q[1] - d[1] * t, half = Math.sqrt(Math.max(0, other.radius ** 2 - height ** 2));
+      const banked = !other.flooded && Math.abs(d[1]) / Math.sqrt(length2) < 0.1
+        && !/shaft|vertical|chamber|riser|drop/.test(other.kind || '');
+      return Math.hypot(q[0] - d[0] * t, q[2] - d[2] * t) <= half * (banked ? 0.64 : 1) - 0.1;
+    });
+    const lower = (k, travel) => {
+      const u = Math.min(2, Math.floor(k)), end = lip[u] * (1 - k + u) + lip[u + 1] * (k - u);
+      const p = point(start + end + travel, left + (right - left) * k / 3); p[1] = receivingWater; return p;
+    };
+    let dropTravel = 0;
+    for (let k = 0; k <= 24; k++) {
+      let before = 0, after = 0, limit = Math.max(...receivers.map(other => other.radius)) * 4 + chord;
+      while (after <= limit && !channel(lower(k / 8, after))) { before = after; after += 0.5; }
+      if (after > limit) return [];
+      for (let j = 0; j < 20; j++) {
+        const middle = (before + after) * 0.5;
+        if (channel(lower(k / 8, middle))) after = middle; else before = middle;
+      }
+      dropTravel = Math.max(dropTravel, after);
+    }
+    dropTravel += 0.1;
+    if (Array.from({ length: 25 }, (_, k) => k / 8).some(k => !channel(lower(k, dropTravel)))) return [];
+    return [{ a, b, axis, side, radius, lip, spill, dropTravel, seam: profile.map(value => value.p), receivingWater, source: index }];
   });
 }
 
@@ -17193,8 +17322,10 @@ function create(gfx) {
         put(base, 0, [...value.a, value.radius]);
         put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : group === 3 ? value.receivingWater : 0]);
         const kind = group === 1 ? PIPE_MATERIALS[value.kind] || 0 : value.kind === 'inlet' ? 3 : /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
-        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index, group === 0 && value.dark ? 1 : 0]);
+        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index,
+          group === 3 ? value.dropTravel : group === 0 && value.dark ? 1 : 0]);
         if (group === 0) put(base, 3, [value.flooded ? 1 : 0, 0, 0, 0]);
+        if (group === 3) put(base, 3, value.lip);
       }
     }));
     fans.forEach(({ value: fan }, slot) => {
@@ -19004,19 +19135,69 @@ function shellMesh(builder, tube) {
   }
 }
 
+const bankedTube = tube => Number.isFinite(tube.water) && !tube.flooded && Math.abs(tube.axis[1]) < 0.1
+  && tube.kind !== 'inlet' && !/shaft|vertical|chamber|riser|drop/.test(tube.kind || '');
+
+// The open channel is the union of narrowed, round-ended water capsules. A neighbouring
+// inlet/chamber contributes its entire free surface, so a bank can never bridge its mouth.
+function bankDistance(tube, p) {
+  let nearest = Infinity, next = Infinity, nearestAxis = [0, 0, 1], nextAxis = nearestAxis;
+  const channels = tube.bankChannels || (tube.bankChannels = [tube, ...tube.neighbours]
+    .filter(bore => Number.isFinite(bore.water) && Math.abs(bore.water - tube.water) <= 0.1)
+    .map(bore => ({ a: bore.a, d: bore.delta, length2: bore.length2, axis: bore.axis,
+      radius2: bore.radius * bore.radius, fraction: bankedTube(bore) ? 0.64 : 1 })));
+  for (const bore of channels) {
+    const x = p[0] - bore.a[0], y = p[1] - bore.a[1], z = p[2] - bore.a[2];
+    const t = clamp((x * bore.d[0] + y * bore.d[1] + z * bore.d[2]) / bore.length2, 0, 1);
+    const height = y - bore.d[1] * t;
+    if (height * height > bore.radius2) continue;
+    const d = Math.hypot(x - bore.d[0] * t, z - bore.d[2] * t)
+      - Math.sqrt(Math.max(0, bore.radius2 - height * height)) * bore.fraction;
+    if (d < nearest) { next = nearest; nextAxis = nearestAxis; nearest = d; nearestAxis = bore.axis; }
+    else if (d < next) { next = d; nextAxis = bore.axis; }
+  }
+  // Round the inner elbow as well as the outer capsule cap. Parallel segments remain flat.
+  const alignment = nearestAxis[0] * nextAxis[0] + nearestAxis[1] * nextAxis[1] + nearestAxis[2] * nextAxis[2];
+  const round = 3 * Math.sqrt(Math.max(0, 1 - Math.abs(alignment)));
+  if (round < 0.00001) return nearest;
+  const h = Math.max(round - Math.abs(next - nearest), 0) / round;
+  return nearest - h * h * round * 0.25;
+}
+
 function waterMesh(builder, tube) {
   if (tube.water === null || tube.water === undefined
     || tube.water < Math.min(tube.a[1], tube.b[1]) - tube.radius
     || tube.water > Math.max(tube.a[1], tube.b[1]) + tube.radius) return;
-  const emit = tri => {
-    const c = centroid(tri), horizontal = Math.hypot(tube.delta[0], tube.delta[2]);
-    let colour = tube.look.water, material = 3;
-    if (horizontal > 0.1 && tube.kind !== 'inlet' && !tube.flooded) {
-      const side = [-tube.delta[2] / horizontal, 0, tube.delta[0] / horizontal];
-      const section = Math.sqrt(Math.max(0, tube.radius ** 2 - (c[1] - axisPoint(tube, c)[1]) ** 2));
-      if (Math.abs(dot(sub(c, axisPoint(tube, c)), side)) > section * 0.64) { colour = [0.12, 0.15, 0.135]; material = 5; }
+  const paint = (tri, bank) => builder.triangle(...tri, bank ? [0.12, 0.15, 0.135] : tube.look.water, [0, 1, 0], bank ? 5 : 3);
+  const emit = (tri, depth = 0) => {
+    if (!bankedTube(tube)) { paint(tri, false); return; }
+    const values = tri.map(p => bankDistance(tube, p));
+    const ab = middle(tri[0], tri[1]), bc = middle(tri[1], tri[2]), ca = middle(tri[2], tri[0]);
+    const samples = [ab, bc, ca, centroid(tri)].map(p => bankDistance(tube, p));
+    if (values.every(v => v <= EPS) && samples.every(v => v <= EPS)) { paint(tri, false); return; }
+    if (values.every(v => v >= -EPS) && samples.every(v => v >= -EPS)) { paint(tri, true); return; }
+    const bend = Math.max(Math.abs(samples[0] - (values[0] + values[1]) * 0.5),
+      Math.abs(samples[1] - (values[1] + values[2]) * 0.5), Math.abs(samples[2] - (values[2] + values[0]) * 0.5),
+      Math.abs(samples[3] - (values[0] + values[1] + values[2]) / 3));
+    const edge = Math.sqrt(Math.max(distance2(tri[0], tri[1]), distance2(tri[1], tri[2]), distance2(tri[2], tri[0])));
+    if (depth < 5 && edge > 1.5 && bend > 0.045) {
+      for (const piece of [[tri[0], ab, ca], [ab, tri[1], bc], [ca, bc, tri[2]], [ab, bc, ca]]) emit(piece, depth + 1);
+      return;
     }
-    builder.triangle(...tri, colour, [0, 1, 0], material);
+    for (const bank of [false, true]) {
+      // Once a contour is locally straight, one shared linear edge cut gives both materials
+      // exactly matching vertices. Avoid sixteen repeated network searches per clipped edge.
+      const poly = [], sign = bank ? 1 : -1;
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k], b = tri[(k + 1) % 3], da = values[k] * sign, db = values[(k + 1) % 3] * sign;
+        if (da >= 0) poly.push(a);
+        if ((da >= 0) !== (db >= 0)) {
+          const t = da / (da - db);
+          poly.push([a[0] + (b[0] - a[0]) * t, a[1], a[2] + (b[2] - a[2]) * t]);
+        }
+      }
+      for (let i = 1; i < poly.length - 1; i++) paint([poly[0], poly[i], poly[i + 1]], bank);
+    }
   };
   // A wet bore's free surface stays visible even where its mouth overlaps neighbouring air.
   const neighbours = tube.flooded ? [] : tube.neighbours.filter(n => !n.flooded);
@@ -19065,24 +19246,120 @@ function waterMesh(builder, tube) {
 }
 
 function inflowSheets(world) {
+  const distance = (p, tube) => {
+    const d = tube.b.map((v, i) => v - tube.a[i]), q = p.map((v, i) => v - tube.a[i]);
+    const t = Math.max(0, Math.min(1, q.reduce((sum, v, i) => sum + v * d[i], 0) / Math.max(1e-12, d.reduce((sum, v) => sum + v * v, 0))));
+    return Math.hypot(...q.map((v, i) => v - d[i] * t));
+  };
   const inlets = world.tunnels.map((tube, index) => ({ tube, index })).filter(({ tube }) => tube.kind === 'inlet');
   return (world.inflows || []).flatMap(flow => {
     const source = inlets.find(({ tube }) => tube.a.every((v, i) => Math.abs(v - flow.a[i]) < 1e-5));
     if (!source || !Number.isFinite(source.tube.water)) return [];
     const { tube, index } = source, dx = tube.b[0] - tube.a[0], dz = tube.b[2] - tube.a[2], length = Math.hypot(dx, dz);
     if (length < 1e-5) return [];
-    const a = [tube.a[0], tube.water, tube.a[2]], axis = [-dx / length, 0, -dz / length];
-    return [{ a, b: add(a, scale(axis, 7)), axis, side: [-axis[2], 0, axis[0]],
-      radius: Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2)), receivingWater: flow.b[1] - 0.6, source: index }];
+    const receivingWater = flow.b[1] - 0.6, axis = [-dx / length, 0, -dz / length], side = [-axis[2], 0, axis[0]];
+    const chord = Math.sqrt(Math.max(0, tube.radius ** 2 - (tube.water - tube.a[1]) ** 2));
+    const receivers = world.tunnels.filter(other => other !== tube && other.kind !== 'inlet'
+      && Number.isFinite(other.water) && Math.abs(other.water - receivingWater) < 0.01
+      && distance(tube.a, other) < other.radius + tube.radius + 12);
+    if (!receivers.length || chord < 0.001) return [];
+    const point = (along, across) => [tube.a[0] + axis[0] * along + side[0] * across, tube.water,
+      tube.a[2] + axis[2] * along + side[2] * across];
+    // The inlet's nominal endpoint is buried in the collector's curved wall. Find the actual
+    // air-union rim at each side coordinate; a fixed extension leaves a floating waterfall.
+    const seam = across => {
+      const inside = along => receivers.some(other => distance(point(along, across), other) <= other.radius);
+      let before = -Math.min(length * 0.5, tube.radius * 4 + 8);
+      if (inside(before)) return null;
+      const limit = tube.radius * 4 + Math.max(...receivers.map(other => other.radius)) + 8;
+      for (let after = before + 0.5; after <= limit; after += 0.5) {
+        if (!inside(after)) { before = after; continue; }
+        for (let k = 0; k < 24; k++) {
+          const middle = (before + after) * 0.5;
+          if (inside(middle)) after = middle; else before = middle;
+        }
+        return { along: after, p: point(after, across) };
+      }
+      return null;
+    };
+    const roots = [-chord, 0, chord].map(seam).filter(Boolean);
+    if (!roots.length) return [];
+    const start = Math.min(...roots.map(value => value.along)) - 1;
+    const open = across => {
+      const edge = seam(across);
+      return edge && distance(edge.p, tube) <= tube.radius + 1e-7 && distance(point(start, across), tube) <= tube.radius + 1e-7;
+    };
+    if (!open(0)) return [];
+    // Rounded caps can bury the outer corners of the nominal chord in masonry. Use the
+    // complete visible opening, rather than drawing water through those solid corners.
+    const edge = sign => {
+      if (open(sign * chord)) return sign * chord;
+      let inner = 0, outer = chord;
+      for (let k = 0; k < 24; k++) {
+        const middle = (inner + outer) * 0.5;
+        if (open(sign * middle)) inner = middle; else outer = middle;
+      }
+      return sign * inner;
+    };
+    const left = edge(-1), right = edge(1), radius = (right - left) * 0.5, centre = (left + right) * 0.5;
+    if (radius < 0.001) return [];
+    const profile = Array.from({ length: 4 }, (_, k) => seam(left + (right - left) * k / 3));
+    if (profile.some(value => !value)) return [];
+    // Adjacent receiver capsules can make a concave rim. Keep the three linear panels on
+    // its air side, with a small measured cushion instead of leaving a gap into masonry.
+    let curvePad = 0;
+    for (let k = 0; k <= 48; k++) {
+      const span = k / 16, part = Math.min(2, Math.floor(span)), f = span - part;
+      const actual = seam(left + (right - left) * span / 3);
+      if (!actual) return [];
+      curvePad = Math.max(curvePad, actual.along - (profile[part].along * (1 - f) + profile[part + 1].along * f));
+    }
+    const spill = 0.23 + curvePad;
+    const lip = profile.map(value => value.along + spill - start), a = point(start, centre);
+    const b = a.map((v, i) => v + axis[i] * Math.max(...lip));
+    // Land inside the receiving water channel, never on its service banks. A conservative
+    // individual capsule test stays inside the rounded channel union used by both renderers.
+    const channel = p => receivers.some(other => {
+      const d = other.b.map((v, i) => v - other.a[i]), q = p.map((v, i) => v - other.a[i]);
+      const length2 = Math.max(1e-12, d.reduce((sum, v) => sum + v * v, 0));
+      const t = Math.max(0, Math.min(1, q.reduce((sum, v, i) => sum + v * d[i], 0) / length2));
+      const height = q[1] - d[1] * t, half = Math.sqrt(Math.max(0, other.radius ** 2 - height ** 2));
+      const banked = !other.flooded && Math.abs(d[1]) / Math.sqrt(length2) < 0.1
+        && !/shaft|vertical|chamber|riser|drop/.test(other.kind || '');
+      return Math.hypot(q[0] - d[0] * t, q[2] - d[2] * t) <= half * (banked ? 0.64 : 1) - 0.1;
+    });
+    const lower = (k, travel) => {
+      const u = Math.min(2, Math.floor(k)), end = lip[u] * (1 - k + u) + lip[u + 1] * (k - u);
+      const p = point(start + end + travel, left + (right - left) * k / 3); p[1] = receivingWater; return p;
+    };
+    let dropTravel = 0;
+    for (let k = 0; k <= 24; k++) {
+      let before = 0, after = 0, limit = Math.max(...receivers.map(other => other.radius)) * 4 + chord;
+      while (after <= limit && !channel(lower(k / 8, after))) { before = after; after += 0.5; }
+      if (after > limit) return [];
+      for (let j = 0; j < 20; j++) {
+        const middle = (before + after) * 0.5;
+        if (channel(lower(k / 8, middle))) after = middle; else before = middle;
+      }
+      dropTravel = Math.max(dropTravel, after);
+    }
+    dropTravel += 0.1;
+    if (Array.from({ length: 25 }, (_, k) => k / 8).some(k => !channel(lower(k, dropTravel)))) return [];
+    return [{ a, b, axis, side, radius, lip, spill, dropTravel, seam: profile.map(value => value.p), receivingWater, source: index }];
   });
 }
 
 function flowMesh(builder, sheet) {
-  const a = add(sheet.a, scale(sheet.side, -sheet.radius)), b = add(sheet.a, scale(sheet.side, sheet.radius));
-  const c = add(sheet.b, scale(sheet.side, sheet.radius)), d = add(sheet.b, scale(sheet.side, -sheet.radius));
-  builder.quad(a, b, c, d, [0.026, 0.11, 0.055, 0.80], [0, 1, 0], 3);
-  const floorC = [c[0], sheet.receivingWater, c[2]], floorD = [d[0], sheet.receivingWater, d[2]];
-  builder.quad(d, c, floorC, floorD, [0.035, 0.15, 0.085, 0.65], scale(sheet.axis, -1), 3);
+  const profile = sheet.lip || Array(4).fill(Math.hypot(...sub(sheet.b, sheet.a)));
+  for (let k = 0; k < 3; k++) {
+    const left = -sheet.radius + sheet.radius * 2 * k / 3, right = -sheet.radius + sheet.radius * 2 * (k + 1) / 3;
+    const a = add(sheet.a, scale(sheet.side, left)), b = add(sheet.a, scale(sheet.side, right));
+    const d = add(a, scale(sheet.axis, profile[k])), c = add(b, scale(sheet.axis, profile[k + 1]));
+    builder.quad(a, b, c, d, [0.026, 0.11, 0.055, 0.80], [0, 1, 0], 3);
+    const floorC = add(c, scale(sheet.axis, sheet.dropTravel || 0)), floorD = add(d, scale(sheet.axis, sheet.dropTravel || 0));
+    floorC[1] = floorD[1] = sheet.receivingWater;
+    builder.quad(d, c, floorC, floorD, [0.035, 0.15, 0.085, 0.65], unit(cross(sub(c, d), sub(floorD, d))), 3);
+  }
 }
 
 function lampMesh(builder, tube) {
@@ -19392,7 +19669,8 @@ function create(gfx) {
     dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(cueMesh); mesh.dispose(warning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
-GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, warningMesh, stride: STRIDE };
+GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, warningMesh,
+  bankDistance: (world, p, index = 0) => bankDistance(prepare(world)[index], p), stride: STRIDE };
 
 })();
 

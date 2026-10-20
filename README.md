@@ -167,7 +167,7 @@ connecting tunnels, and winding upward/downward chambers. Dodge round pipes and 
 ordinary murky green water causes a crash, like the street above. Marked flooded sections let
 you dive into wide underwater mazes. A big red arrow painted on a barricade points down into
 the water; the barrier and submerged tunnel roofs prevent staying above the maze. At each
-fork, bright cyan lights with soft halos mark the correct passage and lead toward the outlet.
+fork, bright cyan lights with soft halos sit clearly inside the correct passage and lead toward the outlet.
 An iron shutter closes behind the dive, so only that outlet leads back into air. Wrong branches
 have capped turning rooms so you can turn back. Underwater service pipes add solid obstacles
 with generous clearance. Race rings and navigation arrows stay hidden underwater.
@@ -181,6 +181,8 @@ Normal tunnels also split into passages during flight: one dry fork on Easy/Medi
 Hard and three on Extreme. Large red skulls painted onto solid lintels mark the wrong
 entrances, including underwater forks. The other passage continues the race; capped wrong
 branches have enough room to turn back. Normal rings and guidance remain visible in air.
+Tiled walkways follow rounded channel edges through bends and joins. Water from side pipes
+starts at the visible mouth and falls directly from its curved rim, without a detached gap.
 Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Each room
 also has 2/3/4/5 rotating sweeper poles on Easy/Medium/Hard/Extreme, with increasing speeds
 and alternating directions. Hard and
@@ -194,7 +196,7 @@ Completing Collapse gives 2.5 seconds of black, the white **The Sewer** chapter 
 the Sewer menu directly. The menu previews the actual starting
 tunnel, keeping the same scenery through **3, 2, 1, Go**. Brickwork, arch detail, lamps, services,
 stone ledges and drains carry the menu's detail into the course. Side flows match their inlet's
-flat waterline and full width before spilling into the lower collector. The manhole menu button
+flat waterline and visible opening before spilling into the lower collector. The manhole menu button
 switches between the Sewer and the surface. **Undertow** provides the underground soundtrack.
 
 Arctic Dawn has snowy trees and frozen fountains. Surface rain and snow stay above ground.
