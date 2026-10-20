@@ -139,8 +139,9 @@ surface music preference returns when you go back up. Existing boosts, keys, sta
 spending are preserved; cosmetic purchases do not change medals or count as assisted flights.
 Themes purchased before the price update retain their original payment in the wallet ledger.
 
-The Gear tab also sells a **Flashlight** for **5 stars**, giving **five Sewer flights** with space
-for 15 uses. One use lights your next Sewer flight automatically and lasts until you crash,
+The Gear tab also sells a **Flashlight** for **5 stars**, giving **five Sewer flights**, displayed
+as **5 / 5 uses left**. Equip or unequip it in the Shop; Buy returns when it runs out.
+Previously paid spare lights stay available. An equipped light uses one charge on Sewer Fly and lasts until you crash,
 finish or leave. Pause/resume keeps the same use; surface flights and automatic crash restarts
 never consume another. Existing unused lights gain five uses each without changing past
 spending. The underwater beam is wider and stronger and cuts through the murk.
@@ -171,21 +172,23 @@ fork, bright cyan lights with soft halos sit clearly inside the correct passage 
 An iron shutter closes behind the dive, so only that outlet leads back into air. Wrong branches
 have capped turning rooms so you can turn back. Underwater service pipes add solid obstacles
 with generous clearance. Race rings and navigation arrows stay hidden underwater.
-An oxygen bar holds **40 seconds** of air and refills after surfacing. Pause freezes it;
+An oxygen bar holds **26 seconds** of air and refills after surfacing. Pause freezes it;
 running out restarts the course. Mazes occur occasionally on Easy/Medium, twice on Hard and
-three times on Extreme. Every underground crash restarts
+three times on Extreme. Rising currents carry the outlet climb through the surface while
+restoring normal cruising speed. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
-underground, with records kept separate from the city. The new layout uses version-6 Sewer
+underground, with records kept separate from the city. The new layout uses version-7 Sewer
 records; existing Extreme unlocks, saved stars and shop purchases stay intact.
 Normal tunnels also split into passages during flight: one dry fork on Easy/Medium, two on
-Hard and three on Extreme. Large red skulls painted onto solid lintels mark the wrong
-entrances, including underwater forks. The other passage continues the race; capped wrong
+Hard and three on Extreme. Large red skulls painted onto wooden sluice barricades mark the wrong
+entrances in dry tunnels. Only cyan lights mark the underwater route. Capped wrong
 branches have enough room to turn back. Normal rings and guidance remain visible in air.
 Tiled walkways follow rounded channel edges through bends and joins. Water from side pipes
 starts at the visible mouth and falls directly from its curved rim, without a detached gap.
 Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Each room
-also has 2/3/4/5 rotating sweeper poles on Easy/Medium/Hard/Extreme, with increasing speeds
-and alternating directions. Hard and
+has 1/2/3/3 full crossing fans, 2/3/4/4 rotating sweeper poles, and 2/3/4/5 surging waterfall
+obstacles on Easy/Medium/Hard/Extreme. Damaged pipe holes spray smaller decorative water jets,
+and chipped rims and cracks surround the outlets. Hard and
 Extreme include sections with failed lights, leaving rings and nearby obstacles visible; a
 flashlight reveals the tunnel ahead. Actual scene lighting fades over about 0.8 seconds in
 both directions. Easy and Medium keep working lights. Sewer courses have

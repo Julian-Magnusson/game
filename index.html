@@ -670,9 +670,9 @@
       <p class="surface-rules">Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p class="surface-rules">Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
       <p class="sewer-rules">Follow the rings through collectors, connecting tunnels and shafts. Moving air supports a level glide; rising shafts have an updraft. Watch for rotating poles in the big shafts. Ordinary green water, walls and obstacles cause a crash.</p>
-      <p class="sewer-rules">Tunnels can split into two passages above or below the water. A <b>large red skull painted above an entrance</b> marks the dead end. Follow the other passage; the wrong branch has room to turn back.</p>
+      <p class="sewer-rules">Tunnels can split into two passages above or below the water. In dry tunnels, a <b>red skull painted on a wooden barricade</b> marks the dead end. Underwater, follow the cyan lights into the correct passage.</p>
       <p class="sewer-rules">Red painted downward arrows mark flooded mazes. Dive below the barricades; the entrance shutter closes behind you. Follow the <b>bright cyan lights</b> through the forks to the <b>single air outlet</b>, and dodge the pipes underwater.</p>
-      <p class="sewer-rules">Your <strong>40 seconds of oxygen</strong> refill in air; running out causes a crash and full course restart. Unlit sections fade into darkness and back out again. A flashlight lights up nearby obstacles and reaches much farther underwater.</p>
+      <p class="sewer-rules">Your <strong>26 seconds of oxygen</strong> refill in air; running out causes a crash and full course restart. Unlit sections fade into darkness and back out again. A flashlight lights up nearby obstacles and reaches much farther underwater.</p>
       <p class="surface-rules">A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
       <p class="sewer-rules">A missed gate adds <strong>2 seconds</strong>. Any crash restarts the entire course with a fresh timer.</p>
       <p class="surface-rules">Flying far off course warns you, then returns you with an extra <strong>5 seconds</strong>.</p>
@@ -681,7 +681,7 @@
     <section class="info-section"><h3>Star shop</h3>
       <p>Open <b>Shop</b> from the menu or pause screen. Spend <b>2 stars</b> on a <b>Lift Boost</b>, then press <b>Space</b> or tap <b>LIFT</b> during flight for a burst of height. Carry three; use one per flight. Unused boosts stay in your inventory.</p>
       <p>Using one makes the flight <strong>assisted</strong>: stars still save when you finish, but medals, best times and Extreme unlocks require flying without a purchased boost.</p>
-      <p class="sewer-rules">A <b>Flashlight</b> costs <b>5 stars</b> for <b>five Sewer flights</b>. Each Fly uses one charge, lasting until you crash, finish or leave. Pause keeps the same light; surface flights keep your saved charges.</p>
+      <p class="sewer-rules">A <b>Flashlight</b> costs <b>5 stars</b> for <b>five Sewer flights</b>. Equip or unequip it in the Shop. An equipped Sewer Fly uses one charge, lasting until you crash, finish or leave. Pause keeps the same light; surface flights keep your saved charges.</p>
     </section>
     <section class="info-section"><h3>Difficulty</h3>
       <ul class="info-difficulties surface-rules">
@@ -754,7 +754,7 @@
           <path d="M32 9V3M18 10L14 6M46 10L50 6" stroke-width="2"/>
         </g>
       </svg>
-      <div class="shop-key-copy"><span class="shop-badge">Sewer gear · five uses</span><h3>Flashlight</h3><strong id="shop-flashlight-owned">0 / 15 uses left</strong><p>Five Sewer flights per light. One use starts with Fly and lasts until you crash, finish or leave. Surface flights keep your uses saved.</p></div>
+      <div class="shop-key-copy"><span class="shop-badge">Sewer gear · five uses</span><h3>Flashlight</h3><strong id="shop-flashlight-owned">0 / 5 uses left</strong><p>Five Sewer flights per light. Equip or unequip it here. An equipped Sewer flight uses one charge, lasting until you crash, finish or leave. Surface flights keep your uses saved.</p></div>
       <strong id="shop-flashlight-price">★ 5</strong><button id="shop-flashlight-buy" class="btn" type="button">buy light · 5 ★</button>
     </article>
     <article class="shop-key-item">
@@ -5388,6 +5388,7 @@ const LOW_ROUTE_GAP = 12;  // a tower hit this far below the intended line can b
 const MEDALS = [['diamond', 1], ['gold', 1.05], ['silver', 1.2], ['bronze', 1.4]];
 
 function create(city, course) {
+  const oxygen = GAME.sewerCourse?.OXYGEN ?? 26;
   return {
     city, course,
     glider: GAME.flight.create(course.start, course.difficulty),
@@ -5401,8 +5402,8 @@ function create(city, course) {
     used: new Set(),      // boosters unavailable on this attempt (also used by the test pilot to skip one)
     taken: new Set(),     // boosters actually collected since the last return before them
     stars: new Set(),     // never re-armed by a crash; the browser also restores previously banked stars
-    ...(course.environment === 'sewer' ? { oxygen: 40, maxOxygen: 40, underwater: false,
-      underwaterTime: 0, minimumOxygen: 40, mazeSeals: [] } : {}),
+    ...(course.environment === 'sewer' ? { oxygen, maxOxygen: oxygen, underwater: false,
+      underwaterTime: 0, minimumOxygen: oxygen, mazeSeals: [] } : {}),
     crashed: null, finished: false,
   };
 }
@@ -8840,7 +8841,7 @@ GAME.collapse = { prepare, begin, entryGlider, step, steer, approachSteer, prove
 // A connected underground network. Collision and rendering share the same round tunnel union:
 // ordinary water clips the dry air, while explicit flooded mazes stay enclosed and swimmable.
 const SAMPLE = 4, DT = 1 / 120;
-const OXYGEN = 40, OXYGEN_REFILL = 8;
+const OXYGEN = 26, OXYGEN_REFILL = 8, EXIT_RECOVERY = 3;
 const SHUTTER_SECONDS = 0.65;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
@@ -8853,20 +8854,20 @@ const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const PROFILES = {
   easy: { main: 32, side: 27, gate: 10.5, pipe: 1.5, gap: 0, connectors: [5, 6], shafts: 2, shaftExtra: 0, turn: [124, 140],
     straight: [260, 360], spacing: 150, ease: 60, dirt: 12, dirtSpacing: 100, cableLow: 0, clearance: 14,
-    weave: 0, curtains: [8, 11], pathCurtains: 0, shaftFans: 0, shaftOmega: 0, hubHole: 0, bladeOmega: 0,
-    hazards: { pipe: 1 } },
+    weave: 0, curtains: [8, 11], pathCurtains: 0, shaftFans: 1, shaftOmega: 0.16, hubHole: 11.5, bladeOmega: 0,
+    hazards: { pipe: 3, hub: 2 } },
   medium: { main: 26, side: 21, gate: 8, pipe: 1.8, gap: 12, connectors: [6, 7], shafts: 2, shaftExtra: 0, turn: [112, 128],
     straight: [220, 320], spacing: 92, ease: 56, dirt: 24, dirtSpacing: 66, cableLow: 0, clearance: 7.5,
-    weave: 12, curtains: [10, 14], pathCurtains: 2, shaftFans: 0, shaftOmega: 0, hubHole: 6.6, bladeOmega: 0,
-    hazards: { pipe: 5, cable: 2, falls: 2, hub: 1.5 } },
+    weave: 12, curtains: [10, 14], pathCurtains: 2, shaftFans: 2, shaftOmega: 0.24, hubHole: 6.6, bladeOmega: 0,
+    hazards: { pipe: 4, cable: 2, falls: 2, hub: 3 } },
   hard: { main: 21, side: 17, gate: 6.2, pipe: 2.1, gap: 10, connectors: [8, 9], shafts: 3, shaftExtra: 10, turn: [106, 120],
     straight: [190, 280], spacing: 62, ease: 46, dirt: 34, dirtSpacing: 50, cableLow: 0.3, clearance: 6,
-    weave: 10, curtains: [12, 16], pathCurtains: 4, shaftFans: 1, shaftOmega: 0.32, hubHole: 5.6, bladeOmega: 1,
-    hazards: { pipe: 5, cable: 3, falls: 2.5, grate: 2, sluice: 2, hub: 1.5, blades: 2 } },
+    weave: 10, curtains: [12, 16], pathCurtains: 4, shaftFans: 3, shaftOmega: 0.32, hubHole: 5.6, bladeOmega: 1,
+    hazards: { pipe: 4, cable: 3, falls: 2.5, grate: 2, sluice: 2, hub: 4, blades: 3 } },
   extreme: { main: 18, side: 14.5, gate: 4.9, pipe: 2.3, gap: 8.5, connectors: [10, 11], shafts: 4, shaftExtra: 22, turn: [104, 116],
     straight: [170, 250], spacing: 46, ease: 38, dirt: 44, dirtSpacing: 40, cableLow: 0.45, clearance: 4.6,
-    weave: 8, curtains: [14, 18], pathCurtains: 6, shaftFans: 2, shaftOmega: 0.4, hubHole: 4.9, bladeOmega: 1.4,
-    hazards: { pipe: 4, cable: 3, falls: 3, grate: 3, sluice: 3, hub: 2, blades: 3 } },
+    weave: 8, curtains: [14, 18], pathCurtains: 6, shaftFans: 3, shaftOmega: 0.4, hubHole: 4.9, bladeOmega: 1.4,
+    hazards: { pipe: 3, cable: 3, falls: 3, grate: 3, sluice: 3, hub: 5, blades: 4 } },
 };
 // The code alone picks how the network is laid out and how it looks, on every difficulty.
 const STYLES = {
@@ -8942,7 +8943,7 @@ function distanceToSegment(point, a, b) {
   return Math.hypot(px - bx * t, py - by * t, pz - bz * t);
 }
 
-// Warning paint sits on a real iron lintel. p is its front face, and the solid slab extends
+// Warning paint sits on a full-width timber sluice. p is its front face, and the solid backing extends
 // backwards along -n; the mesh and ray renderers use these exact same dimensions.
 function warningDistance(warning, p) {
   const qx = p[0] - warning.p[0], qy = p[1] - warning.p[1], qz = p[2] - warning.p[2], n = warning.n, depth = warning.depth || 1.2;
@@ -9023,6 +9024,23 @@ function groundHeight(city, x, z, y = city.sewer.startY) {
   return floor;
 }
 
+// The outlet carries a rising current along its real tunnel slope, through the waterline and
+// gently out into air. A level glide can follow it without spending speed on a steep climb.
+function outletSupport(city, x, y, z) {
+  const p = [x, y, z], cruise = GAME.flight.cruise(city.difficulty || 'medium');
+  let lift = 0, strength = 0;
+  for (const tube of city.sewer.tunnels) {
+    if (!tube.flooded || tube.role !== 'outlet' || !tube.lift) continue;
+    const distance = distanceToSegment(p, tube.a, tube.b);
+    if (distance >= tube.radius) continue;
+    const blend = clamp((tube.radius - distance) / 8, 0, 1);
+    const slope = Math.max(0, tube.b[1] - tube.a[1]) / Math.max(1, Math.hypot(tube.b[0] - tube.a[0], tube.b[2] - tube.a[2]));
+    lift = Math.max(lift, slope * cruise * blend);
+    strength = Math.max(strength, blend);
+  }
+  return { lift, strength };
+}
+
 function current(city, x, y, z) {
   let lift = GAME.flight.FLIGHT.SINK;
   for (const shaft of city.sewer.shafts) {
@@ -9032,8 +9050,8 @@ function current(city, x, y, z) {
       lift += shaft.lift * blend;
     }
   }
-  let buoyancy = 0;
-  for (const tube of city.sewer.tunnels) if (tube.flooded && tube.lift && y < tube.water
+  let buoyancy = outletSupport(city, x, y, z).lift;
+  for (const tube of city.sewer.tunnels) if (tube.flooded && tube.role !== 'outlet' && tube.lift && y < tube.water
     && distanceToSegment([x, y, z], tube.a, tube.b) < tube.radius) buoyancy = Math.max(buoyancy, tube.lift);
   lift += buoyancy;
   return lift;
@@ -9069,8 +9087,12 @@ function step(run, stick, dt) {
   }
   const power = Math.min(22.5, run.powerLift / dt);
   run.powerLift -= power * dt;
-  if (underwaterAt(run.city, from) && g.speed > GAME.flight.cruise(run.course.difficulty))
-    g.speed += (GAME.flight.cruise(run.course.difficulty) - g.speed) * Math.min(1, dt * 3);
+  const cruise = GAME.flight.cruise(run.course.difficulty), outlet = outletSupport(run.city, ...from);
+  // The outlet jet restores lost momentum gradually; it never changes position or heading.
+  if (g.speed < cruise && outlet.strength > 0)
+    g.speed += (cruise - g.speed) * Math.min(1, dt * EXIT_RECOVERY * outlet.strength);
+  if (underwaterAt(run.city, from) && g.speed > cruise)
+    g.speed += (cruise - g.speed) * Math.min(1, dt * 3);
   // The tunnel's moving air supports a level glide; the riser's ventilation lifts the player.
   GAME.flight.step(g, stick, dt, () => current(run.city, g.x, g.y, g.z)
     + GAME.flight.FLIGHT.TURN_SINK * Math.abs(stick.x) + power);
@@ -9167,7 +9189,12 @@ function steer(pilot, glider, course) {
 function phaseFans(pending, run, pilot) {
   const s = pilot.k * SAMPLE, speed = Math.max(run.glider.speed, 20);
   for (const fan of pending) {
-    if (fan.phase !== null || fan.s - s > 70) continue;
+    if (fan.phase !== null) continue;
+    // A large fan can reach a joining collector before the route reaches its own station.
+    // Arm it before any possible physical contact, so the first proof obeys the same solid
+    // world as every replay and worker-loaded race rather than skipping unprepared blades.
+    const reach = Math.max(fan.tip + fan.width, fan.ringOut + fan.ringHalf) + GAME.flight.FLIGHT.RADIUS + 25;
+    if (fan.s - s > 70 && Math.hypot(run.glider.x - fan.c[0], run.glider.y - fan.c[1], run.glider.z - fan.c[2]) > reach) continue;
     const time = run.time + Math.max(0, fan.s - s) / speed, { e1, e2 } = fanBasis(fan.axis);
     const q = fan.cross.map((v, i) => v - fan.c[i]);
     fan.phase = wrap(Math.atan2(dot(q, e2), dot(q, e1)) + Math.PI / fan.blades - fan.omega * time);
@@ -9438,11 +9465,6 @@ function build(seed, difficulty, attempt) {
     const cueSlope = hand * 110 * Math.PI * Math.sin(Math.PI * cueFraction) / (2 * 180);
     const cueDirection = normalize(subtract(transform(local(cueAcross + cueSlope, -90, cueAlong + 1)),
       transform(local(cueAcross - cueSlope, -90, cueAlong - 1))));
-    const skullAngle = 0.7, skullU = -hand * 108 * (1 - Math.cos(skullAngle)), skullW = 240 + 108 * Math.sin(skullAngle);
-    const skullHeading = normalize(subtract(transform(local(skullU - hand * Math.sin(skullAngle), -90, skullW + Math.cos(skullAngle))),
-      transform(local(skullU, -90, skullW))));
-    const warning = { p: transform(local(skullU, -72, skullW)), n: skullHeading.map(v => -v), width: 20, height: 16, depth: 1.2, maze: id };
-    warnings.push(warning);
     const crossings = [];
     for (let k = 1; k < route.length; k++) if ((route[k - 1][1] < water) !== (route[k][1] < water)) {
       const f = (water - route[k - 1][1]) / (route[k][1] - route[k - 1][1]);
@@ -9456,7 +9478,6 @@ function build(seed, difficulty, attempt) {
         { position: transform(local(0, -90 * (1 - ramp(0.25)) + 9, 650 + 320 * 0.25)), direction: worldForward, radius: 2.5 }],
       downArrow: { p: arrow, n: worldForward.map(v => -v), width: 18, height: 18 },
       barrier: { centre: arrow, normal: worldForward.map(v => -v), width: 64, height: 68, down: [0, -1, 0] },
-      warning,
       shutter: { centre: shutterCentre, normal: worldForward, seconds: SHUTTER_SECONDS },
       returnTurnTunnels, deadEnd: { position: transform(deadEnd), tunnel: rooms[0], tunnels: rooms, width: 236, length: 176, height: 56 }, hand });
     ranges.push({ s0: first, s1: distance, kind: 'maze', radius, water, straight: false, flooded: true, maze: id });
@@ -9529,7 +9550,9 @@ function build(seed, difficulty, attempt) {
     const local = (u, along) => start.map((v, i) => v + side[i] * u + forward[i] * along);
     const endAlong = 360, branch = Array.from({ length: endAlong / 4 + 1 }, (_, k) => local(0, k * 4));
     const roomPaths = [0, 40, 80, 120].map(along => Array.from({ length: 46 }, (_, k) => local(-90 + k * 4, endAlong + along)));
-    const lobbyPaths = [-100, -60, -20, 20].map(along => Array.from({ length: 46 }, (_, k) => local(-90 + k * 4, along)));
+    // Preserve a little turning margin when an outlet current carries cruise-speed energy
+    // into the junction. These extra ten metres still pass the full layout fit checks.
+    const lobbyPaths = [-110, -70, -30, 10, 20].map(along => Array.from({ length: 46 }, (_, k) => local(-90 + k * 4, along)));
     const samples = [...thin(branch, radius).map(sample => ({ ...sample, along: dot(subtract(sample.p, start), forward) })),
       ...roomPaths.flatMap(path => thin(path, radius)).map(sample => ({ ...sample, along: endAlong })),
       ...lobbyPaths.flatMap(path => thin(path, radius)).map(sample => ({ ...sample, along: dot(subtract(sample.p, start), forward), lobby: true }))];
@@ -9551,7 +9574,8 @@ function build(seed, difficulty, attempt) {
       tunnels.push({ a: transform(path[0]), b: transform(path.at(-1)), radius, kind: 'fork-lobby', water: range.water, flooded: false, fork: forks.length, role: 'return-turn' });
     }
     const warning = { p: transform(local(0, 100)).map((v, i) => v + (i === 1 ? 18 : 0)),
-      n: normalize(subtract(transform(start), transform(local(0, 1)))), width: 20, height: 16, depth: 1.2, fork: forks.length };
+      n: normalize(subtract(transform(start), transform(local(0, 1)))), width: radius * 2 + 2, height: 16, depth: 1.2,
+      paintWidth: 20, paintHeight: 16, material: 'timber', planks: 8, fork: forks.length };
     warnings.push(warning);
     forks.push({ id: forks.length, s: range.s0, position: transform(start),
       correct: transform(rawAt(range.s0 + Math.min(150, (range.s1 - range.s0) * 0.75)).p), wrong: transform(local(0, 170)),
@@ -9901,15 +9925,12 @@ function build(seed, difficulty, attempt) {
     }
     if (crossing) {
       // Slow three-bladed fans span the shaft between its tunnel openings, turning with the flight.
-      const startY = at(range.s0).p[1], endY = at(range.s1).p[1], clear = R + 1.7 + 4;
-      const fa = (lo + clear - startY) / (endY - startY), fb = (hi - clear - startY) / (endY - startY);
-      const low = Math.max(0.08, Math.min(fa, fb)), high = Math.min(0.92, Math.max(fa, fb));
       const { p: mid, direction } = at(sAt(0.5)), travel = Math.sign((mid[2] - az) * direction[0] - (mid[0] - ax) * direction[2]) || 1;
-      const placed = [];
-      for (let tries = 0; placed.length < profile.shaftFans && tries < 12 && high > low; tries++) {
-        const f = r.range(low, high), s = sAt(f);
-        if (placed.some(g => Math.abs(g - f) < 0.16) || gates.some(gate => Math.abs(gate.s - s) < 24)) continue;
-        placed.push(f);
+      const stations = profile.shaftFans === 1 ? [0.56] : profile.shaftFans === 2 ? [0.30, 0.64] : [0.16, 0.40, 0.80];
+      for (const station of stations) {
+        let f = station + fanMotion.range(-0.012, 0.012);
+        for (let tries = 0; tries < 6 && gates.some(gate => Math.abs(gate.s - sAt(f)) < 24); tries++) f -= 0.015;
+        const s = sAt(f);
         const p = at(s).p;
         fans.push({ c: [ax, p[1], az], axis: [0, 1, 0], tip: reach, inner: 5, blades: 3, width: 1.7,
           omega: (fanMotion.chance(0.5) ? travel : -travel) * profile.shaftOmega * fanMotion.range(0.58, 1.1),
@@ -9919,7 +9940,7 @@ function build(seed, difficulty, attempt) {
     // Two-ended sweeper poles rotate across every large cylindrical room, including Easy.
     // More levels and faster alternating motors distinguish all four difficulties. Phases
     // are calibrated by the same real-speed pilot used to prove every other moving hazard.
-    const poleCount = { easy: 2, medium: 3, hard: 4, extreme: 5 }[difficulty];
+    const poleCount = { easy: 2, medium: 3, hard: 4, extreme: 4 }[difficulty];
     const poleSpeed = { easy: 0.16, medium: 0.25, hard: 0.38, extreme: 0.5 }[difficulty];
     for (let j = 0; j < poleCount; j++) {
       let f = (j + 0.5) / poleCount;
@@ -9930,6 +9951,25 @@ function build(seed, difficulty, attempt) {
         width: difficulty === 'easy' ? 0.65 : difficulty === 'medium' ? 0.8 : 1,
         omega: (j % 2 ? -1 : 1) * (range.shaft % 2 ? -1 : 1) * poleSpeed * fanMotion.range(0.8, 1.12),
         phase: null, s, cross: p, ringIn: 0, ringOut: 3.8, ringHalf: 1.4, kind: 'shaft-poles' });
+    }
+    // Permanent falling cores leave honest, visible collision at every phase. Pulsing flow
+    // and foam make the roof outlets surge; the spiral's radial weave dodges their centres.
+    const burstMotion = GAME.rng.stream(seed, `sewer-chamber-bursts:${attempt}:${range.shaft}`);
+    const wantedBursts = { easy: 2, medium: 3, hard: 4, extreme: 5 }[difficulty], placedBursts = [];
+    const preferred = range.weave ? Array.from({ length: range.weave.waves }, (_, j) => (j + 0.5) / range.weave.waves) : [];
+    for (const f of [...preferred, 0.18, 0.36, 0.58, 0.78, 0.9, 0.07, 0.48, 0.66]) {
+      if (placedBursts.length >= wantedBursts || placedBursts.some(g => Math.abs(g - f) < 0.10)) continue;
+      const s = sAt(f), { p: basePoint, direction } = frame(base, s), actual = at(s).p;
+      const qx = basePoint[0] - ax, qz = basePoint[2] - az, rho = Math.hypot(qx, qz), radial = [qx / rho, 0, qz / rho];
+      const weave = (actual[0] - basePoint[0]) * radial[0] + (actual[2] - basePoint[2]) * radial[2];
+      const candidates = Math.abs(weave) > profile.clearance + 1.5 ? [0] : [];
+      candidates.push(weave + profile.clearance + 3, weave - profile.clearance - 3);
+      for (const offset of candidates) {
+        const x = basePoint[0] + radial[0] * offset, z = basePoint[2] + radial[2] * offset;
+        if (!shaftSheet(x, z, direction, burstMotion.range(3.5, 5.5), 0.75, 'chamber-burst', profile.clearance)) continue;
+        Object.assign(sheets.at(-1), { phase: burstMotion.range(0, Math.PI * 2), pulseSpeed: burstMotion.range(1.1, 2), shaft: range.shaft, s });
+        placedBursts.push(f); break;
+      }
     }
     pipes.push({ a: [ax, tube.water - 1, az], b: [ax, hi + Rs + 1, az], radius: 2.4, kind: 'pole', s: null });
     const domeY = hi + R + 9, domeTip = Math.sqrt(Math.max(0, Rs * Rs - (domeY + 1.5 - hi) ** 2)) - 2;
@@ -9998,10 +10038,11 @@ function build(seed, difficulty, attempt) {
   const counts = {};
   for (const h of hazards) counts[h.type] = (counts[h.type] || 0) + 1;
   counts.curtains = sheets.length; counts.fans = fans.length; counts.wallFans = wallFans.length;
+  counts.chamberBursts = sheets.filter(sheet => sheet.kind === 'chamber-burst').length;
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
     par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length + sheets.length + fans.length,
-    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 6 };
+    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 7 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
@@ -10027,7 +10068,7 @@ function generate(seed, difficulty = 'medium') {
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
   sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
-  darknessAt, underwaterAt, pipePose, warningDistance, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
+  darknessAt, underwaterAt, outletSupport, pipePose, warningDistance, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
 
 })();
 </script>
@@ -10333,7 +10374,8 @@ GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claim
 // write cannot charge for an item without granting it. Web Locks serialize purchases/uses across tabs.
 const KEY = 'neonflight.shop.v1';
 const LIFT = Object.freeze({ price: 2, capacity: 3, height: GAME.run.POWER_LIFT });
-const FLASHLIGHT = Object.freeze({ price: 5, capacity: 3, uses: 5 });
+const FLASHLIGHT = Object.freeze({ price: 5, capacity: 1, uses: 5 });
+const LEGACY_FLASHLIGHT_CAPACITY = 3;
 const COLLAPSE_KEY = Object.freeze({ price: 10 });
 // Four stars was the original price for every theme. Keep historical payments in the
 // ledger so a later price change never refunds old purchases or charges them again.
@@ -10346,7 +10388,7 @@ const themePrice = id => id === 'neon' ? 0 : Object.hasOwn(THEME_PRICES, id) ? T
 const PAID_THEMES = Object.freeze(Object.keys(THEME_PRICES));
 const PAID_MUSIC = Object.freeze(['skyline-rush', 'midnight-drift', 'afterburn']);
 const listeners = new Set();
-const emptyLedger = () => ({ bought: 0, used: 0, flashlightVersion: 2, flashlightBought: 0, flashlightUsed: 0,
+const emptyLedger = () => ({ bought: 0, used: 0, flashlightVersion: 2, flashlightBought: 0, flashlightUsed: 0, flashlightEquipped: false,
   collapseKey: false, themes: [], themePrices: {}, music: [] });
 let ledger = emptyLedger(), storageOK = true;
 const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0)
@@ -10374,19 +10416,22 @@ function validInventory(bought, used, capacity) {
 function flashlightInventory(value) {
   const hasBought = value.flashlightBought !== undefined, hasUsed = value.flashlightUsed !== undefined;
   if (hasBought !== hasUsed || (value.flashlightVersion !== undefined && value.flashlightVersion !== 2)
-      || (value.flashlightVersion === 2 && !hasBought)) throw new Error('invalid flashlight save');
+      || (value.flashlightVersion === 2 && !hasBought)
+      || (value.flashlightEquipped !== undefined && typeof value.flashlightEquipped !== 'boolean')) throw new Error('invalid flashlight save');
   const bought = hasBought ? value.flashlightBought : 0, used = hasUsed ? value.flashlightUsed : 0;
   // Keep lifetime purchases for the wallet. Old saves spent one entire light per flight;
   // convert only their remaining devices to five charges, without refunding old uses.
   if (!Number.isSafeInteger(bought) || !Number.isSafeInteger(bought * FLASHLIGHT.uses)) throw new Error('invalid flashlight purchases');
   if (value.flashlightVersion === undefined) {
-    if (!validInventory(bought, used, FLASHLIGHT.capacity)) throw new Error('invalid legacy flashlight save');
-    return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used * FLASHLIGHT.uses };
+    if (!validInventory(bought, used, LEGACY_FLASHLIGHT_CAPACITY)) throw new Error('invalid legacy flashlight save');
+    return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used * FLASHLIGHT.uses,
+      flashlightEquipped: bought > used && value.flashlightEquipped !== false };
   }
-  if (!validInventory(bought * FLASHLIGHT.uses, used, FLASHLIGHT.capacity * FLASHLIGHT.uses)) {
+  if (!validInventory(bought * FLASHLIGHT.uses, used, LEGACY_FLASHLIGHT_CAPACITY * FLASHLIGHT.uses)) {
     throw new Error('invalid flashlight uses');
   }
-  return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used };
+  return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used,
+    flashlightEquipped: bought * FLASHLIGHT.uses > used && value.flashlightEquipped !== false };
 }
 const flashlightUses = save => save.flashlightBought * FLASHLIGHT.uses - save.flashlightUsed;
 function read() {
@@ -10408,9 +10453,11 @@ function refresh() {
   for (const listener of listeners) listener();
 }
 function state() {
+  const uses = flashlightUses(ledger), currentUses = uses > 0 ? (uses - 1) % FLASHLIGHT.uses + 1 : 0;
   return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
     spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
-    flashlights: Math.ceil(flashlightUses(ledger) / FLASHLIGHT.uses), flashlightUses: flashlightUses(ledger),
+    flashlights: Math.ceil(uses / FLASHLIGHT.uses), flashlightUses: uses, flashlightCurrentUses: currentUses,
+    flashlightReserve: (uses - currentUses) / FLASHLIGHT.uses, flashlightEquipped: uses > 0 && ledger.flashlightEquipped,
     themes: ledger.themes.slice(), music: ledger.music.slice(),
     available: storageOK && !!navigator.locks?.request };
 }
@@ -10439,12 +10486,13 @@ function buyLift() {
 }
 function buyFlashlight() {
   return transaction((next, earned) => {
-    if (flashlightUses(next) + FLASHLIGHT.uses > FLASHLIGHT.capacity * FLASHLIGHT.uses) {
-      return { ok: false, message: 'Use more of your saved light before buying another five uses.' };
+    if (flashlightUses(next) > 0) {
+      return { ok: false, message: 'Use your remaining flashlight charges before buying another light.' };
     }
     if (earned - spending(next) < FLASHLIGHT.price) return { ok: false, message: 'Find more stars to buy this flashlight.' };
     if (!Number.isSafeInteger((next.flashlightBought + 1) * FLASHLIGHT.uses)) return { ok: false, message: 'Could not save another flashlight.' };
     next.flashlightBought++;
+    next.flashlightEquipped = true;
     return { ok: true };
   });
 }
@@ -10482,15 +10530,24 @@ function useLift(canUse, activate) {
 }
 function useFlashlight(canUse, activate) {
   return transaction(next => {
-    if (!canUse() || flashlightUses(next) <= 0) return { ok: false };
+    if (!canUse() || !next.flashlightEquipped || flashlightUses(next) <= 0) return { ok: false };
     next.flashlightUsed++;
+    if (!flashlightUses(next)) next.flashlightEquipped = false;
     return { ok: true, activate };
+  });
+}
+function setFlashlightEquipped(equipped) {
+  return transaction(next => {
+    if (typeof equipped !== 'boolean' || flashlightUses(next) <= 0)
+      return { ok: false, message: 'Buy a flashlight before equipping it.' };
+    next.flashlightEquipped = equipped;
+    return { ok: true };
   });
 }
 window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
 GAME.shop = { LIFT, FLASHLIGHT, COLLAPSE_KEY, THEME_PRICE, THEME_PRICES, themePrice, MUSIC_PRICE,
   state, refresh, buyLift, buyFlashlight, buyCollapseKey,
-  ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, useFlashlight, onChange: fn => listeners.add(fn) };
+  ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, useFlashlight, setFlashlightEquipped, onChange: fn => listeners.add(fn) };
 
 })();
 
@@ -16325,13 +16382,108 @@ GAME.sewerRenderer = { create };
 
 ;(function () {
 'use strict';
+// ---- src/render/sewer-water.js ----
+// Cosmetic water damage shares positions and timing across both Sewer renderers. It never
+// mutates collision pipes or adds a hidden obstacle to the race.
+const add = (a, b) => a.map((v, i) => v + b[i]), sub = (a, b) => a.map((v, i) => v - b[i]);
+const mul = (a, s) => a.map(v => v * s), dot = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = a => mul(a, 1 / Math.max(1e-9, Math.hypot(...a)));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const hash = p => { const v = Math.sin(p[0] * 12.9898 + p[1] * 78.233 + p[2] * 37.719) * 43758.5453; return v - Math.floor(v); };
+function axisPoint(tube, p) {
+  const d = sub(tube.b, tube.a), t = clamp(dot(sub(p, tube.a), d) / Math.max(1e-9, dot(d, d)), 0, 1);
+  return add(tube.a, mul(d, t));
+}
+function sites(world) {
+  const candidates = [];
+  for (const [index, pipe] of (world.pipes || []).entries()) {
+    if (pipe.seal !== undefined || !['pipe', 'crossing', 'diagonal', 'riser', 'maze-pipe'].includes(pipe.kind) || pipe.radius < 1.1
+      || Math.hypot(...sub(pipe.b, pipe.a)) < 8) continue;
+    const rank = hash(pipe.a), f = rank < 0.5 ? 0.28 : 0.72, centre = add(pipe.a, mul(sub(pipe.b, pipe.a), f));
+    const hosts = world.tunnels.map((tube, i) => ({ tube, index: i, distance: Math.hypot(...sub(centre, axisPoint(tube, centre))) }))
+      .filter(({ tube, distance }) => !tube.flooded && tube.kind !== 'inlet' && Number.isFinite(tube.water)
+        && centre[1] > tube.water + 4 && distance + pipe.radius < tube.radius - 0.5)
+      .sort((a, b) => a.distance - b.distance);
+    const host = hosts[0];
+    if (!host) continue;
+    const pipeAxis = unit(sub(pipe.b, pipe.a)), waterAxis = unit(sub(host.tube.b, host.tube.a));
+    if (Math.abs(waterAxis[1]) > 0.1) continue;
+    // Face the normal approach, so the torn opening is visible before flying past the pipe.
+    const target = axisPoint(host.tube, add(centre, mul(waterAxis, -5))); target[1] = host.tube.water + 0.02;
+    const desired = unit(sub(target, centre)), normal = unit(sub(desired, mul(pipeAxis, dot(desired, pipeAxis))));
+    if (Math.hypot(...normal) < 0.9) continue;
+    const side = unit(cross(pipeAxis, normal)), source = add(centre, mul(normal, pipe.radius + 0.015));
+    const first = add(source, mul(normal, 1.8)), second = add(target, [0, 2.4, 0]);
+    if ([source, first, second, target].some(p => Math.hypot(...sub(p, axisPoint(host.tube, p))) > host.tube.radius - 0.1)) continue;
+    candidates.push({ pipe: index, host: host.index, f, centre, axis: pipeAxis, normal, side, source, target,
+      controls: [source, first, second, target], radius: pipe.radius, hole: Math.min(0.65, pipe.radius * 0.3),
+      phase: (index * 13.71) % 32, rank });
+  }
+  return candidates.sort((a, b) => a.rank - b.rank).slice(0, 8);
+}
+function point(site, t) {
+  const a = 1 - t, weights = [a * a * a, 3 * a * a * t, 3 * a * t * t, t * t * t];
+  return [0, 1, 2].map(i => site.controls.reduce((sum, p, k) => sum + p[i] * weights[k], 0));
+}
+const pulse = (site, clock = 0, reduced = false) => reduced ? 0.78 : 0.73 + 0.27 * (0.5 + 0.5 * Math.sin(clock * 1.7 + site.phase));
+function holeField(site, p) {
+  const q = sub(p, site.centre), x = dot(q, site.axis) / (site.hole * 1.2), y = dot(q, site.side) / (site.hole * 0.8);
+  const angle = Math.atan2(y, x), edge = 1 + 0.13 * Math.sin(angle * 7 + site.phase * 3) + 0.07 * Math.sin(angle * 13 - site.phase);
+  return dot(q, site.normal) < site.radius * 0.45 ? 2 : Math.hypot(x, y) - edge;
+}
+function ringPoint(site, angle, factor = 1, inset = 0) {
+  const edge = 1 + 0.13 * Math.sin(angle * 7 + site.phase * 3) + 0.07 * Math.sin(angle * 13 - site.phase);
+  const x = Math.cos(angle) * site.hole * 1.2 * edge * factor, y = Math.sin(angle) * site.hole * 0.8 * edge * factor;
+  return add(add(site.centre, mul(site.axis, x)), add(mul(site.side, y),
+    mul(site.normal, Math.sqrt(Math.max(0, site.radius * site.radius - y * y)) - inset)));
+}
+function inletDamage(tube, index) {
+  const axis = unit(sub(tube.b, tube.a)), u = unit(cross(Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [0, 0, 1], axis));
+  const v = cross(axis, u), phase = index * 13.71 % 32 + Math.PI / 2;
+  const at = (s, angle, inset = 0.02) => {
+    const cap = Math.max(0, -s), r = Math.sqrt(Math.max(0, tube.radius * tube.radius - cap * cap)) - inset;
+    return add(tube.a, add(mul(axis, s), add(mul(u, Math.cos(angle) * r), mul(v, Math.sin(angle) * r))));
+  };
+  const rim = Array.from({ length: 65 }, (_, k) => {
+    const angle = k / 64 * Math.PI * 2;
+    return { p: at(1.2 + 0.65 * Math.sin((angle - phase) * 5) + 0.15 * Math.sin((angle - phase) * 11), angle), angle };
+  });
+  const cracks = Array.from({ length: 6 }, (_, k) => Array.from({ length: 13 }, (_, j) => {
+    const s = -0.2 + j / 12 * 6.4, angle = phase + k * Math.PI / 3 - (s - 1.2) * 0.05;
+    return { p: at(s, angle), angle, s };
+  }));
+  return { axis, u, v, rim, cracks, at };
+}
+// Chamber curtains already extend into the masonry. Their damaged mouth is painted on
+// the actual upper sphere, not on the invisible rectangular top of the water collider.
+function roofDamage(world, sheet) {
+  if (sheet.kind !== 'chamber-burst') return null;
+  const tube = world.shafts?.[sheet.shaft] || world.tunnels.find(t => Math.abs(t.a[0]-t.b[0]) < .01
+    && Math.abs(t.a[2]-t.b[2]) < .01 && Math.hypot(sheet.c[0]-t.a[0],sheet.c[2]-t.a[2]) < t.radius);
+  if (!tube) return null;
+  const top = tube.a[1] > tube.b[1] ? tube.a : tube.b, normal = [-sheet.d[2],0,sheet.d[0]], phase = sheet.phase ?? 0;
+  const edge = u => sheet.thick + .11*Math.sin(u*4.1+phase) + .055*Math.sin(u*11.3-phase);
+  const at = (u,v) => {
+    const x = sheet.c[0]+sheet.d[0]*u+normal[0]*v-top[0], z = sheet.c[2]+sheet.d[2]*u+normal[2]*v-top[2];
+    if (x*x+z*z >= tube.radius*tube.radius) return null;
+    return add(top,mul([x,Math.sqrt(tube.radius*tube.radius-x*x-z*z),z],1-.025/tube.radius));
+  };
+  return { tube, edge, at };
+}
+GAME.sewerWater = { sites, point, pulse, holeField, ringPoint, inletDamage, roofDamage, axisPoint };
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/render/sewer-flight.js ----
 // Underground flight. Flyable space is the union of the simulation's dry/flooded capsules;
 // intersecting their ray intervals keeps bends and junctions open without marching through
 // solid walls. Nearby geometry lives in a small texture, independent of total map length.
 const TUNNELS = 32, PIPES = 56, DIRT = 40, INFLOWS = 20, FANS = 8, SHEETS = 32, WALL_FANS = 12;
 const PIPE_MATERIALS = { grate: 1, sluice: 2, cable: 3, root: 4, falls: 5, strut: 6, pole: 7 };
-const SHEET_KINDS = { falls: 0, wall: 1, shaft: 2, spiral: 3 };
+const SHEET_KINDS = { falls: 0, wall: 1, shaft: 2, spiral: 3, 'chamber-burst': 5 };
 const PIPE_BASE = TUNNELS, DIRT_BASE = PIPE_BASE + PIPES, FLOW_BASE = DIRT_BASE + DIRT;
 const FAN_BASE = FLOW_BASE + INFLOWS, SHEET_BASE = FAN_BASE + FANS, WALL_BASE = SHEET_BASE + SHEETS;
 const ATLAS_WIDTH = WALL_BASE + WALL_FANS, ATLAS_ROWS = 4, FAR = 280;
@@ -16349,6 +16501,9 @@ uniform vec3 uThemeWallA, uThemeWallB, uThemeGrout, uThemeLamp, uThemeWater, uTh
 uniform vec4 uThemeStyle;
 uniform vec4 uDownArrowC, uDownArrowN, uMazeCue, uWarningC, uWarningN;
 uniform float uWarningDepth;
+uniform vec4 uBurstA[4], uBurstB[4], uBurstC[4], uBurstD[4];
+uniform float uBurstCount, uWaterEffectsClock;
+uniform vec2 uWarningPaint;
 uniform vec2 uThemeExtra;
 const int TUNNELS = ${TUNNELS}, PIPES = ${PIPES}, DIRT = ${DIRT}, INFLOWS = ${INFLOWS};
 const int FANS = ${FANS}, SHEETS = ${SHEETS}, WALL_FANS = ${WALL_FANS};
@@ -16417,6 +16572,15 @@ vec2 sewerCapsuleInterval(vec3 ro, vec3 rd, vec3 a, vec3 b, float radius) {
 vec3 sewerAxisPoint(vec3 p, vec3 a, vec3 b) {
   vec3 ba = b - a;
   return a + ba * clamp(dot(p - a, ba) / max(dot(ba, ba), 0.00001), 0.0, 1.0);
+}
+float sewerPipeHole(vec3 p, vec4 a, vec4 b, vec4 hole, float phase) {
+  vec3 axis=normalize(b.xyz-a.xyz), centre=mix(a.xyz,b.xyz,hole.x), normal=hole.yzw;
+  vec3 q=p-centre, side=normalize(cross(axis,normal));
+  if(dot(q,normal)<a.w*0.45)return 2.0;
+  float size=min(0.65,a.w*0.3);
+  vec2 uv=vec2(dot(q,axis)/(size*1.2),dot(q,side)/(size*0.8));
+  float angle=atan(uv.y,uv.x), edge=1.0+0.13*sin(angle*7.0+phase*3.0)+0.07*sin(angle*13.0-phase);
+  return length(uv)-edge;
 }
 
 bool sewerBroadPhase(vec3 ro, vec3 rd, vec3 a, vec3 b, float radius) {
@@ -16523,9 +16687,15 @@ SewerHit sewerTrace(vec3 ro, vec3 rd) {
     vec2 span = sewerCapsuleInterval(ro, rd, a.xyz, b.xyz, a.w);
     float t = span.x > 0.001 ? span.x : span.y;
     if (span.x <= span.y && t > 0.001 && t < h.t) {
-      h.t = t; h.kind = 3; h.index = index;
       vec3 p = ro + rd * t;
-      h.n = normalize(p - sewerAxisPoint(p, a.xyz, b.xyz));
+      vec4 hole=sewerData(index,3);vec3 normal=normalize(p-sewerAxisPoint(p,a.xyz,b.xyz));
+      if(dot(hole.yzw,hole.yzw)>0.5 && sewerPipeHole(p,a,b,hole,sewerData(index,2).x)<0.0) {
+        vec3 back=mix(a.xyz,b.xyz,hole.x)+hole.yzw*(a.w-0.27);
+        float facing=dot(rd,hole.yzw);
+        float inset=abs(facing)>0.000001?dot(back-ro,hole.yzw)/facing:t;
+        if(inset>t && inset<span.y){t=inset;normal=hole.yzw;}
+      }
+      if(t<h.t){h.t=t;h.kind=3;h.index=index;h.n=normal;}
     }
   }
   for (int i = 0; i < DIRT; i++) {
@@ -16711,9 +16881,19 @@ float sewerBankDistance(vec3 p) {
 
 vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
   if (h.kind == 8) {
-    if (dot(h.n, uWarningN.xyz) < 0.5) return vec3(0.045, 0.055, 0.045);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), uWarningN.xyz));
-    vec2 q = vec2(dot(p - uWarningC.xyz, right) / uWarningC.w, (p.y - uWarningC.y) / uWarningN.w);
+    vec2 local = vec2(dot(p - uWarningC.xyz, right), p.y - uWarningC.y);
+    float plank = floor((local.y + uWarningN.w) / 2.0), seam = bandAA(mod(local.y + uWarningN.w + 1.0, 2.0) - 1.0, 0.035, pixel);
+    float grain = tnoise(vec3(local.x * 0.11, local.y * 2.7, plank * 3.1));
+    float fibres = pulseAA(local.y * 4.3 + sin(local.x * 0.17 + plank) * 0.12, 0.12, pixel * 4.3);
+    vec3 timber = vec3(0.24, 0.11, 0.035) * (0.62 + grain * 0.55) * (1.0 - fibres * 0.18);
+    timber *= 1.0 - seam * 0.82;
+    if (dot(h.n, uWarningN.xyz) < 0.5) return timber * 0.7;
+    float strap = bandAA(abs(local.x) - uWarningPaint.x * 0.86, 0.32, pixel);
+    float bolt = 1.0 - smoothstep(0.10, 0.16 + pixel, length(vec2(abs(local.x) - uWarningPaint.x * 0.86, mod(local.y + uWarningN.w, 2.0) - 1.0)));
+    timber = mix(timber, vec3(0.075, 0.065, 0.045), strap * 0.94);
+    timber = mix(timber, vec3(0.20, 0.16, 0.095), bolt);
+    vec2 q = local / uWarningPaint;
     float cranium = step(length((q - vec2(0.0, 0.23)) / vec2(0.70, 0.64)), 1.0);
     float cheek = step(abs(q.x), 0.58) * step(-0.26, q.y) * step(q.y, 0.20);
     float jaw = step(abs(q.x), 0.39) * step(-0.73, q.y) * step(q.y, -0.15);
@@ -16721,8 +16901,8 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
     float eyes = step(length((vec2(abs(q.x), q.y) - vec2(0.30, 0.15)) / vec2(0.22, 0.19)), 1.0);
     float nose = step(-0.38, q.y) * step(q.y, -0.04) * step(abs(q.x), (-q.y - 0.04) * 0.39);
     float ink = max(max(cranium, cheek), max(jaw, teeth)) * (1.0 - max(eyes, nose));
-    // Reflective red pigment keeps this safety mark readable even during a blackout.
-    return mix(vec3(0.055, 0.065, 0.055), vec3(1.2, 0.025, 0.015), ink);
+    // Red stencil paint follows the same swollen planks as the existing sluice obstacles.
+    return mix(timber, vec3(1.2, 0.025, 0.015) * (0.86 + grain * 0.14), ink) * (1.0 - seam * 0.76);
   }
   int index = h.kind <= 2 ? h.index : sewerNearestTunnel(p);
   vec4 a = sewerData(index, 0), b = sewerData(index, 1);
@@ -16793,6 +16973,16 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
     col = mix(col, iron, conduit);
     col *= 1.0 - bandAA(service - 0.43, 0.075, pixel) * 0.53;
     col *= light;
+    if(kind>2.5&&kind<3.5) {
+      float phase=sewerData(index,2).x,theta=angle-phase;
+      float rimAt=1.2+0.65*sin(theta*5.0)+0.15*sin(theta*11.0);
+      float chipped=bandAA(along-rimAt,0.13,pixel);
+      float crackWidth=max(0.04,0.085*(1.0-clamp((along+0.2)/6.4,0.0,1.0)/1.4));
+      float crack=bandAA(sin(theta*3.0+(along-1.2)*0.15)*a.w/3.0,crackWidth,pixel)
+        *smoothstep(-0.4,0.0,along)*(1.0-smoothstep(5.5,6.2,along));
+      col=mix(col,vec3(0.015,0.019,0.014)*light,max(chipped,crack));
+      col=mix(col,vec3(0.18,0.14,0.08)*light,bandAA(along-rimAt-0.215,0.08,pixel));
+    }
     // Rectangular caged lamps echo the menu; no decorative fixture projects into flight air.
     vec3 fixture = p - lamp;
     vec3 lampRadial = normalize(lamp - sewerAxisPoint(lamp, a.xyz, b.xyz));
@@ -16938,6 +17128,13 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
       col *= light;
       col += vec3(0.035, 0.06, 0.038) * rim;
     }
+    vec4 hole=sewerData(h.index,3);
+    if(dot(hole.yzw,hole.yzw)>0.5) {
+      float opening=sewerPipeHole(p,pa,pb,hole,sewerData(h.index,2).x);
+      float edge=1.0-smoothstep(0.0,max(pixel/pa.w,0.02),opening);
+      col=mix(col,vec3(0.002,0.009,0.006)*(light*0.2+0.2),edge);
+      col=mix(col,vec3(0.25,0.15,0.055)*light,bandAA(opening-0.12,0.1,pixel/max(pa.w,0.01)));
+    }
   } else if (h.kind == 5 || h.kind == 7) {
     vec4 fa = sewerData(h.index, 0), fb = sewerData(h.index, 1), fd = sewerData(h.index, 3);
     vec3 delta = p - fa.xyz;
@@ -17053,16 +17250,46 @@ vec4 sewerInflow(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) 
   return vec4(colour, alpha * opacity);
 }
 
+// Four cosmetic pressure leaks share the pipe's real jagged opening. Search only simple
+// round jet segments here, then shade the nearest film once outside both bounded loops.
+vec4 sewerBurst(vec3 ro,vec3 rd,float wall,float pixAngle,out float depth) {
+  depth=wall;int best=-1;vec3 normal=vec3(0.0,1.0,0.0);
+  for(int i=0;i<4;i++) {
+    if(float(i)>=uBurstCount)break;
+    vec4 a=uBurstA[i],b=uBurstB[i],c=uBurstC[i],d=uBurstD[i];
+    if(!sewerBroadPhase(ro,rd,a.xyz,d.xyz,3.0+a.w))continue;
+    for(int k=0;k<3;k++) {
+      vec3 p0=k==0?a.xyz:k==1?b.xyz:c.xyz,p1=k==0?b.xyz:k==1?c.xyz:d.xyz;
+      vec2 span=sewerCapsuleInterval(ro,rd,p0,p1,a.w*(1.0+float(k)*0.18));
+      float t=span.x>0.001?span.x:span.y;
+      if(span.x<=span.y&&t>0.001&&t<depth){depth=t;best=i;normal=normalize(ro+rd*t-sewerAxisPoint(ro+rd*t,p0,p1));}
+    }
+  }
+  if(best<0)return vec4(0.0);
+  vec3 p=ro+rd*depth,lamp,lampColour;
+  vec3 light=sewerLighting(p,normal,int(uBurstD[best].w+0.5),lamp,lampColour);
+  float stream=0.5+0.5*sin(p.y*14.0-uWaterEffectsClock*16.0+uBurstB[best].w);
+  vec3 colour=vec3(0.04,0.20,0.11)*(light*0.6+0.45)+vec3(0.025,0.095,0.065)*stream;
+  return vec4(colour*sewerVisibility(p),0.68+uBurstC[best].w*0.12);
+}
+
 // Curtains of falling water are the simulation's upright boxes, drawn as translucent moving
 // sheets over whatever lies behind them.
-vec4 sewerCurtain(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth) {
+vec4 sewerCurtain(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth, out vec2 roofPaint) {
   int best = -1; bool endFace = false;
-  depth = wall;
+  depth = wall;roofPaint=vec2(0.0);
+  vec3 roof=ro+rd*wall;float roofPixel=max(wall*pixAngle,0.002);
   for (int i = 0; i < SHEETS; i++) {
     if (float(i) >= uSewerCount2.y) break;
     int index = SHEET_BASE + i;
     vec4 a = sewerData(index, 0), b = sewerData(index, 1);
     vec3 d = vec3(b.x, 0.0, b.z), across = vec3(-d.z, 0.0, d.x), q = ro - a.xyz;
+    if(sewerData(index,2).y>4.5&&roof.y>a.y+b.w*0.65&&roof.y<a.y+b.w+0.2) {
+      vec3 roofLocal=roof-a.xyz;float u=dot(roofLocal,d),v=dot(roofLocal,across),phase=sewerData(index,3).x;
+      float edge=b.y+0.11*sin(u*4.1+phase)+0.055*sin(u*11.3-phase);
+      float mouth=max(abs(u)-a.w,abs(v)-edge);
+      roofPaint=max(roofPaint,vec2(1.0-smoothstep(-roofPixel,roofPixel,mouth),bandAA(mouth-0.21,0.1,roofPixel)));
+    }
     vec3 o = vec3(dot(q, d), q.y, dot(q, across)), v = vec3(dot(rd, d), rd.y, dot(rd, across));
     vec3 safe = vec3(abs(v.x) < 0.000001 ? 0.000001 : v.x, abs(v.y) < 0.000001 ? 0.000001 : v.y, abs(v.z) < 0.000001 ? 0.000001 : v.z);
     vec3 extent = vec3(a.w, b.w, b.y), t0 = (-extent - o) / safe, t1 = (extent - o) / safe;
@@ -17081,14 +17308,20 @@ vec4 sewerCurtain(vec3 ro, vec3 rd, float wall, float pixAngle, out float depth)
   vec3 n = endFace ? d * -sign(dot(rd, d)) : across * (dot(rd, across) > 0.0 ? -1.0 : 1.0);
   vec3 lamp, lampColour;
   vec3 light = sewerLighting(p, n, int(c.z + 0.5), lamp, lampColour);
-  float grain = tnoise(vec3(local.x * 1.6, (p.y + uSewerMotion * 9.0) * 0.18, float(best) * 2.3));
-  float flowing = tnoise(vec3(local.x * 0.5, (p.y + uSewerMotion * 12.0) * 0.6, float(best) * 3.1));
+  float motion=c.y>4.5?uWaterEffectsClock:uSewerMotion;
+  float grain = tnoise(vec3(local.x * 1.6, (p.y + motion * 9.0) * 0.18, float(best) * 2.3));
+  float flowing = tnoise(vec3(local.x * 0.5, (p.y + motion * 12.0) * 0.6, float(best) * 3.1));
   float streams = pow(0.5 + 0.5 * sin(local.x * 4.3 + grain * 5.0), 4.0);
   vec3 colour = (uThemeWater * 2.6 + vec3(0.006, 0.014, 0.012)) * (0.7 + grain * 0.6) * (light * 0.6 + 0.4);
   colour += vec3(0.03, 0.07, 0.06) * streams * (0.4 + flowing * 0.8) * (light * 0.4 + 0.6);
   float edge = 1.0 - smoothstep(a.w - 0.4, a.w + pixel, abs(local.x));
   // Curtains in the way are dense; those along the walls are thinner films.
   float opacity = c.y < 0.5 || c.y > 2.5 ? 0.82 + flowing * 0.12 : 0.6 + flowing * 0.2;
+  if(c.y>4.5) {
+    vec2 pressure=sewerData(index,3).xy;
+    float surge=0.5+0.5*sin(motion*pressure.y+pressure.x);
+    colour*=0.95+surge*0.35;opacity=max(opacity,0.86);
+  }
   return vec4(colour * sewerVisibility(p), opacity * edge);
 }
 
@@ -17103,14 +17336,23 @@ void main() {
   vec3 col = hit.kind > 0 ? sewerSurface(hit, ro + rd * hit.t, rd, max(hit.t * pixAngle, 0.002), bankEdge) : fog * 0.7;
   float beam = sewerFlashlight(ro + rd * hit.t);
   float haze = 1.0 - exp(-hit.t * mix(0.0105, 0.003, beam * uUnderwater));
-  col = mix(col, fog, haze);
-  float inflowDepth, curtainDepth;
+  float inflowDepth, curtainDepth, burstDepth;
+  vec2 roofPaint;
   vec4 inflow = sewerInflow(ro, rd, hit.t, pixAngle, inflowDepth);
-  vec4 curtain = sewerCurtain(ro, rd, hit.t, pixAngle, curtainDepth);
+  vec4 curtain = sewerCurtain(ro, rd, hit.t, pixAngle, curtainDepth,roofPaint);
+  if(hit.kind==1) {
+    col*=1.0-roofPaint.x*0.93;
+    col=mix(col,col*1.2+vec3(0.06,0.045,0.025)*sewerVisibility(ro+rd*hit.t),roofPaint.y);
+  }
+  col = mix(col, fog, haze);
+  vec4 burst=sewerBurst(ro,rd,hit.t,pixAngle,burstDepth);
   vec4 nearLayer = curtainDepth < inflowDepth ? curtain : inflow, farLayer = curtainDepth < inflowDepth ? inflow : curtain;
   float nearDepth = min(curtainDepth, inflowDepth), farDepth = max(curtainDepth, inflowDepth);
+  if(burstDepth>farDepth)col=mix(col,mix(burst.rgb,fog,1.0-exp(-burstDepth*0.0105)),burst.a);
   col = mix(col, mix(farLayer.rgb, fog, 1.0 - exp(-farDepth * 0.0105)), farLayer.a);
+  if(burstDepth<=farDepth&&burstDepth>nearDepth)col=mix(col,mix(burst.rgb,fog,1.0-exp(-burstDepth*0.0105)),burst.a);
   col = mix(col, mix(nearLayer.rgb, fog, 1.0 - exp(-nearDepth * 0.0105)), nearLayer.a);
+  if(burstDepth<=nearDepth)col=mix(col,mix(burst.rgb,fog,1.0-exp(-burstDepth*0.0105)),burst.a);
   // The purchased beam cuts through the silt; outside it the water stays murky.
   // Retroreflective emergency paint remains red through the murk; its actual slab still
   // obeys the very same wall/prop depth test and ordinary tunnel fog as every other surface.
@@ -17168,7 +17410,7 @@ function mazeFeatures(world, cam) {
     .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && cue.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
   const warnings = (world.warnings || (world.forks || []).map(fork => fork.warning).filter(Boolean))
-    .filter(sign => sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
+    .filter(sign => sign?.maze === undefined && !sign?.underwater && sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
       && distance(sign.p) < FAR + 20
       && sign.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
   warnings.sort((a, b) => distance(a.p) - distance(b.p));
@@ -17290,10 +17532,12 @@ function create(gfx) {
   const data = new Float32Array(ATLAS_WIDTH * ATLAS_ROWS * 4);
   const atlas = gfx.createTexture(ATLAS_WIDTH, ATLAS_ROWS, { format: 'rgba32f', filter: 'nearest', data });
   let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME;
+  let waterSites=[],siteByPipe=new Map(),activeBursts=[];
   let darkness = 0, darknessTarget = 0, lastLightTime = null, lightEnabled = false, water = 0, air = 1, lastSeals = '', lastSealMoving = false;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
     world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = world.theme || DEFAULT_THEME;
+    waterSites=GAME.sewerWater.sites(world);siteByPipe=new Map(waterSites.map(site=>[world.pipes[site.pipe],site]));activeBursts=[];
     darkness = 0; darknessTarget = 0; lastLightTime = null; lightEnabled = false; water = 0; air = 1; lastSeals = ''; lastSealMoving = false;
   }
   const away = (position, centre) => Math.hypot(...centre.map((v, i) => v - position[i]));
@@ -17311,6 +17555,10 @@ function create(gfx) {
     const sheets = select(world.sheets || [], position, SHEETS, sheet => away(position, sheet.c) - Math.hypot(sheet.hw, sheet.hh, sheet.thick));
     const wallFans = select(world.wallFans || [], position, WALL_FANS, fan => away(position, fan.c) - fan.radius);
     const tunnelSlots = new Map(selected[0].map(({ index }, slot) => [index, slot]));
+    const pipeValues=new Set(selected[1].map(value=>value.value));
+    activeBursts=waterSites.filter(site=>tunnelSlots.has(site.host)&&pipeValues.has(world.pipes[site.pipe]))
+      .sort((a,b)=>away(position,a.source)-away(position,b.source)).slice(0,4)
+      .map(site=>({site,host:tunnelSlots.get(site.host)}));
     selected[3] = selected[3].filter(({ value }) => tunnelSlots.has(value.source));
     counts = selected.map(v => v.length);
     extra = [fans.length, sheets.length, wallFans.length, 0];
@@ -17319,13 +17567,15 @@ function create(gfx) {
       const base = [0, PIPE_BASE, DIRT_BASE, FLOW_BASE][group] + slot;
       if (group === 2) { put(base, 0, [...value.centre, Math.max(...value.radii)]); put(base, 1, [...value.radii, 0]); }
       else {
+        const burst=group===1?siteByPipe.get(value):null;
         put(base, 0, [...value.a, value.radius]);
         put(base, 1, [...value.b, group === 0 ? value.water ?? -100000 : group === 3 ? value.receivingWater : 0]);
         const kind = group === 1 ? PIPE_MATERIALS[value.kind] || 0 : value.kind === 'inlet' ? 3 : /shaft|vertical|chamber|riser|drop/.test(value.kind || '') ? 2 : /side|branch|connector/.test(value.kind || '') ? 1 : 0;
-        put(base, 2, [(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index,
+        put(base, 2, [burst?.phase??(index * 13.71) % 32, kind, group === 3 ? tunnelSlots.get(value.source) : index,
           group === 3 ? value.dropTravel : group === 0 && value.dark ? 1 : 0]);
         if (group === 0) put(base, 3, [value.flooded ? 1 : 0, 0, 0, 0]);
         if (group === 3) put(base, 3, value.lip);
+        if (burst) put(base,3,[burst.f,...burst.normal]);
       }
     }));
     fans.forEach(({ value: fan }, slot) => {
@@ -17345,6 +17595,7 @@ function create(gfx) {
       // Curtains are upright, so the unused d.y carries the thickness.
       put(SHEET_BASE + slot, 1, [sheet.d[0], sheet.thick, sheet.d[2], sheet.hh]);
       put(SHEET_BASE + slot, 2, [sheet.thick, SHEET_KINDS[sheet.kind] ?? 1, host, 0]);
+      put(SHEET_BASE + slot, 3, [sheet.phase??0,sheet.pulseSpeed??1.5,0,0]);
     });
     wallFans.forEach(({ value: fan }, slot) => {
       put(WALL_BASE + slot, 0, [...fan.c, fan.radius]);
@@ -17370,7 +17621,15 @@ function create(gfx) {
     darkness += Math.max(-elapsed / 0.8, Math.min(elapsed / 0.8, darknessTarget - darkness));
     lightEnabled = !!flashlight; water = Math.max(0, Math.min(1, Number(underwater) || 0)); air = Math.max(0, Math.min(1, Number(oxygen) || 0));
     const { downArrow, cue, warning } = mazeFeatures(world, cam);
+    const jetData=Array.from({length:4},()=>new Float32Array(16));
+    activeBursts.forEach(({site,host},index)=>{
+      const strength=GAME.sewerWater.pulse(site,clock,reducedMotion.matches);
+      for(let k=0;k<4;k++)jetData[k].set([...GAME.sewerWater.point(site,k/3),
+        k===0?site.hole*.42*(.75+.25*strength):k===1?site.phase:k===2?strength:host],index*4);
+    });
     gfx.fullscreen(program, {
+      uBurstA:jetData[0],uBurstB:jetData[1],uBurstC:jetData[2],uBurstD:jetData[3],uBurstCount:activeBursts.length,
+      uWaterEffectsClock:reducedMotion.matches?0:clock,
       uSewerGeometry: atlas, uSewerCount: counts, uSewerCount2: extra, uSewerClock: clock,
       uSewerDarkness: darkness, uFlashlight: lightEnabled ? 1 : 0,
       uUnderwater: water,
@@ -17380,6 +17639,7 @@ function create(gfx) {
       uWarningC: warning ? [...warning.p, warning.width * 0.5] : [0, 0, 0, 0],
       uWarningN: warning ? [...warning.n, warning.height * 0.5] : [0, 0, 1, 1],
       uWarningDepth: warning?.depth || 1.2,
+      uWarningPaint: warning ? [(warning.paintWidth || warning.width) * 0.5, (warning.paintHeight || warning.height) * 0.5] : [1, 1],
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uSewerMotion: reducedMotion.matches ? 0 : performance.now() / 1000,
       uThemeWallA: theme.wallA, uThemeWallB: theme.wallB, uThemeGrout: theme.grout, uThemeLamp: theme.lamp,
@@ -17390,7 +17650,7 @@ function create(gfx) {
     });
   }
   return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3],
-    fans: extra[0], sheets: extra[1], wallFans: extra[2], clipped, darkness, darknessTarget, underwater: water, oxygen: air, flashlight: lightEnabled }) };
+    fans: extra[0], sheets: extra[1], wallFans: extra[2], bursts:activeBursts.length, clipped, darkness, darknessTarget, underwater: water, oxygen: air, flashlight: lightEnabled }) };
 }
 
 GAME.sewerFlightRenderer = { create, inflowSheets, darknessAt, mazeFeatures };
@@ -18986,7 +19246,7 @@ function mazeFeatures(world, cam) {
     .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && dot(sub(cue.p, cam.pos), cam.fwd) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
   const warnings = (world.warnings || (world.forks || []).map(fork => fork.warning).filter(Boolean))
-    .filter(sign => sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
+    .filter(sign => sign?.maze === undefined && !sign?.underwater && sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
       && distance(sign.p) < RANGE && dot(sub(sign.p, cam.pos), cam.fwd) > 0);
   warnings.sort((a, b) => distance(a.p) - distance(b.p));
   return { downArrow: arrows[0] && distance(arrows[0].p) < RANGE ? arrows[0] : null,
@@ -18994,35 +19254,57 @@ function mazeFeatures(world, cam) {
     warning: warnings[0] || null };
 }
 
-// Painted pigment is ordinary triangles on the real lintel plate, with its eye/nose cutouts
-// exposing the backing. This keeps the shared Windows material shader unchanged.
+// The red stencil is painted on a full-width timber sluice, with rough horizontal planks,
+// embedded iron straps and bolts. All detail is geometry/vertex colour, never another shader.
 function warningMesh(sign) {
   const b = GAME.mesh.builder().tag(GAME.mesh.MATERIAL.PLAIN);
-  if (!sign) return b.build();
-  const right = unit(cross([0, 1, 0], sign.n)), dark = [0.055, 0.065, 0.055], red = [1.2, 0.025, 0.015];
+  if (!sign || sign.maze !== undefined || sign.underwater) return b.build();
+  const right = unit(cross([0, 1, 0], sign.n)), dark = [0.09, 0.038, 0.011], red = [1.2, 0.025, 0.015];
+  const sx = (sign.paintWidth || sign.width) / sign.width, sy = (sign.paintHeight || sign.height) / sign.height;
+  const planks = sign.planks || Math.max(1, Math.round(sign.height / 2));
   const point = (x, y, depth = 0) => add(add(sign.p, scale(right, x * sign.width * 0.5)),
     add([0, y * sign.height * 0.5, 0], scale(sign.n, depth)));
   const rectangle = (x0, y0, x1, y1, colour, depth) => b.quad(point(x0, y0, depth), point(x1, y0, depth),
     point(x1, y1, depth), point(x0, y1, depth), colour, sign.n);
-  const ellipse = (x, y, rx, ry, colour, depth) => {
-    for (let i = 0; i < 64; i++) {
-      const a = i / 64 * Math.PI * 2, c = (i + 1) / 64 * Math.PI * 2;
+  const ellipse = (x, y, rx, ry, colour, depth, segments = 64) => {
+    for (let i = 0; i < segments; i++) {
+      const a = i / segments * Math.PI * 2, c = (i + 1) / segments * Math.PI * 2;
       b.triangle(point(x, y, depth), point(x + Math.cos(a) * rx, y + Math.sin(a) * ry, depth),
         point(x + Math.cos(c) * rx, y + Math.sin(c) * ry, depth), colour, sign.n);
     }
   };
-  rectangle(-1, -1, 1, 1, dark, 0);
-  const depth = -(sign.depth || 1.2), edge = [0.045, 0.055, 0.045];
+  for (let row = 0; row < planks; row++) {
+    const y0 = -1 + row * 2 / planks, y1 = -1 + (row + 1) * 2 / planks, shade = 0.76 + Math.sin(row * 2.37 + 0.6) * 0.12;
+    rectangle(-1, y0, 1, y1, [0.24 * shade, 0.11 * shade, 0.035 * shade], 0);
+    for (let fibre = 0; fibre < 4; fibre++) for (let segment = 0; segment < 5; segment++) {
+      const x0 = -1 + segment * 0.4, x1 = x0 + 0.4, y = y0 + (fibre + 0.7) / 4.8 * (y1 - y0);
+      const yAt = x => y + Math.sin(x * 7 + row * 1.7 + fibre) * 0.003;
+      b.quad(point(x0, yAt(x0), 0.003), point(x1, yAt(x1), 0.003),
+        point(x1, yAt(x1) + 0.003, 0.003), point(x0, yAt(x0) + 0.003, 0.003), [0.12, 0.052, 0.015], sign.n);
+    }
+  }
+  const depth = -(sign.depth || 1.2), edge = [0.13, 0.055, 0.015];
   b.quad(point(-1, -1, depth), point(-1, 1, depth), point(1, 1, depth), point(1, -1, depth), edge, scale(sign.n, -1));
   for (const [x0, y0, x1, y1, normal] of [[-1,-1,-1,1,scale(right,-1)],[1,1,1,-1,right],
     [-1,1,1,1,[0,1,0]],[1,-1,-1,-1,[0,-1,0]]])
     b.quad(point(x0,y0),point(x1,y1),point(x1,y1,depth),point(x0,y0,depth),edge,normal);
-  ellipse(0, 0.23, 0.70, 0.64, red, 0.015);
-  rectangle(-0.58, -0.26, 0.58, 0.20, red, 0.015);
-  rectangle(-0.39, -0.73, 0.39, -0.15, red, 0.015);
-  for (let i = 0; i < 4; i++) rectangle(-0.39 + i * 0.195 + 0.04, -0.94, -0.39 + (i + 1) * 0.195, -0.66, red, 0.015);
-  for (const x of [-0.30, 0.30]) ellipse(x, 0.15, 0.22, 0.19, dark, 0.03);
-  b.triangle(point(0, -0.04, 0.03), point(-0.1326, -0.38, 0.03), point(0.1326, -0.38, 0.03), dark, sign.n);
+  for (const signX of [-1, 1]) {
+    const x = signX * sx * 0.86;
+    rectangle(x - 0.64 / sign.width, -1, x + 0.64 / sign.width, 1, [0.075, 0.065, 0.045], 0.005);
+    for (let row = 0; row < planks; row++) ellipse(x, -1 + (row + 0.5) * 2 / planks,
+      0.25 / sign.width, 0.25 / sign.height, [0.20, 0.16, 0.095], 0.009, 12);
+  }
+  ellipse(0, 0.23 * sy, 0.70 * sx, 0.64 * sy, red, 0.015);
+  rectangle(-0.58 * sx, -0.26 * sy, 0.58 * sx, 0.20 * sy, red, 0.015);
+  rectangle(-0.39 * sx, -0.73 * sy, 0.39 * sx, -0.15 * sy, red, 0.015);
+  for (let i = 0; i < 4; i++) rectangle((-0.39 + i * 0.195 + 0.04) * sx, -0.94 * sy, (-0.39 + (i + 1) * 0.195) * sx, -0.66 * sy, red, 0.015);
+  for (const x of [-0.30, 0.30]) ellipse(x * sx, 0.15 * sy, 0.22 * sx, 0.19 * sy, dark, 0.03);
+  b.triangle(point(0, -0.04 * sy, 0.03), point(-0.1326 * sx, -0.38 * sy, 0.03), point(0.1326 * sx, -0.38 * sy, 0.03), dark, sign.n);
+  // Narrow plank joints remain visible through the stencil, just as paint on wood would.
+  for (let row = 1; row < planks; row++) {
+    const y = -1 + row * 2 / planks;
+    rectangle(-1, y - 0.035 / sign.height, 1, y + 0.035 / sign.height, [0.035, 0.015, 0.004], 0.035);
+  }
   return b.build();
 }
 
@@ -19386,6 +19668,76 @@ const DIRT_COLOUR = [0.15, 0.105, 0.045];
 const PIPE_COLOURS = { grate: [0.2, 0.09, 0.045], sluice: [0.14, 0.09, 0.05], cable: [0.025, 0.027, 0.03],
   root: [0.09, 0.06, 0.032], falls: [0.03, 0.11, 0.07], strut: [0.3, 0.2, 0.03], pole: [0.1, 0.11, 0.1] };
 const pipeColour = pipe => PIPE_COLOURS[pipe.kind] || [0.13, 0.17, 0.15];
+function pipeMesh(builder, pipe, site = null) {
+  if (!site) { builder.tag(6).capsule(pipe.a, pipe.b, pipe.radius, pipeColour(pipe), 20, 6); return; }
+  const axis = site.axis, u = unit(cross(Math.abs(axis[1]) < 0.9 ? [0,1,0] : [1,0,0], axis)), v = cross(axis, u);
+  const length = Math.hypot(...sub(pipe.b, pipe.a)), holeAt = site.f * length, colour = pipeColour(pipe);
+  const rows = [0, length, ...[-1.5,-1,-0.5,0,0.5,1,1.5].map(f => clamp(holeAt + site.hole * 1.2 * f, 0, length))]
+    .sort((a,b) => a-b);
+  const centreAngle = Math.atan2(dot(site.normal, v), dot(site.normal, u));
+  const angles = Array.from({length:48},(_,i)=>i*Math.PI*2/48);
+  for (const f of [-1.5,-1,-0.5,0,0.5,1,1.5])
+    angles.push((centreAngle + Math.asin(Math.min(0.95, site.hole * 0.8 / pipe.radius)) * f + Math.PI*2) % (Math.PI*2));
+  angles.push(Math.PI*2); angles.sort((a,b)=>a-b);
+  const radial = angle => add(scale(u,Math.cos(angle)),scale(v,Math.sin(angle)));
+  const normal = p => unit(sub(p,GAME.sewerWater.axisPoint(pipe,p)));
+  const emit = tri => {
+    const polygon = clipPolygon(tri,p=>GAME.sewerWater.holeField(site,p));
+    for(let k=1;k<polygon.length-1;k++) {
+      const face=[polygon[0],polygon[k],polygon[k+1]];
+      if(Math.hypot(...cross(sub(face[1],face[0]),sub(face[2],face[0])))>1e-8)
+        builder.triangle(...face,colour,face.map(normal),6);
+    }
+  };
+  for(let j=0;j<rows.length-1;j++)for(let k=0;k<angles.length-1;k++) {
+    const at=(s,a)=>add(pipe.a,add(scale(axis,s),scale(radial(a),pipe.radius)));
+    const p=[at(rows[j],angles[k]),at(rows[j+1],angles[k]),at(rows[j+1],angles[k+1]),at(rows[j],angles[k+1])];
+    emit([p[0],p[1],p[2]]);emit([p[0],p[2],p[3]]);
+  }
+  for(const [centre,sign] of [[pipe.a,-1],[pipe.b,1]])for(let j=0;j<6;j++)for(let k=0;k<angles.length-1;k++) {
+    const at=(row,angle)=>add(centre,add(scale(axis,sign*Math.cos(row*Math.PI/12)*pipe.radius),
+      scale(radial(angle),Math.sin(row*Math.PI/12)*pipe.radius)));
+    const p=[at(j,angles[k]),at(j+1,angles[k]),at(j+1,angles[k+1]),at(j,angles[k+1])];
+    emit([p[0],p[1],p[2]]);emit([p[0],p[2],p[3]]);
+  }
+  const backing=add(site.centre,scale(site.normal,pipe.radius-0.27));
+  for(let k=0;k<48;k++) {
+    const a=k*Math.PI*2/48,b=(k+1)*Math.PI*2/48;
+    const innerA=GAME.sewerWater.ringPoint(site,a,1,0.025),innerB=GAME.sewerWater.ringPoint(site,b,1,0.025);
+    const outerA=GAME.sewerWater.ringPoint(site,a,1.2,-0.008),outerB=GAME.sewerWater.ringPoint(site,b,1.2,-0.008);
+    const backA=add(backing,add(scale(site.axis,Math.cos(a)*site.hole*1.35),scale(site.side,Math.sin(a)*site.hole*.95)));
+    const backB=add(backing,add(scale(site.axis,Math.cos(b)*site.hole*1.35),scale(site.side,Math.sin(b)*site.hole*.95)));
+    builder.triangle(backing,backA,backB,[0.002,0.009,0.006],site.normal,0);
+    builder.quad(innerA,outerA,outerB,innerB,k%3?[0.23,0.115,0.045]:[0.38,0.34,0.22],site.normal,6);
+    builder.quad(innerA,innerB,backB,backA,[0.045,0.06,0.05],site.normal,6);
+  }
+}
+function inletDamageMesh(builder,tube) {
+  if(tube.kind!=='inlet')return;
+  const damage=GAME.sewerWater.inletDamage(tube,tube.index);
+  const emit=(tri,colour=[0.015,0.019,0.014])=>ownWater(tri,tube,face=>builder.triangle(...face,colour,
+    face.map(p=>unit(sub(axisPoint(tube,p),p))),0));
+  for(let k=0;k<damage.rim.length-1;k++) {
+    const a=damage.rim[k],b=damage.rim[k+1],wide=.13;
+    const p=[add(a.p,scale(damage.axis,-wide)),add(b.p,scale(damage.axis,-wide)),
+      add(b.p,scale(damage.axis,wide)),add(a.p,scale(damage.axis,wide))];
+    emit([p[0],p[1],p[2]]);emit([p[0],p[2],p[3]]);
+    const bevel=[add(a.p,scale(damage.axis,.135)),add(b.p,scale(damage.axis,.135)),
+      add(b.p,scale(damage.axis,.295)),add(a.p,scale(damage.axis,.295))];
+    emit([bevel[0],bevel[1],bevel[2]],[0.18,0.14,0.08]);emit([bevel[0],bevel[2],bevel[3]],[0.18,0.14,0.08]);
+  }
+  for(const line of damage.cracks)for(let k=0;k<line.length-1;k++) {
+    const a=line[k],b=line[k+1],tangent=unit(add(scale(damage.u,-Math.sin(a.angle)),scale(damage.v,Math.cos(a.angle))));
+    const width=Math.max(.04,.085*(1-k/(line.length*1.4))),p=[add(a.p,scale(tangent,-width)),add(b.p,scale(tangent,-width)),
+      add(b.p,scale(tangent,width)),add(a.p,scale(tangent,width))];
+    emit([p[0],p[1],p[2]]);emit([p[0],p[2],p[3]]);
+  }
+}
+function burstMesh(builder,site,clock=0,reduced=false) {
+  const strength=GAME.sewerWater.pulse(site,clock,reduced),radius=site.hole*.42*(.75+.25*strength);
+  for(let k=0;k<3;k++)builder.tag(3).capsule(GAME.sewerWater.point(site,k/3),GAME.sewerWater.point(site,(k+1)/3),
+    radius*(1+k*.18),[0.045,0.22,0.12,.68+strength*.12],10,3);
+}
 const FAN_IRON = [0.11, 0.12, 0.115], FAN_BLADE = [0.16, 0.13, 0.11], WARNING = [0.36, 0.26, 0.02];
 const COURSE_COLOURS = { collectibleStar: [0.48, 1.0, 0.32], booster: [0.28, 1.0, 0.43] };
 
@@ -19398,11 +19750,27 @@ const around = (centre, { e1, e2 }, r, angle) => add(centre, add(scale(e1, Math.
 
 // A curtain is the simulation's upright box; only its faces and ends are visible.
 function sheetMesh(builder, sheet, colour) {
-  const n = [-sheet.d[2], 0, sheet.d[0]], tint = [...colour, sheet.kind === 'falls' || sheet.kind === 'spiral' ? 0.85 : 0.7];
+  const n = [-sheet.d[2], 0, sheet.d[0]], tint = [...colour, sheet.kind === 'chamber-burst' ? 0.94 : sheet.kind === 'falls' || sheet.kind === 'spiral' ? 0.85 : 0.7];
   const corner = (u, v, y) => [sheet.c[0] + sheet.d[0] * sheet.hw * u + n[0] * sheet.thick * v, sheet.c[1] + sheet.hh * y,
     sheet.c[2] + sheet.d[2] * sheet.hw * u + n[2] * sheet.thick * v];
   for (const v of [-1, 1]) builder.quad(corner(-1, v, -1), corner(1, v, -1), corner(1, v, 1), corner(-1, v, 1), tint, scale(n, v), 3);
   for (const u of [-1, 1]) builder.quad(corner(u, -1, -1), corner(u, 1, -1), corner(u, 1, 1), corner(u, -1, 1), tint, scale(sheet.d, u), 3);
+}
+function roofDamageMesh(builder, world, sheet) {
+  const damage=GAME.sewerWater.roofDamage(world,sheet);if(!damage)return;
+  const tube=prepare(world).find(t=>t.a===damage.tube.a&&t.b===damage.tube.b);
+  if(!tube)return;
+  const emit=(p,colour)=>{if(p.some(q=>!q))return;
+    for(const tri of [[p[0],p[1],p[2]],[p[0],p[2],p[3]]])ownWater(tri,tube,face=>
+      builder.triangle(...face,colour,face.map(q=>unit(sub(axisPoint(tube,q),q))),0));};
+  const steps=Math.ceil(sheet.hw*2/.25);
+  for(let k=0;k<steps;k++) {
+    const a=-sheet.hw+k/steps*sheet.hw*2,b=-sheet.hw+(k+1)/steps*sheet.hw*2;
+    const ea=damage.edge(a),eb=damage.edge(b);
+    emit([damage.at(a,-ea),damage.at(b,-eb),damage.at(b,eb),damage.at(a,ea)],[.009,.014,.009]);
+    for(const side of [-1,1])emit([damage.at(a,side*(ea+.11)),damage.at(b,side*(eb+.11)),
+      damage.at(b,side*(eb+.31)),damage.at(a,side*(ea+.31))],[.18,.14,.08]);
+  }
 }
 
 // Fan hubs and open rings: the solid between two coaxial cylinders. An open ring's lip glows.
@@ -19464,16 +19832,19 @@ const wallHost = (tubes, fan) => tubes.reduce((best, tube) => Math.abs(shellDist
 function buildWorld(world, { indices = null, props = true, flows = true } = {}) {
   const tubes = prepare(world), selected = indices === null ? tubes : indices.map(i => tubes[i]).filter(Boolean);
   const opaque = GAME.mesh.builder(), water = GAME.mesh.builder(), flow = GAME.mesh.builder(), lamps = GAME.mesh.builder();
-  for (const tube of selected) { shellMesh(opaque, tube); waterMesh(water, tube); lampMesh(lamps, tube); }
+  for (const tube of selected) { shellMesh(opaque, tube); inletDamageMesh(opaque,tube); waterMesh(water, tube); lampMesh(lamps, tube); }
   if (props) {
-    for (const pipe of world.pipes || []) if (pipe.seal === undefined) opaque.tag(6).capsule(pipe.a, pipe.b, pipe.radius, pipeColour(pipe), 20, 6);
+    const sites=new Map(GAME.sewerWater.sites(world).map(site=>[site.pipe,site]));
+    for (const [index,pipe] of (world.pipes || []).entries()) if (pipe.seal === undefined) pipeMesh(opaque,pipe,sites.get(index));
     for (const pile of world.dirt || []) opaque.tag(12).ellipsoid(pile.centre, pile.radii, DIRT_COLOUR, 20, 12);
     for (const fan of world.fans || []) { fanRingMesh(opaque, fan); fanBladeMesh(opaque, fan, 0); }
     for (const fan of world.wallFans || []) { const tube = wallHost(tubes, fan); wallFanDisc(opaque, fan, tube); wallFanBlades(opaque, fan, tube, 0); }
+    for (const sheet of world.sheets || []) roofDamageMesh(opaque,world,sheet);
   }
   if (flows) {
     for (const sheet of inflowSheets(world)) flowMesh(flow, sheet);
     for (const sheet of world.sheets || []) sheetMesh(flow, sheet, tubes[0].look.curtain);
+    for (const site of GAME.sewerWater.sites(world)) burstMesh(flow,site);
   }
   return { opaque: opaque.build(), water: water.build(), flow: flow.build(), lamps: lamps.build(),
     stats: { tunnels: selected.length, pipes: props ? (world.pipes || []).filter(pipe => pipe.seal === undefined).length : 0, dirt: props ? (world.dirt || []).length : 0 } };
@@ -19485,9 +19856,11 @@ function create(gfx) {
   let fog = [0.012, 0.030, 0.031], wallHosts = [];
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let world, tubes = [], sheets = [], cache = new Map(), propCache = new Map(), flowCache = new Map(), lastVisible = {};
+  let waterSites = [], pipeSites = new Map();
   let darkness = 0, darknessTarget = 0, lastLightTime = null;
   const markers = { opaque: mesh.upload(new Float32Array(0), { dynamic: true }), transparent: mesh.upload(new Float32Array(0), { dynamic: true }), xray: mesh.upload(new Float32Array(0), { dynamic: true }) };
   const spinning = mesh.upload(new Float32Array(0), { dynamic: true });
+  const bursting = mesh.upload(new Float32Array(0), { dynamic: true });
   const cueMesh = mesh.upload(new Float32Array(0), { dynamic: true });
   const warning = mesh.upload(new Float32Array(0), { dynamic: true });
   let warningSign = null;
@@ -19504,6 +19877,7 @@ function create(gfx) {
     if (!city?.sewer?.tunnels?.length) throw new Error('sewer-lite needs a connected sewer map');
     release(cache); release(propCache); release(flowCache);
     world = city.sewer; tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
+    waterSites = GAME.sewerWater.sites(world); pipeSites = new Map(waterSites.map(site=>[site.pipe,site]));
     darkness = 0; darknessTarget = 0; lastLightTime = null;
     warningSign = null;
     fog = tubes[0].look.fog; wallHosts = (world.wallFans || []).map(fan => wallHost(tubes, fan));
@@ -19519,12 +19893,16 @@ function create(gfx) {
     const key = `${kind}:${index}`;
     if (!propCache.has(key)) {
       const b = GAME.mesh.builder();
-      if (kind === 'pipe') b.tag(6).capsule(value.a, value.b, value.radius, pipeColour(value), 20, 6);
+      if (kind === 'pipe') pipeMesh(b,value,pipeSites.get(index));
       else if (kind === 'ring') fanRingMesh(b, value);
       else if (kind === 'wall') wallFanDisc(b, value, wallHosts[index]);
       else if (kind === 'sheet') sheetMesh(b, value, tubes[0].look.curtain);
       else b.tag(12).ellipsoid(value.centre, value.radii, DIRT_COLOUR, 20, 12);
       propCache.set(key, { opaque: mesh.upload(b.build()) });
+      if(kind==='sheet'&&value.kind==='chamber-burst') {
+        const roof=GAME.mesh.builder();roofDamageMesh(roof,world,value);
+        propCache.get(key).roof=mesh.upload(roof.build());
+      }
     }
     return propCache.get(key).opaque;
   }
@@ -19626,12 +20004,26 @@ function create(gfx) {
       wallFanBlades(moving, fan, wallHosts[index], clock);
     mesh.update(spinning, moving.build());
     mesh.draw(spinning, cam, { ...opts, sewer: surface(nearestTube(cam.pos)) });
+    const burstBuilder=GAME.mesh.builder(), nearbyBursts=waterSites
+      .map(site=>({site,distance:Math.hypot(...sub(site.source,cam.pos))}))
+      .filter(value=>value.distance<RANGE).sort((a,b)=>a.distance-b.distance).slice(0,4);
+    for(const {site} of nearbyBursts)burstMesh(burstBuilder,site,clock,reducedMotion.matches);
+    mesh.update(bursting,burstBuilder.build());
+    mesh.draw(bursting,cam,{...opts,time:reducedMotion.matches?0:clock,sewer:surface(nearestTube(cam.pos)),depthWrite:false});
     for (const { sheet, index } of flows) mesh.draw(flowHandle(sheet, index), cam,
       { ...opts, sewer: surface(tubes[sheet.source]), depthWrite: false });
+    for(const p of props)if(p.kind==='sheet'&&p.value.kind==='chamber-burst') {
+      propHandle(p.value,p.kind,p.index);
+      mesh.draw(propCache.get(`sheet:${p.index}`).roof,cam,{...opts,sewer:surface(nearestTube(p.value.c))});
+    }
     // Translucent curtains are drawn far to near.
     const curtains = props.filter(p => p.kind === 'sheet').sort((a, b) => distance2(cam.pos, b.value.c) - distance2(cam.pos, a.value.c));
-    for (const p of curtains) mesh.draw(propHandle(p.value, p.kind, p.index), cam,
-      { ...opts, sewer: surface(nearestTube(p.value.c)), depthWrite: false });
+    for (const p of curtains) {
+      const chamber=p.value.kind==='chamber-burst',effectTime=reducedMotion.matches?0:clock;
+      const pressure=chamber ? .95+(0.5+0.5*Math.sin(effectTime*(p.value.pulseSpeed??1.5)+(p.value.phase??0)))*.35 : 1;
+      mesh.draw(propHandle(p.value, p.kind, p.index), cam,
+        { ...opts,time:chamber?effectTime:opts.time,colour:[pressure,pressure,pressure],sewer: surface(nearestTube(p.value.c)), depthWrite: false });
+    }
     if (water > 0) mesh.weather(cam, { sky: { horizon: [0.01, 0.04, 0.02] }, fog: { low: cameraFog },
       motes: { kind: 'silt', amount: water * 0.42 } }, time);
     if (features.warning) {
@@ -19662,14 +20054,14 @@ function create(gfx) {
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
     lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length + shutters,
       dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, sheets: curtains.length, clipped: tubes.length - selected.length,
-      resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true,
+      resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true, bursts:nearbyBursts.length,
       darkness, darknessTarget, underwater: water, oxygen: clamp(Number(oxygen) || 0, 0, 1), flashlight: !!flashlight };
   }
   return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
-    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(cueMesh); mesh.dispose(warning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
+    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(bursting); mesh.dispose(cueMesh); mesh.dispose(warning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
-GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, warningMesh,
+GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, warningMesh, pipeMesh, burstMesh, roofDamageMesh,
   bankDistance: (world, p, index = 0) => bankDistance(prepare(world)[index], p), stride: STRIDE };
 
 })();
@@ -20236,7 +20628,7 @@ function create(root, { touch, onPause, onLift }) {
       const hideOxygen = !info.underwater;
       if (oxygen.hidden !== hideOxygen) { oxygen.hidden = hideOxygen; band = null; }
       if (!hideOxygen) {
-        const maximum = Number.isFinite(info.maxOxygen) && info.maxOxygen > 0 ? info.maxOxygen : 40;
+        const maximum = Number.isFinite(info.maxOxygen) && info.maxOxygen > 0 ? info.maxOxygen : GAME.sewerCourse.OXYGEN;
         const remaining = Math.max(0, Math.min(maximum, Number.isFinite(info.oxygen) ? info.oxygen : maximum));
         const fraction = remaining / maximum;
         const critical = fraction <= 0.2;
@@ -20675,14 +21067,19 @@ function create(panel, { touch, collapseHint = () => null }) {
     buy.textContent = busy === 'lift' ? 'saving…' : !s.available ? 'unavailable' : s.lifts >= item.capacity ? 'inventory full'
       : s.balance < item.price ? `need ${item.price - s.balance} more ★` : `buy lift · ${item.price} ★`;
     const flashlight = GAME.shop.FLASHLIGHT;
-    q('#shop-flashlight-owned').textContent = `${s.flashlightUses} / ${flashlight.capacity * flashlight.uses} uses left`;
+    const hasFlashlight = s.flashlightUses > 0;
+    q('#shop-flashlight-owned').textContent = `${s.flashlightCurrentUses} / ${flashlight.uses} uses left`
+      + (s.flashlightReserve ? ` · ${s.flashlightReserve} spare ${s.flashlightReserve === 1 ? 'light' : 'lights'}` : '');
     q('#shop-flashlight-price').textContent = `★ ${flashlight.price}`;
     const flashlightHadFocus = document.activeElement === flashlightBuy;
-    flashlightBuy.disabled = !!busy || !s.available || s.flashlights >= flashlight.capacity || s.balance < flashlight.price;
+    flashlightBuy.disabled = !!busy || !s.available || (!hasFlashlight && s.balance < flashlight.price);
     if (flashlightHadFocus && flashlightBuy.disabled) q('#shop-done').focus();
     flashlightBuy.textContent = busy === 'flashlight' ? 'saving…' : !s.available ? 'unavailable'
-      : s.flashlights >= flashlight.capacity ? 'inventory full' : s.balance < flashlight.price
+      : hasFlashlight ? s.flashlightEquipped ? 'unequip' : 'equip' : s.balance < flashlight.price
       ? `need ${flashlight.price - s.balance} more ★` : `buy light · ${flashlight.price} ★`;
+    if (hasFlashlight) flashlightBuy.setAttribute('aria-pressed', String(s.flashlightEquipped));
+    else flashlightBuy.removeAttribute('aria-pressed');
+    flashlightBuy.setAttribute('aria-label', `Flashlight: ${flashlightBuy.textContent}`);
     const key = GAME.shop.COLLAPSE_KEY;
     const hint = collapseHint();
     const seconds = hint ? Math.max(0, Math.ceil(hint.seconds - 1e-7)) : null;
@@ -20739,7 +21136,20 @@ function create(panel, { touch, collapseHint = () => null }) {
   }
   buy.addEventListener('click', () => purchase('lift'));
   keyBuy.addEventListener('click', () => purchase('key'));
-  flashlightBuy.addEventListener('click', () => purchase('flashlight'));
+  flashlightBuy.addEventListener('click', async () => {
+    if (busy) return;
+    const state = GAME.shop.state();
+    if (!state.flashlightUses) { purchase('flashlight'); return; }
+    const equipped = !state.flashlightEquipped;
+    busy = 'flashlight'; render();
+    try {
+      const result = await GAME.shop.setFlashlightEquipped(equipped);
+      q('#shop-message').textContent = result.ok
+        ? equipped ? 'Flashlight equipped for your next Sewer flight.' : 'Flashlight unequipped. Your uses stay saved.'
+        : result.message;
+    } catch { q('#shop-message').textContent = 'Could not save your equipment. Please try again.'; }
+    finally { busy = null; render(); }
+  });
   q('#shop-done').addEventListener('click', close);
   panel.addEventListener('click', e => { if (e.target === panel) close(); });
   panel.addEventListener('keydown', e => {
@@ -21586,7 +21996,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => isSewer() ? `neonflight.sewer.best.v6.${difficulty}.${code}`
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v7.${difficulty}.${code}`
   : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
@@ -22214,7 +22624,8 @@ async function fly({ calibrate = false, seed = null } = {}) {
       if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
       if (equipped) hud.toast('Flashlight on · this Sewer flight', 'good', 3);
     };
-    if (isSewer() && GAME.shop.state().flashlights > 0) {
+    const flashlight = GAME.shop.state();
+    if (isSewer() && flashlight.flashlightEquipped && flashlight.flashlightUses > 0) {
       // Start inside the saved transaction's callback. A delayed lock promise must not spend
       // an item, then let another menu action cancel its flight before the continuation runs.
       const result = await GAME.shop.useFlashlight(() => !graphics.recovering && !GAME.gfx.contextLost() && !courseLoading
