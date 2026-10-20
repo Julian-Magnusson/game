@@ -175,8 +175,12 @@ An oxygen bar holds **40 seconds** of air and refills after surfacing. Pause fre
 running out restarts the course. Mazes occur occasionally on Easy/Medium, twice on Hard and
 three times on Extreme. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
-underground, with records kept separate from the city. The new layout uses version-5 Sewer
+underground, with records kept separate from the city. The new layout uses version-6 Sewer
 records; existing Extreme unlocks, saved stars and shop purchases stay intact.
+Normal tunnels also split into passages during flight: one dry fork on Easy/Medium, two on
+Hard and three on Extreme. Large red skulls painted onto solid lintels mark the wrong
+entrances, including underwater forks. The other passage continues the race; capped wrong
+branches have enough room to turn back. Normal rings and guidance remain visible in air.
 Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Each room
 also has 2/3/4/5 rotating sweeper poles on Easy/Medium/Hard/Extreme, with increasing speeds
 and alternating directions. Hard and

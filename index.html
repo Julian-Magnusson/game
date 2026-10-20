@@ -670,6 +670,7 @@
       <p class="surface-rules">Follow the glowing line and fly through the gates in order. Altitude drains as you fly. Lime <b>boost rings</b> and <b>light beams</b> lift you.</p>
       <p class="surface-rules">Low park sections weave between trees. Look for bronze sculptures framing gates and boost rings, and a wooded park around the finish.</p>
       <p class="sewer-rules">Follow the rings through collectors, connecting tunnels and shafts. Moving air supports a level glide; rising shafts have an updraft. Watch for rotating poles in the big shafts. Ordinary green water, walls and obstacles cause a crash.</p>
+      <p class="sewer-rules">Tunnels can split into two passages above or below the water. A <b>large red skull painted above an entrance</b> marks the dead end. Follow the other passage; the wrong branch has room to turn back.</p>
       <p class="sewer-rules">Red painted downward arrows mark flooded mazes. Dive below the barricades; the entrance shutter closes behind you. Follow the <b>bright cyan lights</b> through the forks to the <b>single air outlet</b>, and dodge the pipes underwater.</p>
       <p class="sewer-rules">Your <strong>40 seconds of oxygen</strong> refill in air; running out causes a crash and full course restart. Unlit sections fade into darkness and back out again. A flashlight lights up nearby obstacles and reaches much farther underwater.</p>
       <p class="surface-rules">A missed gate adds <strong>2 seconds</strong>. A crash adds <strong>3 seconds</strong> and returns you to your last gate.</p>
@@ -8941,6 +8942,14 @@ function distanceToSegment(point, a, b) {
   return Math.hypot(px - bx * t, py - by * t, pz - bz * t);
 }
 
+// Warning paint sits on a real iron lintel. p is its front face, and the solid slab extends
+// backwards along -n; the mesh and ray renderers use these exact same dimensions.
+function warningDistance(warning, p) {
+  const qx = p[0] - warning.p[0], qy = p[1] - warning.p[1], qz = p[2] - warning.p[2], n = warning.n, depth = warning.depth || 1.2;
+  return Math.hypot(Math.max(0, Math.abs(qx * n[2] - qz * n[0]) - warning.width / 2),
+    Math.max(0, Math.abs(qy) - warning.height / 2), Math.max(0, Math.abs(qx * n[0] + qy * n[1] + qz * n[2] + depth / 2) - depth / 2));
+}
+
 // Curtains, hubs and rings are static. Blades turn with the run clock, so they only collide when
 // a time is given (flight steps), never in the static layout and respawn checks.
 function sphere(city, x, y, z, radius, time, mazeSeals = null) {
@@ -8958,6 +8967,9 @@ function sphere(city, x, y, z, radius, time, mazeSeals = null) {
     const pipe = pipePose(world.pipes[i], mazeSeals, time);
     if (!pipe) continue;
     if (distanceToSegment(p, pipe.a, pipe.b) <= pipe.radius + radius) return { kind: 'tower', sewer: PIPE_HITS[pipe.kind] || 'pipe', pipe: i };
+  }
+  for (const [index, warning] of (world.warnings || []).entries()) {
+    if (warningDistance(warning, p) <= radius) return { kind: 'tower', sewer: 'wall', warning: index };
   }
   for (let i = 0; i < world.dirt.length; i++) {
     const pile = world.dirt[i];
@@ -9266,7 +9278,7 @@ function build(seed, difficulty, attempt) {
   const transform = p => [ox + Math.cos(rotation) * p[0] * mirrored + Math.sin(rotation) * p[2],
     p[1], oz - Math.sin(rotation) * p[0] * mirrored + Math.cos(rotation) * p[2]];
   // owners[i] is the route range that tunnel i belongs to (-1 for source inlets).
-  const raw = [], tunnels = [], owners = [], shafts = [], ranges = [], occupied = [], mazes = [];
+  const raw = [], tunnels = [], owners = [], shafts = [], ranges = [], occupied = [], mazes = [], forks = [], warnings = [];
   let pose = [0, 80, 0], yaw = 0, distance = 0, piece = 0;
   const point = p => {
     if (raw.length) distance += Math.hypot(...p.map((v, i) => v - raw.at(-1).p[i]));
@@ -9276,8 +9288,8 @@ function build(seed, difficulty, attempt) {
   // Pieces of one network may pass beside, above or below each other, but never merge;
   // only the piece directly before a new one may touch it.
   const thin = (points, radius) => points.filter((_, k) => k % 3 === 0 || k === points.length - 1).map(p => ({ p, radius }));
-  const fits = samples => samples.every(({ p, radius }) => occupied.every(o => o.piece >= piece - 1
-    || (p[0] - o.p[0]) ** 2 + (p[1] - o.p[1]) ** 2 + (p[2] - o.p[2]) ** 2 >= (radius + o.radius + 12) ** 2));
+  const fits = (samples, allow = null) => samples.every(sample => occupied.every(o => (allow ? allow(sample, o) : o.piece >= piece - 1)
+    || (sample.p[0] - o.p[0]) ** 2 + (sample.p[1] - o.p[1]) ** 2 + (sample.p[2] - o.p[2]) ** 2 >= (sample.radius + o.radius + 12) ** 2));
   const occupy = samples => { for (const sample of samples) occupied.push({ ...sample, piece }); piece++; };
   function tubePath(points, kind, radius) {
     const first = distance, water = points[0][1] - radius * 0.65;
@@ -9425,6 +9437,11 @@ function build(seed, difficulty, attempt) {
     const cue = transform(local(cueAcross, -90 + 9, cueAlong));
     const cueDirection = normalize(subtract(transform(local(cueAcross + hand * 0.5, -90, cueAlong + 1)),
       transform(local(cueAcross - hand * 0.5, -90, cueAlong - 1))));
+    const skullAngle = 0.7, skullU = -hand * 108 * (1 - Math.cos(skullAngle)), skullW = 240 + 108 * Math.sin(skullAngle);
+    const skullHeading = normalize(subtract(transform(local(skullU - hand * Math.sin(skullAngle), -90, skullW + Math.cos(skullAngle))),
+      transform(local(skullU, -90, skullW))));
+    const warning = { p: transform(local(skullU, -72, skullW)), n: skullHeading.map(v => -v), width: 20, height: 16, depth: 1.2, maze: id };
+    warnings.push(warning);
     const crossings = [];
     for (let k = 1; k < route.length; k++) if ((route[k - 1][1] < water) !== (route[k][1] < water)) {
       const f = (water - route[k - 1][1]) / (route[k][1] - route[k - 1][1]);
@@ -9438,6 +9455,7 @@ function build(seed, difficulty, attempt) {
         { position: transform(local(0, -90 * (1 - ramp(0.25)) + 9, 650 + 320 * 0.25)), direction: worldForward, radius: 2.5 }],
       downArrow: { p: arrow, n: worldForward.map(v => -v), width: 18, height: 18 },
       barrier: { centre: arrow, normal: worldForward.map(v => -v), width: 64, height: 68, down: [0, -1, 0] },
+      warning,
       shutter: { centre: shutterCentre, normal: worldForward, seconds: SHUTTER_SECONDS },
       returnTurnTunnels, deadEnd: { position: transform(deadEnd), tunnel: rooms[0], tunnels: rooms, width: 236, length: 176, height: 56 }, hand });
     ranges.push({ s0: first, s1: distance, kind: 'maze', radius, water, straight: false, flooded: true, maze: id });
@@ -9490,6 +9508,56 @@ function build(seed, difficulty, attempt) {
       if (angle > Math.PI / 2 + 0.01) lastWide = Math.sign(yaw - before);
     }
   }
+
+  // At selected normal bends the collector also continues straight into a capped branch.
+  // The course keeps its original curved line; the two round mouths separate naturally into
+  // different passages, and the red skull marks the straight continuation as a dead end.
+  const rawAt = s => {
+    let k = 0;
+    while (k < raw.length - 2 && raw[k + 1].s < s) k++;
+    const a = raw[k], b = raw[k + 1], f = clamp((s - a.s) / Math.max(1e-6, b.s - a.s), 0, 1);
+    return { p: a.p.map((v, i) => v + (b.p[i] - v) * f), direction: normalize([b.p[0] - a.p[0], 0, b.p[2] - a.p[2]]) };
+  };
+  const forkMotion = GAME.rng.stream(seed, `sewer-dry-forks:${attempt}`), forkCount = difficulty === 'hard' ? 2 : difficulty === 'extreme' ? 3 : 1;
+  const forkCandidates = ranges.map((range, index) => ({ range, index, order: forkMotion() }))
+    .filter(({ range }) => !range.straight && !range.flooded && range.shaft === undefined && range.s0 > 200)
+    .sort((a, b) => a.order - b.order);
+  for (const { range, index: parent } of forkCandidates) {
+    if (forks.length >= forkCount) break;
+    const { p: start, direction: forward } = rawAt(range.s0 + 0.01), side = [forward[2], 0, -forward[0]], radius = Math.max(28, range.radius);
+    const local = (u, along) => start.map((v, i) => v + side[i] * u + forward[i] * along);
+    const endAlong = 360, branch = Array.from({ length: endAlong / 4 + 1 }, (_, k) => local(0, k * 4));
+    const roomPaths = [0, 40, 80, 120].map(along => Array.from({ length: 46 }, (_, k) => local(-90 + k * 4, endAlong + along)));
+    const lobbyPaths = [-100, -60, -20, 20].map(along => Array.from({ length: 46 }, (_, k) => local(-90 + k * 4, along)));
+    const samples = [...thin(branch, radius).map(sample => ({ ...sample, along: dot(subtract(sample.p, start), forward) })),
+      ...roomPaths.flatMap(path => thin(path, radius)).map(sample => ({ ...sample, along: endAlong })),
+      ...lobbyPaths.flatMap(path => thin(path, radius)).map(sample => ({ ...sample, along: dot(subtract(sample.p, start), forward), lobby: true }))];
+    if (!fits(samples, (sample, other) => (other.piece === parent && sample.along < 160)
+      || (other.piece === parent + 1 && sample.along < 230)
+      || (other.piece === parent - 1 && sample.along < radius + range.radius + 12))) continue;
+    occupy(samples);
+    const indices = [], roomIndices = [], turnIndices = [], owner = -2 - forks.length;
+    for (let k = 0; k < branch.length - 1; k += 8) {
+      const end = Math.min(branch.length - 1, k + 8); indices.push(tunnels.length); owners.push(owner);
+      tunnels.push({ a: transform(branch[k]), b: transform(branch[end]), radius, kind: 'fork', water: range.water, flooded: false, fork: forks.length, role: 'wrong' });
+    }
+    for (const path of roomPaths) {
+      roomIndices.push(tunnels.length); indices.push(tunnels.length); owners.push(owner);
+      tunnels.push({ a: transform(path[0]), b: transform(path.at(-1)), radius, kind: 'fork-room', water: range.water, flooded: false, fork: forks.length, role: 'dead-end' });
+    }
+    for (const path of lobbyPaths) {
+      turnIndices.push(tunnels.length); indices.push(tunnels.length); owners.push(owner);
+      tunnels.push({ a: transform(path[0]), b: transform(path.at(-1)), radius, kind: 'fork-lobby', water: range.water, flooded: false, fork: forks.length, role: 'return-turn' });
+    }
+    const warning = { p: transform(local(0, 100)).map((v, i) => v + (i === 1 ? 18 : 0)),
+      n: normalize(subtract(transform(start), transform(local(0, 1)))), width: 20, height: 16, depth: 1.2, fork: forks.length };
+    warnings.push(warning);
+    forks.push({ id: forks.length, s: range.s0, position: transform(start),
+      correct: transform(rawAt(range.s0 + Math.min(150, (range.s1 - range.s0) * 0.75)).p), wrong: transform(local(0, 170)),
+      tunnels: indices, roomTunnels: roomIndices, turnTunnels: turnIndices, warning,
+      deadEnd: { position: transform(local(0, endAlong)), width: 180 + radius * 2, length: 120 + radius * 2, height: radius * 2 } });
+  }
+  if (forks.length !== forkCount) return null;
 
   const n = Math.ceil(distance / SAMPLE) + 1, line = { n, x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n) };
   let source = 0;
@@ -9913,7 +9981,7 @@ function build(seed, difficulty, attempt) {
     banks++;
   }
   const city = { environment: 'sewer', seed, difficulty, size: 4096, maxHeight: 260, obstacles: pipes,
-    sewer: { tunnels, pipes, dirt, inflows, shafts, sheets, fans, wallFans, mazes, theme: { ...theme }, startY: 80,
+    sewer: { tunnels, pipes, dirt, inflows, shafts, sheets, fans, wallFans, mazes, forks, warnings, theme: { ...theme }, startY: 80,
       minY: Math.min(...tunnels.map(tube => tube.water ?? Infinity)) } };
   const dark = GAME.rng.stream(seed, `sewer-dark:${attempt}`), darkRanges = new Set();
   if (difficulty === 'hard' || difficulty === 'extreme') {
@@ -9932,7 +10000,7 @@ function build(seed, difficulty, attempt) {
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
     par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length + sheets.length + fans.length,
-    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 5 };
+    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 6 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
@@ -9958,7 +10026,7 @@ function generate(seed, difficulty = 'medium') {
 
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
   sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
-  darknessAt, underwaterAt, pipePose, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
+  darknessAt, underwaterAt, pipePose, warningDistance, placeStars, PROFILES, STYLES, THEMES, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
 
 })();
 </script>
@@ -16278,7 +16346,8 @@ uniform vec4 uSewerCount, uSewerCount2;
 uniform float uSewerMotion, uSewerClock, uSewerDarkness, uFlashlight, uUnderwater;
 uniform vec3 uThemeWallA, uThemeWallB, uThemeGrout, uThemeLamp, uThemeWater, uThemeFog;
 uniform vec4 uThemeStyle;
-uniform vec4 uDownArrowC, uDownArrowN, uMazeCue;
+uniform vec4 uDownArrowC, uDownArrowN, uMazeCue, uWarningC, uWarningN;
+uniform float uWarningDepth;
 uniform vec2 uThemeExtra;
 const int TUNNELS = ${TUNNELS}, PIPES = ${PIPES}, DIRT = ${DIRT}, INFLOWS = ${INFLOWS};
 const int FANS = ${FANS}, SHEETS = ${SHEETS}, WALL_FANS = ${WALL_FANS};
@@ -16495,6 +16564,24 @@ SewerHit sewerTrace(vec3 ro, vec3 rd) {
       }
     }
   }
+  // The lintel plate is the same solid oriented slab as collision, including its back/sides.
+  if (uWarningC.w > 0.0) {
+    vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), uWarningN.xyz)), delta = ro - uWarningC.xyz;
+    vec3 q = vec3(dot(delta, right), delta.y, dot(delta, uWarningN.xyz));
+    vec3 d = vec3(dot(rd, right), rd.y, dot(rd, uWarningN.xyz));
+    vec3 inverse = mix(vec3(-1.0), vec3(1.0), step(vec3(0.0), d)) / max(abs(d), vec3(0.000001));
+    vec3 lo = (vec3(-uWarningC.w, -uWarningN.w, -uWarningDepth) - q) * inverse;
+    vec3 hi = (vec3(uWarningC.w, uWarningN.w, 0.0) - q) * inverse;
+    vec3 enter = min(lo, hi), leave = max(lo, hi);
+    float begin = max(enter.x, max(enter.y, enter.z)), end = min(leave.x, min(leave.y, leave.z));
+    float t = begin > 0.001 ? begin : end;
+    if (begin <= end && t > 0.001 && t < h.t) {
+      vec3 local = q + d * t;
+      h.t = t; h.kind = 8; h.index = 0;
+      h.n = abs(local.z) < 0.002 ? uWarningN.xyz : abs(local.z + uWarningDepth) < 0.002 ? -uWarningN.xyz
+        : abs(abs(local.x) - uWarningC.w) < 0.002 ? right * sign(local.x) : vec3(0.0, sign(local.y), 0.0);
+    }
+  }
   return h;
 }
 
@@ -16597,6 +16684,20 @@ vec3 sewerSpillRipples(vec3 p, float pixel) {
 }
 
 vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel) {
+  if (h.kind == 8) {
+    if (dot(h.n, uWarningN.xyz) < 0.5) return vec3(0.045, 0.055, 0.045);
+    vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), uWarningN.xyz));
+    vec2 q = vec2(dot(p - uWarningC.xyz, right) / uWarningC.w, (p.y - uWarningC.y) / uWarningN.w);
+    float cranium = step(length((q - vec2(0.0, 0.23)) / vec2(0.70, 0.64)), 1.0);
+    float cheek = step(abs(q.x), 0.58) * step(-0.26, q.y) * step(q.y, 0.20);
+    float jaw = step(abs(q.x), 0.39) * step(-0.73, q.y) * step(q.y, -0.15);
+    float teeth = step(abs(q.x), 0.39) * step(-0.94, q.y) * step(q.y, -0.66) * step(0.04, mod(q.x + 0.39, 0.195));
+    float eyes = step(length((vec2(abs(q.x), q.y) - vec2(0.30, 0.15)) / vec2(0.22, 0.19)), 1.0);
+    float nose = step(-0.38, q.y) * step(q.y, -0.04) * step(abs(q.x), (-q.y - 0.04) * 0.39);
+    float ink = max(max(cranium, cheek), max(jaw, teeth)) * (1.0 - max(eyes, nose));
+    // Reflective red pigment keeps this safety mark readable even during a blackout.
+    return mix(vec3(0.055, 0.065, 0.055), vec3(1.2, 0.025, 0.015), ink);
+  }
   int index = h.kind <= 2 ? h.index : sewerNearestTunnel(p);
   vec4 a = sewerData(index, 0), b = sewerData(index, 1);
   mat3 frame = sewerFrame(a.xyz, b.xyz);
@@ -16971,7 +17072,9 @@ void main() {
   col = mix(col, mix(farLayer.rgb, fog, 1.0 - exp(-farDepth * 0.0105)), farLayer.a);
   col = mix(col, mix(nearLayer.rgb, fog, 1.0 - exp(-nearDepth * 0.0105)), nearLayer.a);
   // The purchased beam cuts through the silt; outside it the water stays murky.
-  col = mix(col, mix(col * vec3(0.72, 0.95, 0.62), vec3(0.004, 0.025, 0.014), 1.0 - exp(-hit.t * mix(0.035, 0.008, beam))), uUnderwater);
+  // Retroreflective emergency paint remains red through the murk; its actual slab still
+  // obeys the very same wall/prop depth test and ordinary tunnel fog as every other surface.
+  col = mix(col, mix(col * vec3(0.72, 0.95, 0.62), vec3(0.004, 0.025, 0.014), 1.0 - exp(-hit.t * mix(0.035, 0.008, beam))), uUnderwater * (hit.kind == 8 ? 0.0 : 1.0));
   vec2 siltUV = vUv * vec2(68.0, 38.0) + ro.xz * 0.03 + vec2(0.08, -0.14) * uSewerMotion;
   vec2 mote = fract(siltUV) - 0.5;
   float silt = step(0.985, hash12(floor(siltUV))) * exp(-dot(mote, mote) * 120.0) * step(5.0, hit.t);
@@ -17024,8 +17127,14 @@ function mazeFeatures(world, cam) {
   const candidates = mazes.flatMap(maze => maze.cues || []).map(cue => ({ source: cue, p: point(cue) }))
     .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && cue.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
+  const warnings = (world.warnings || (world.forks || []).map(fork => fork.warning).filter(Boolean))
+    .filter(sign => sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
+      && distance(sign.p) < FAR + 20
+      && sign.p.reduce((sum, v, i) => sum + (v - cam.pos[i]) * cam.fwd[i], 0) > 0);
+  warnings.sort((a, b) => distance(a.p) - distance(b.p));
   return { downArrow: arrows[0] && distance(arrows[0].p) < FAR + 20 ? arrows[0] : null,
-    cue: candidates[0] ? { p: candidates[0].p, radius: Math.max(0.35, Math.min(0.65, candidates[0].source.radius || 0.65)) } : null };
+    cue: candidates[0] ? { p: candidates[0].p, radius: Math.max(0.35, Math.min(0.65, candidates[0].source.radius || 0.65)) } : null,
+    warning: warnings[0] || null };
 }
 
 // Each source inlet and inflow share their mouth. Derive rendering from that actual cylinder;
@@ -17129,7 +17238,7 @@ function create(gfx) {
     // The same continuous level drives lamps, material lighting, visibility and fog both ways.
     darkness += Math.max(-elapsed / 0.8, Math.min(elapsed / 0.8, darknessTarget - darkness));
     lightEnabled = !!flashlight; water = Math.max(0, Math.min(1, Number(underwater) || 0)); air = Math.max(0, Math.min(1, Number(oxygen) || 0));
-    const { downArrow, cue } = mazeFeatures(world, cam);
+    const { downArrow, cue, warning } = mazeFeatures(world, cam);
     gfx.fullscreen(program, {
       uSewerGeometry: atlas, uSewerCount: counts, uSewerCount2: extra, uSewerClock: clock,
       uSewerDarkness: darkness, uFlashlight: lightEnabled ? 1 : 0,
@@ -17137,6 +17246,9 @@ function create(gfx) {
       uDownArrowC: downArrow ? [...downArrow.p, downArrow.width * 0.5] : [0, 0, 0, 0],
       uDownArrowN: downArrow ? [...downArrow.n, downArrow.height * 0.5] : [0, 0, 1, 1],
       uMazeCue: cue ? [...cue.p, cue.radius] : [0, 0, 0, 0],
+      uWarningC: warning ? [...warning.p, warning.width * 0.5] : [0, 0, 0, 0],
+      uWarningN: warning ? [...warning.n, warning.height * 0.5] : [0, 0, 1, 1],
+      uWarningDepth: warning?.depth || 1.2,
       uCamPos: cam.pos, uCamRight: cam.right, uCamUp: cam.up, uCamFwd: cam.fwd, uTanHalf: cam.tanHalf,
       uSewerMotion: reducedMotion.matches ? 0 : performance.now() / 1000,
       uThemeWallA: theme.wallA, uThemeWallB: theme.wallB, uThemeGrout: theme.grout, uThemeLamp: theme.lamp,
@@ -18742,8 +18854,45 @@ function mazeFeatures(world, cam) {
   const candidates = mazes.flatMap(maze => maze.cues || []).map(cue => ({ source: cue, p: point(cue) }))
     .filter(cue => cue.p?.length === 3 && distance(cue.p) < 170 && dot(sub(cue.p, cam.pos), cam.fwd) > 0);
   candidates.sort((a, b) => distance(a.p) - distance(b.p));
+  const warnings = (world.warnings || (world.forks || []).map(fork => fork.warning).filter(Boolean))
+    .filter(sign => sign?.p?.length === 3 && sign.n?.length === 3 && sign.width > 0 && sign.height > 0
+      && distance(sign.p) < RANGE && dot(sub(sign.p, cam.pos), cam.fwd) > 0);
+  warnings.sort((a, b) => distance(a.p) - distance(b.p));
   return { downArrow: arrows[0] && distance(arrows[0].p) < RANGE ? arrows[0] : null,
-    cue: candidates[0] ? { p: candidates[0].p, radius: clamp(candidates[0].source.radius || 0.65, 0.35, 0.65) } : null };
+    cue: candidates[0] ? { p: candidates[0].p, radius: clamp(candidates[0].source.radius || 0.65, 0.35, 0.65) } : null,
+    warning: warnings[0] || null };
+}
+
+// Painted pigment is ordinary triangles on the real lintel plate, with its eye/nose cutouts
+// exposing the backing. This keeps the shared Windows material shader unchanged.
+function warningMesh(sign) {
+  const b = GAME.mesh.builder().tag(GAME.mesh.MATERIAL.PLAIN);
+  if (!sign) return b.build();
+  const right = unit(cross([0, 1, 0], sign.n)), dark = [0.055, 0.065, 0.055], red = [1.2, 0.025, 0.015];
+  const point = (x, y, depth = 0) => add(add(sign.p, scale(right, x * sign.width * 0.5)),
+    add([0, y * sign.height * 0.5, 0], scale(sign.n, depth)));
+  const rectangle = (x0, y0, x1, y1, colour, depth) => b.quad(point(x0, y0, depth), point(x1, y0, depth),
+    point(x1, y1, depth), point(x0, y1, depth), colour, sign.n);
+  const ellipse = (x, y, rx, ry, colour, depth) => {
+    for (let i = 0; i < 64; i++) {
+      const a = i / 64 * Math.PI * 2, c = (i + 1) / 64 * Math.PI * 2;
+      b.triangle(point(x, y, depth), point(x + Math.cos(a) * rx, y + Math.sin(a) * ry, depth),
+        point(x + Math.cos(c) * rx, y + Math.sin(c) * ry, depth), colour, sign.n);
+    }
+  };
+  rectangle(-1, -1, 1, 1, dark, 0);
+  const depth = -(sign.depth || 1.2), edge = [0.045, 0.055, 0.045];
+  b.quad(point(-1, -1, depth), point(-1, 1, depth), point(1, 1, depth), point(1, -1, depth), edge, scale(sign.n, -1));
+  for (const [x0, y0, x1, y1, normal] of [[-1,-1,-1,1,scale(right,-1)],[1,1,1,-1,right],
+    [-1,1,1,1,[0,1,0]],[1,-1,-1,-1,[0,-1,0]]])
+    b.quad(point(x0,y0),point(x1,y1),point(x1,y1,depth),point(x0,y0,depth),edge,normal);
+  ellipse(0, 0.23, 0.70, 0.64, red, 0.015);
+  rectangle(-0.58, -0.26, 0.58, 0.20, red, 0.015);
+  rectangle(-0.39, -0.73, 0.39, -0.15, red, 0.015);
+  for (let i = 0; i < 4; i++) rectangle(-0.39 + i * 0.195 + 0.04, -0.94, -0.39 + (i + 1) * 0.195, -0.66, red, 0.015);
+  for (const x of [-0.30, 0.30]) ellipse(x, 0.15, 0.22, 0.19, dark, 0.03);
+  b.triangle(point(0, -0.04, 0.03), point(-0.1326, -0.38, 0.03), point(0.1326, -0.38, 0.03), dark, sign.n);
+  return b.build();
 }
 
 function clipPolygon(poly, signed) {
@@ -19063,6 +19212,8 @@ function create(gfx) {
   const markers = { opaque: mesh.upload(new Float32Array(0), { dynamic: true }), transparent: mesh.upload(new Float32Array(0), { dynamic: true }), xray: mesh.upload(new Float32Array(0), { dynamic: true }) };
   const spinning = mesh.upload(new Float32Array(0), { dynamic: true });
   const cueMesh = mesh.upload(new Float32Array(0), { dynamic: true });
+  const warning = mesh.upload(new Float32Array(0), { dynamic: true });
+  let warningSign = null;
   const release = map => { for (const value of map.values()) for (const handle of Object.values(value)) if (handle?.vao) mesh.dispose(handle); map.clear(); };
   function evict(map, limit, keep) {
     for (const [key, value] of map) {
@@ -19077,6 +19228,7 @@ function create(gfx) {
     release(cache); release(propCache); release(flowCache);
     world = city.sewer; tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
     darkness = 0; darknessTarget = 0; lastLightTime = null;
+    warningSign = null;
     fog = tubes[0].look.fog; wallHosts = (world.wallFans || []).map(fan => wallHost(tubes, fan));
   }
   function tunnelHandle(index) {
@@ -19205,6 +19357,11 @@ function create(gfx) {
       { ...opts, sewer: surface(nearestTube(p.value.c)), depthWrite: false });
     if (water > 0) mesh.weather(cam, { sky: { horizon: [0.01, 0.04, 0.02] }, fog: { low: cameraFog },
       motes: { kind: 'silt', amount: water * 0.42 } }, time);
+    if (features.warning) {
+      if (warningSign !== features.warning) { mesh.update(warning, warningMesh(features.warning)); warningSign = features.warning; }
+      // Emergency pigment stays legible through water without brightening the tunnel.
+      mesh.draw(warning, cam, { ...opts, fog: cameraFog, underwater: 0, unlit: true });
+    }
     const frame = GAME.mesh.markers(rings, guide, stars, { time, cam, theme: COURSE_COLOURS });
     for (const kind of ['opaque', 'transparent', 'xray']) {
       mesh.update(markers[kind], frame[kind]);
@@ -19232,10 +19389,10 @@ function create(gfx) {
       darkness, darknessTarget, underwater: water, oxygen: clamp(Number(oxygen) || 0, 0, 1), flashlight: !!flashlight };
   }
   return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
-    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(cueMesh); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
+    dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(cueMesh); mesh.dispose(warning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
-GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, stride: STRIDE };
+GAME.sewerLiteRenderer = { create, buildWorld, insideDry, inflowSheets, darknessAt, mazeFeatures, warningMesh, stride: STRIDE };
 
 })();
 
@@ -21151,7 +21308,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => isSewer() ? `neonflight.sewer.best.v5.${difficulty}.${code}`
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v6.${difficulty}.${code}`
   : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
@@ -22014,6 +22171,8 @@ async function boot() {
       oxygen: run.oxygen, maxOxygen: run.maxOxygen,
       mazeSeals: [...run.mazeSeals],
       mazes: structuredClone(city.sewer.mazes ?? []),
+      forks: structuredClone(city.sewer.forks ?? []),
+      warnings: structuredClone(city.sewer.warnings ?? []),
       waterHeight: GAME.sewerCourse.groundHeight(city, run.glider.x, run.glider.z, run.glider.y),
       inside: !GAME.sewerCourse.sphere(city, run.glider.x, run.glider.y, run.glider.z, FLIGHT.RADIUS, run.time, run.mazeSeals) } : null,
     collapse: collapse ? { time: collapse.time, progress: collapse.progress, portal: structuredClone(collapse.portal), fallingBuildings:collapse.fallingCells?.length||0, hazards: collapse.hazards,
