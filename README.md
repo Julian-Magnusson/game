@@ -166,18 +166,18 @@ to the fifth ring inside. A Collapse crash returns to the normal surface course.
 Once discovered, **The Sewer** has playable courses through cylindrical collectors, smaller
 connecting tunnels, and winding upward/downward chambers. Dodge round pipes and dirt banks;
 ordinary murky green water causes a crash, like the street above. Marked flooded sections let
-you dive into wide underwater mazes. A big red arrow painted on a barricade points down into
+you dive into narrower underwater mazes. A big red arrow painted on a barricade points down into
 the water; the barrier and submerged tunnel roofs prevent staying above the maze. At each
 fork, bright cyan lights with soft halos sit clearly inside the correct passage and lead toward the outlet.
 An iron shutter closes behind the dive, so only that outlet leads back into air. Wrong branches
-have capped turning rooms so you can turn back. Underwater service pipes add solid obstacles
-with generous clearance. Race rings and navigation arrows stay hidden underwater.
+have capped turning rooms so you can turn back. More underwater service pipes and elbows add
+solid obstacles with room to steer around them. Race rings and navigation arrows stay hidden underwater.
 An oxygen bar holds **26 seconds** of air and refills after surfacing. Pause freezes it;
 running out restarts the course. Mazes occur occasionally on Easy/Medium, twice on Hard and
 three times on Extreme. Rising currents carry the outlet climb through the surface while
 restoring normal cruising speed. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
-underground, with records kept separate from the city. The new layout uses version-7 Sewer
+underground, with records kept separate from the city. The new layout uses version-8 Sewer
 records; existing Extreme unlocks, saved stars and shop purchases stay intact.
 Normal tunnels also split into passages during flight: one dry fork on Easy/Medium, two on
 Hard and three on Extreme. Large red skulls painted onto wooden sluice barricades mark the wrong
@@ -188,7 +188,10 @@ starts at the visible mouth and falls directly from its curved rim, without a de
 Huge fans span the cylindrical rooms and rotate at varied speeds and directions. Each room
 has 1/2/3/3 full crossing fans, 2/3/4/4 rotating sweeper poles, and 2/3/4/5 surging waterfall
 obstacles on Easy/Medium/Hard/Extreme. Damaged pipe holes spray smaller decorative water jets,
-and chipped rims and cracks surround the outlets. Hard and
+and chipped rims and cracks surround the outlets. Tunnel fans have solid central hubs; fly
+between their blades. Wall fans push air and water through visible streams that you can dodge.
+Moving streaks show the current direction, and entering the stream causes sideways drift.
+Hard and Extreme include locally tighter stretches of tunnel. Hard and
 Extreme include sections with failed lights, leaving rings and nearby obstacles visible; a
 flashlight reveals the tunnel ahead. Actual scene lighting fades over about 0.8 seconds in
 both directions. Easy and Medium keep working lights. Sewer courses have
