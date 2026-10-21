@@ -174,10 +174,10 @@ have capped turning rooms so you can turn back. More underwater service pipes an
 solid obstacles with room to steer around them. Race rings and navigation arrows stay hidden underwater.
 An oxygen bar holds **26 seconds** of air and refills after surfacing. Pause freezes it;
 running out restarts the course. Mazes occur occasionally on Easy/Medium, twice on Hard and
-three times on Extreme. Rising currents carry the outlet climb through the surface while
-restoring normal cruising speed. Every underground crash restarts
+three times on Extreme. Outlet lift fades near the top so you emerge lower and settle
+into the next tunnel while retaining normal cruising speed. Every underground crash restarts
 the entire course with a fresh timer. Four difficulties, course codes and medals work
-underground, with records kept separate from the city. The new layout uses version-8 Sewer
+underground, with records kept separate from the city. The new layout uses version-9 Sewer
 records; existing Extreme unlocks, saved stars and shop purchases stay intact.
 Normal tunnels also split into passages during flight: one dry fork on Easy/Medium, two on
 Hard and three on Extreme. Large red skulls painted onto wooden sluice barricades mark the wrong
@@ -190,7 +190,9 @@ has 1/2/3/3 full crossing fans, 2/3/4/4 rotating sweeper poles, and 2/3/4/5 surg
 obstacles on Easy/Medium/Hard/Extreme. Damaged pipe holes spray smaller decorative water jets,
 and chipped rims and cracks surround the outlets. Tunnel fans have solid central hubs; fly
 between their blades. Wall fans push air and water through visible streams that you can dodge.
-Moving streaks show the current direction, and entering the stream causes sideways drift.
+Moving streaks span the full bore to the opposite wall and show the current direction.
+Entering the stream causes sideways drift, with a stronger push underwater. More submerged
+pipe racks, diagonal pipes, elbows and closer posts fill the flooded passages.
 Hard and Extreme include locally tighter stretches of tunnel. Hard and
 Extreme include sections with failed lights, leaving rings and nearby obstacles visible; a
 flashlight reveals the tunnel ahead. Actual scene lighting fades over about 0.8 seconds in

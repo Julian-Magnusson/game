@@ -8845,6 +8845,7 @@ const OXYGEN = 26, OXYGEN_REFILL = 8, EXIT_RECOVERY = 3;
 const SHUTTER_SECONDS = 0.65;
 const MAZE_BORES = { easy: 25, medium: 24, hard: 22, extreme: 20 };
 const FAN_PUSH = { easy: 6, medium: 8, hard: 10, extreme: 12 };
+const FAN_WATER_PUSH = { easy: 16, medium: 20, hard: 24, extreme: 24 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -9049,8 +9050,9 @@ function groundHeight(city, x, z, y = city.sewer.startY) {
   return floor;
 }
 
-// The outlet carries a rising current along its real tunnel slope, through the waterline and
-// gently out into air. A level glide can follow it without spending speed on a steep climb.
+// The outlet carries a rising current through the waterline, then feathers into the level
+// collector. Its rounded capsule ends still restore speed, but cannot launch the pilot upwards
+// after the real slope ends or keep lifting someone already at the intended exit height.
 function outletSupport(city, x, y, z) {
   const p = [x, y, z], cruise = GAME.flight.cruise(city.difficulty || 'medium');
   let lift = 0, strength = 0;
@@ -9059,9 +9061,20 @@ function outletSupport(city, x, y, z) {
     const distance = distanceToSegment(p, tube.a, tube.b);
     if (distance >= tube.radius) continue;
     const blend = clamp((tube.radius - distance) / 8, 0, 1);
-    const slope = Math.max(0, tube.b[1] - tube.a[1]) / Math.max(1, Math.hypot(tube.b[0] - tube.a[0], tube.b[2] - tube.a[2]));
-    lift = Math.max(lift, slope * cruise * blend);
     strength = Math.max(strength, blend);
+    const dx = tube.b[0] - tube.a[0], dz = tube.b[2] - tube.a[2], horizontal = Math.hypot(dx, dz);
+    const progress = ((x - tube.a[0]) * dx + (z - tube.a[2]) * dz) / (horizontal * horizontal || 1);
+    if (progress < 0 || progress > 1 || horizontal < 1) continue;
+    let exit = city.sewer.mazes?.[tube.maze]?.exit;
+    if (!exit) for (const other of city.sewer.tunnels) {
+      if (other.flooded && other.role === 'outlet' && other.maze === tube.maze
+        && (!exit || other.b[1] > exit[1])) exit = other.b;
+    }
+    const crest = exit || tube.b, remaining = ((crest[0] - x) * dx + (crest[2] - z) * dz) / horizontal;
+    const feather = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
+    const heightBlend = feather((crest[1] - y) / 8), endBlend = feather(remaining / 24);
+    const slope = Math.max(0, tube.b[1] - tube.a[1]) / horizontal;
+    lift = Math.max(lift, slope * cruise * blend * heightBlend * endBlend);
   }
   return { lift, strength };
 }
@@ -9801,16 +9814,21 @@ function build(seed, difficulty, attempt) {
     c[2] + side[2] * u + (direction ? direction[2] * along : 0)];
   // Broad submerged service pipes make the lower network feel occupied. Their central gaps
   // stay generous, and both the planned line and the optional wrong-fork return remain open.
-  const submergedPipes = { easy: 4, medium: 5, hard: 6, extreme: 7 }[difficulty];
+  const submergedPipes = { easy: 8, medium: 10, hard: 12, extreme: 14 }[difficulty];
   for (const maze of mazes) {
     maze.obstaclePipes = [];
-    const begin = maze.s0 + 480, end = maze.s1 - 380;
+    const begin = maze.s0 + 400, end = maze.s1 - 240;
     for (let j = 0; j < submergedPipes; j++) {
       const s = begin + (end - begin) * (j + 0.5) / submergedPipes, { p: c, side, direction } = at(s);
-      const sign = j % 2 ? -1 : 1, R = maze.bore, variant = ['header', 'side-posts', 'diagonal', 'return-elbow'][j % 4];
+      const sign = j % 2 ? -1 : 1, R = maze.bore, variant = ['header', 'side-posts', 'diagonal', 'return-elbow', 'offset-rack'][j % 5];
       const rawPipes = [], radius = difficulty === 'easy' ? 1.5 : 1.8;
-      if (variant === 'side-posts') for (const u of [-0.62 * R, 0.62 * R]) {
+      if (variant === 'side-posts') for (const u of [-0.48 * R, 0.48 * R]) {
         rawPipes.push({ a: across(c, side, u, c[1] - R), b: across(c, side, u, c[1] + R), radius });
+      } else if (variant === 'offset-rack') {
+        for (const high of [-10, 10]) rawPipes.push({ a: across(c, side, -R, c[1] + high),
+          b: across(c, side, R, c[1] + high), radius });
+        rawPipes.push({ a: across(c, side, sign * R * 0.6, c[1] - 10),
+          b: across(c, side, sign * R * 0.6, c[1] + 10), radius });
       } else if (variant === 'return-elbow') {
         const u = sign * R * 0.65, top = c[1] + 10;
         rawPipes.push({ a: across(c, side, u, c[1] - R), b: across(c, side, u, top), radius });
@@ -9942,7 +9960,7 @@ function build(seed, difficulty, attempt) {
       if (wallFans.some(fan => Math.hypot(...subtract(fan.c, centre)) < fan.radius + fanRadius + 3)
         || sheets.some(sheet => sheetDistance(sheet, ...centre) < fanRadius + 2)) continue;
       wallFans.push({ c: centre, n: normal, radius: fanRadius, blades: 5, omega: sign * 2.1, phase: pressure.range(0, Math.PI * 2), s,
-        jet: { length: R * 1.35, radius: Math.min(6, R * 0.24), strength: FAN_PUSH[difficulty], underwater: false } });
+        jet: { length: R * 2, radius: Math.min(6, R * 0.24), strength: FAN_PUSH[difficulty], underwater: false } });
       dryCount++; break;
     }
   }
@@ -9959,7 +9977,7 @@ function build(seed, difficulty, attempt) {
       const centre = axis.map((v, i) => v + wallSide[i] * sign * R), normal = wallSide.map(v => -sign * v);
       maze.pressureFans.push(wallFans.length);
       wallFans.push({ c: centre, n: normal, radius: 6, blades: 5, omega: sign * 1.8, phase: pressure.range(0, Math.PI * 2), s,
-        jet: { length: R * 1.35, radius: Math.min(6, R * 0.24), strength: FAN_PUSH[difficulty], underwater: true } });
+        jet: { length: R * 2, radius: Math.min(6, R * 0.24), strength: FAN_WATER_PUSH[difficulty], underwater: true } });
     }
   }
   // Shafts are the big rooms. A column carries a huge fan under the dome, curtains fall from the
@@ -10123,7 +10141,7 @@ function build(seed, difficulty, attempt) {
   const course = { environment: 'sewer', difficulty, line, sample: SAMPLE, length: distance, maxRadius: profile.main,
     start: linePose({ line, sample: SAMPLE }, 0), gates, boosters: [], pads: [], stars: [], sections: ranges,
     par: distance / GAME.flight.cruise(difficulty), attempt, obstacles: pipes.length + dirt.length + sheets.length + fans.length,
-    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 8 };
+    props: pipes.length, bridges: 0, hazards: counts, theme: theme.id, style: styleName, version: 9 };
   restore(city, course);
   course.proof = prove(city, course);
   if (!course.proof.finished || course.proof.crashes || course.proof.missed) {
@@ -10150,7 +10168,7 @@ function generate(seed, difficulty = 'medium') {
 GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPose, steer, prove,
   sphere, groundHeight, current, pack, unpack, distanceToSegment, fanBasis, fanBlades, sheetDistance, ringDistance,
   darknessAt, underwaterAt, outletSupport, pipePose, warningDistance, fanJetWeight, fanCurrent, placeStars,
-  PROFILES, STYLES, THEMES, MAZE_BORES, FAN_PUSH, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
+  PROFILES, STYLES, THEMES, MAZE_BORES, FAN_PUSH, FAN_WATER_PUSH, SAMPLE, OXYGEN, OXYGEN_REFILL, SHUTTER_SECONDS };
 
 })();
 </script>
@@ -22234,7 +22252,7 @@ function update(dt) {
 // ---- Best times -------------------------------------------------------------------------------
 // Per course, difficulty and layout version. Older records remain stored, but changed layouts have
 // their own times.
-const bestKey = code => isSewer() ? `neonflight.sewer.best.v8.${difficulty}.${code}`
+const bestKey = code => isSewer() ? `neonflight.sewer.best.v9.${difficulty}.${code}`
   : `neonflight.best.v${GAME.course.RECORD_VERSIONS[difficulty]}.${difficulty}.${code}`;
 function readBest(code) {
   try {
