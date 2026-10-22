@@ -384,6 +384,105 @@
     #overlay:not([inert]) #start:not(:disabled)::after { animation: none; }
   }
 
+  /* ---- Flight pass ----------------------------------------------------------------------- */
+  .pass-opener { position: absolute; top: 16px; left: calc(178px + var(--safe-l)); min-height: 44px; padding: 8px 12px;
+    display: flex; align-items: center; gap: 10px; color: #c2b5ff; border-color: #b6a0ff88; font-size: 12px; letter-spacing: .12em;
+    background: #100e23e6; box-shadow: 0 0 16px #a783ff18; }
+  .pass-opener-rank { color: #e7deff; font-variant-numeric: tabular-nums; }
+  #pause-pass { left: auto; right: calc(178px + var(--safe-r)); }
+  #pass { z-index: 30; padding: 18px calc(18px + var(--safe-r)) 18px calc(18px + var(--safe-l));
+    background: #020512d9; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .pass-sheet { width: min(980px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    box-sizing: border-box; padding: 24px; text-align: left; border: 1px solid #b6a0ff55; border-radius: 8px;
+    background: radial-gradient(ellipse at top left, #60418635, transparent 60%), #080f1e; box-shadow: 0 20px 100px #0009; }
+  .pass-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; padding-bottom: 16px; }
+  .pass-eyebrow { margin: 0 0 4px; color: #b6a0ff; font-size: 10px; text-transform: uppercase; letter-spacing: .2em; }
+  #pass-title { margin: 0; font-size: 30px; font-weight: 300; letter-spacing: .16em; }
+  #pass-done { min-height: 44px; padding: 10px 18px; letter-spacing: .12em; }
+  .pass-content { overflow-y: auto; min-height: 0; padding-right: 3px; touch-action: pan-y; overscroll-behavior: contain; }
+  .pass-overview { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+  .pass-progress-card { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 16px;
+    border: 1px solid #b6a0ff55; padding: 16px; border-radius: 5px; background: #b6a0ff08; }
+  .pass-rank-badge { display: flex; align-items: baseline; justify-content: center; gap: 3px; padding: 12px 0; border: 1px solid #b6a0ff77;
+    background: linear-gradient(135deg, #b6a0ff2a, #b6a0ff07); border-radius: 15px 3px; color: #f3eeff; }
+  #pass-rank-value { font-size: 34px; font-weight: 400; line-height: 1; }
+  #pass-rank-total { color: #b6a0ff; font-size: 10px; }
+  .pass-progress-top { display: flex; justify-content: space-between; gap: 8px; color: #c4d4e4; font-size: 11px; }
+  .pass-progress-top strong { color: #e5dcff; font-weight: 500; }
+  #pass-xp-bar { height: 7px; margin: 9px 0; overflow: hidden; border-radius: 8px; background: #b6a0ff1c; }
+  #pass-xp-fill { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #a27aff, #91ecff); }
+  #pass-total-xp { color: #95a7be; font-size: 11px; }
+  .pass-next { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid #ffd45a30; border-radius: 5px; background: #ffd45a06; }
+  #pass-next-icon { color: var(--gold); font-size: 34px; line-height: 1; }
+  #pass-next-label { display: block; color: #cdb87e; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+  #pass-next-title { display: block; margin-top: 6px; color: #f5e5b4; font-size: 16px; font-weight: 500; }
+  .pass-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 23px 0 10px; }
+  .pass-section-head h3 { margin: 0; color: #b7c9dd; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .2em; }
+  #pass-reset { color: #91a8be; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #pass-quests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .pass-quest { min-width: 0; padding: 13px; border: 1px solid #91a8be30; border-radius: 5px; background: #ffffff03; }
+  .pass-quest.complete { border-color: #4dffc055; background: #4dffc007; }
+  .pass-quest-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .pass-quest-xp { color: #c9b6ff; font-size: 15px; font-weight: 500; }
+  .pass-quest-status { color: #859ab1; font-size: 10px; }
+  .complete .pass-quest-status { color: var(--green); }
+  .pass-quest h4 { margin: 10px 0; color: #dbe8f8; font-weight: 400; font-size: 13px; line-height: 1.4; min-height: 2.8em; }
+  .pass-quest-progress { height: 3px; overflow: hidden; background: #91a8be20; border-radius: 3px; }
+  .pass-quest-progress span { display: block; height: 100%; background: #b6a0ff; }
+  .complete .pass-quest-progress span { background: var(--green); }
+  .pass-quest-count { display: block; margin-top: 7px; color: #91a8be; font-size: 10px; }
+  .pass-rules { color: #91a8be; font-size: 11px; line-height: 1.5; margin: 10px 0 0; }
+  #pass-current { min-height: 36px; padding: 6px 10px; font-size: 10px; letter-spacing: .1em; box-shadow: none; }
+  #pass-track { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 7px; list-style: none; padding: 0; margin: 0; }
+  .pass-rank { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px;
+    padding: 8px 4px; min-width: 0; box-sizing: border-box; border: 1px solid #7f93b31f; border-radius: 4px;
+    background: #ffffff02; color: #617289; text-align: center; }
+  .pass-rank-number { font-size: 11px; font-variant-numeric: tabular-nums; }
+  .pass-rank-dot { margin: auto; color: #5c6583; font-size: 25px; line-height: 1; }
+  .pass-rank.milestone { border-color: #d8bc7540; background: #d8bc7506; }
+  .pass-rank.milestone .pass-rank-number { color: #b59e68; }
+  .pass-reward-icon { font-size: 21px; line-height: 1; color: #947f65; }
+  .pass-reward-title { font-size: 10px; color: #8a94a6; overflow-wrap: anywhere; }
+  .pass-rank.earned { color: #b7f3d5; border-color: #4dffc040; background: #4dffc007; }
+  .pass-rank.earned .pass-rank-dot { color: #4dffc077; }
+  .pass-rank.earned .pass-reward-icon, .pass-rank.earned .pass-rank-number { color: #b7f3d5; }
+  .pass-rank.earned .pass-reward-title { color: #b3c8bc; }
+  .pass-rank.current { border-color: #c6b4ff; box-shadow: inset 0 0 14px #b6a0ff1c; }
+  #pass-track-note { margin: 9px 0 0; color: #91a8be; font-size: 10px; }
+  #pass-storage { margin: 10px 0 0; color: var(--amber); font-size: 11px; }
+  #pass-storage[hidden], #results-pass-xp:empty { display: none; }
+  #results-pass-xp { margin: 10px 0 0; color: #c5b3ff; font-size: 12px; }
+  @media (max-width: 600px) {
+    .pass-opener { left: calc(167px + var(--safe-l)); padding: 8px 10px; gap: 7px; font-size: 11px; }
+    #pause-pass { left: auto; right: calc(167px + var(--safe-r)); }
+    #pass { padding: 10px; }
+    .pass-sheet { padding: 16px; }
+    #pass-title { font-size: 25px; }
+    .pass-overview { grid-template-columns: 1fr; gap: 9px; }
+    .pass-progress-card { padding: 12px; grid-template-columns: 65px minmax(0, 1fr); gap: 12px; }
+    .pass-next { padding: 11px 13px; }
+    #pass-next-icon { font-size: 25px; }
+    #pass-next-title { font-size: 14px; }
+    #pass-quests { grid-template-columns: 1fr; gap: 8px; }
+    .pass-quest { padding: 11px 12px; }
+    .pass-quest h4 { min-height: 0; margin: 7px 0; }
+    #pass-track { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .pass-section-head { margin-top: 18px; }
+  }
+  @media (max-height: 500px) {
+    .pass-opener { top: 9px; left: calc(160px + var(--safe-l)); }
+    #pause-pass { left: auto; right: calc(160px + var(--safe-r)); }
+    #pass { padding-top: 8px; padding-bottom: 8px; }
+    .pass-sheet { padding: 14px 20px; }
+    .pass-head { padding-bottom: 10px; }
+    #pass-title { font-size: 24px; }
+    .pass-progress-card { padding: 10px; }
+    .pass-next { padding: 10px; }
+    .pass-section-head { margin-top: 15px; }
+    .pass-quest { padding: 10px; }
+    #results-pass-xp { margin-top: 5px; font-size: 11px; }
+  }
+
   /* ---- Star shop ---------------------------------------------------------------------------- */
   .shop-opener { position: absolute; top: 16px; left: calc(18px + var(--safe-l)); min-height: 44px; padding: 8px 14px;
     display: flex; gap: 12px; align-items: center; border-color: var(--gold); color: var(--gold); font-size: 12px; letter-spacing: 0.12em;
@@ -606,6 +705,7 @@
 <canvas id="c"></canvas>
 <div id="overlay" class="screen">
   <button id="title-shop" class="btn shop-opener" type="button" aria-controls="shop" aria-expanded="false" disabled><span>★ 0</span> shop</button>
+  <button id="title-pass" class="btn pass-opener" type="button" aria-controls="pass" aria-expanded="false" disabled><span class="pass-opener-rank">R1</span> pass</button>
   <button id="title-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div id="title">NEON FLIGHT</div>
   <div class="menu-course">
@@ -641,6 +741,7 @@
 </div>
 <div id="pause" class="screen hidden">
   <button id="pause-shop" class="btn shop-opener" type="button" aria-controls="shop" aria-expanded="false"><span>★ 0</span> shop</button>
+  <button id="pause-pass" class="btn pass-opener" type="button" aria-controls="pass" aria-expanded="false"><span class="pass-opener-rank">R1</span> pass</button>
   <button id="pause-info" class="info-opener" type="button" aria-label="Game information" aria-controls="info" aria-expanded="false" title="Game information">i</button>
   <div class="pause-title">PAUSED</div>
   <div class="pause-run" id="pause-run"></div>
@@ -658,6 +759,7 @@
   <div class="res-ladder"></div>
   <div class="res-next"></div>
   <div class="res-unlock" id="extreme-result" role="status"></div>
+  <div id="results-pass-xp" role="status" aria-live="polite"></div>
   <div class="panel-buttons"><button id="retry" class="btn primary">retry</button><button id="next" class="btn alt">new course</button><button id="results-title" class="btn">menu</button></div>
   <div id="results-control-error" class="control-error" role="status"></div>
   <div class="res-code"><span></span><button id="results-copy" class="copy-code" type="button" aria-label="Copy course code">copy</button></div>
@@ -701,6 +803,32 @@
       <p>Copy a course code or share the page URL to fly the same course and difficulty again. Your best time is saved in this browser. Medals use your flight time plus penalties. Earn Gold or Diamond on Hard to unlock Extreme for that course.</p>
       <p><b>Diamond</b> matches the clean reference run with no extra time allowance. Keep every gate, cut corners where there is room and use clean dives to gain speed.</p>
     </section>
+  </div>
+</div>
+<div id="pass" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="pass-title">
+  <div class="pass-sheet">
+    <header class="pass-head">
+      <div><p class="pass-eyebrow">100 ranks / yours to keep</p><h2 id="pass-title">FLIGHT PASS</h2></div>
+      <button id="pass-done" class="btn" type="button">back</button>
+    </header>
+    <div class="pass-content">
+      <section class="pass-overview" aria-label="Pass progress">
+        <div class="pass-progress-card">
+          <div class="pass-rank-badge"><strong id="pass-rank-value">1</strong><span id="pass-rank-total">/ 100</span></div>
+          <div><div class="pass-progress-top"><strong>Your rank</strong><span id="pass-xp-label">0 / 100 XP</span></div>
+            <div id="pass-xp-bar" role="progressbar" aria-label="XP toward next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="pass-xp-fill"></span></div>
+            <span id="pass-total-xp">0 lifetime XP</span></div>
+        </div>
+        <div class="pass-next"><span id="pass-next-icon" aria-hidden="true">★</span><div><span id="pass-next-label">Next reward · Rank 5</span><strong id="pass-next-title">2 stars</strong></div></div>
+      </section>
+      <div class="pass-section-head"><h3>Daily tasks</h3><span id="pass-reset"></span></div>
+      <div id="pass-quests"></div>
+      <p class="pass-rules">Finish courses to earn XP and progress tasks. Three new tasks arrive at local midnight. Each rank needs more XP; your pass never expires.</p>
+      <div class="pass-section-head"><h3>Rank rewards</h3><button id="pass-current" class="btn" type="button">your rank ↓</button></div>
+      <ol id="pass-track" aria-label="All 100 pass ranks"></ol>
+      <p id="pass-track-note">Rewards unlock automatically every fifth rank.</p>
+      <p id="pass-storage" hidden>Pass saving is unavailable. Open the online game to save XP and rewards.</p>
+    </div>
   </div>
 </div>
 <div id="shop" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="shop-title">
@@ -808,11 +936,14 @@
 // ---- src/audio/catalog.js ----
 // Shared by the settings/player and the synth workers; IDs are saved in player settings.
 const songs = [
-  { id: 'neon-flight', name: 'Neon Flight' },
-  { id: 'skyline-rush', name: 'Skyline Rush' },
-  { id: 'midnight-drift', name: 'Midnight Drift' },
-  { id: 'afterburn', name: 'Afterburn' },
-  { id: 'undertow', name: 'Undertow', unlock: 'sewer' },
+  { id: 'neon-flight', name: 'Neon Flight', environment: 'surface' },
+  { id: 'skyline-rush', name: 'Skyline Rush', environment: 'surface' },
+  { id: 'midnight-drift', name: 'Midnight Drift', environment: 'surface' },
+  { id: 'afterburn', name: 'Afterburn', environment: 'surface' },
+  { id: 'undertow', name: 'Undertow', unlock: 'sewer', environment: 'sewer' },
+  { id: 'cloudrunner', name: 'Cloudrunner', environment: 'surface', passRank: 10 },
+  { id: 'prism-drive', name: 'Prism Drive', environment: 'surface', passRank: 30 },
+  { id: 'deep-signal', name: 'Deep Signal', environment: 'sewer', passRank: 60 },
 ];
 if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
 else GAME.songs = songs;
@@ -3031,6 +3162,82 @@ const scores = {
       wobble: 0.65, metal: 0.85, rim: 0.65, hat: 0.65, shaker: 0.4, glitch: 0.15, sweep: 0.35, crash: 0.6 },
     sends: { pad: 0.5, choir: 0.65, motif: 0.48, arp: 0.36, metal: 0.5, rim: 0.35 },
   },
+  // Buoyant off-beat plucks climb above an A-major opening. The light bass and spacious
+  // harmony leave the sky clear around a bright, answering eight-bar melody.
+  cloudrunner: {
+    chords: [2, 3, 0, 1],
+    hook: [
+      [[1,3,81],[5,2,85],[8,2,88],[11,3,85],[14,2,83]],
+      [[0,3,83],[4,2,80],[7,3,76],[12,4,80]],
+      [[1,3,81],[5,2,78],[8,3,85],[12,4,83]],
+      [[0,4,81],[6,2,78],[10,2,74],[13,3,78]],
+      [[1,2,81],[4,2,85],[7,2,88],[10,3,92],[14,2,88]],
+      [[0,3,90],[4,2,88],[7,3,83],[12,4,80]],
+      [[1,3,85],[5,2,83],[8,3,81],[12,4,78]],
+      [[0,4,78],[5,3,81],[9,3,85],[13,3,81]],
+    ],
+    arp: [0,2,4,1,3,2,5,1], arpStep: 0.5,
+    kick: ['x.....x...x.....', 'x.....x...x...o.'],
+    snare: ['....x.......x...', '....x.......x...'],
+    hat: ['..x..ox...x..oO.', '..x...x..ox...O.'],
+    bass: [[2,2,0],[6,2,7],[10,2,12],[14,2,7]],
+    bassGrit: 0.2, bassBright: 1.05,
+    wobble: [[0.5,1,'e'],[2.5,1,'q']],
+    gains: { pad: 0.85, choir: 1.2, arp: 1.2, arpHigh: 0.75, motif: 1.1, lead: 0.85,
+      chops: 0.45, bass: 0.75, sub: 0.8, wobble: 0.5, metal: 0.18, glitch: 0.12, shaker: 0.65 },
+    sends: { pad: 0.58, choir: 0.65, arp: 0.4, lead: 0.36, motif: 0.5 },
+  },
+  // A staccato glass-like hook crosses the kick in a 3+3+2 pattern. Fast, mirrored arps
+  // and an octave-hopping bass make this brighter and more mechanical than Cloudrunner.
+  'prism-drive': {
+    chords: [1, 3, 2, 0],
+    hook: [
+      [[0,2,86],[3,2,81],[6,2,78],[8,2,81],[11,2,85],[14,2,86]],
+      [[0,2,83],[3,2,80],[6,2,76],[8,2,80],[11,2,83],[14,2,88]],
+      [[0,2,85],[3,2,88],[6,2,92],[8,2,88],[11,2,85],[14,2,81]],
+      [[0,3,85],[4,2,81],[7,2,78],[10,2,81],[13,3,85]],
+      [[0,2,90],[3,2,86],[6,2,81],[8,2,86],[11,2,90],[14,2,93]],
+      [[0,2,92],[3,2,88],[6,2,83],[8,2,88],[11,2,85],[14,2,83]],
+      [[0,2,88],[3,2,85],[6,2,81],[8,2,85],[11,2,88],[14,2,92]],
+      [[0,3,90],[4,2,85],[7,2,81],[10,2,78],[13,3,85]],
+    ],
+    arp: [0,4,1,5,2,3,1,4], arpStep: 0.25,
+    kick: ['x..x..x.x..x..o.', 'x..x..x.x..x...x'],
+    snare: ['....x.......x...', '....x......ox...'],
+    hat: ['.x.x.x.O.x.x.x.O', '.x.x.x.O.x.x.o.O'],
+    bass: [[0,2,0],[3,2,12],[6,1,7],[8,2,0],[11,2,12],[14,2,7]],
+    bassGrit: 0.5, bassBright: 1.2,
+    wobble: [[0,0.5,'q'],[0.75,0.5,'e'],[2,0.5,'q'],[2.75,0.75,'s']],
+    gains: { choir: 0.55, arp: 0.82, arpHigh: 0.75, motif: 1.1, lead: 0.88, chops: 0.65,
+      bass: 0.85, wobble: 0.75, metal: 0.55, glitch: 0.55, shaker: 0.75, crash: 0.7 },
+    sends: { arp: 0.32, arpHigh: 0.45, lead: 0.3, metal: 0.32 },
+  },
+  // Sonar calls leave deliberate silence over a lopsided industrial pulse. Alternating
+  // pipe knocks and long dark chords give the Sewer its own second soundtrack.
+  'deep-signal': {
+    chords: [0, 1, 0, 3],
+    hook: [
+      [[0,2,78],[3,2,90],[10,6,73]],
+      [[2,2,74],[5,2,86],[12,4,69]],
+      [[0,2,73],[3,2,85],[10,6,69]],
+      [[2,2,71],[5,2,83],[12,4,68]],
+      [[0,2,78],[3,2,90],[8,2,85],[12,4,81]],
+      [[2,2,81],[5,2,93],[12,4,78]],
+      [[0,2,85],[3,2,97],[10,6,81]],
+      [[2,2,83],[5,2,95],[10,2,80],[13,3,76]],
+    ],
+    arp: [0,1,3,0,2,1,0,3], arpStep: 1,
+    kick: ['x.....x....x....', 'x.......x..x...o'],
+    snare: ['........x.......', '........x.....o.'],
+    hat: ['...x...x...x....', '...x...x.....x..'],
+    bass: [[0,3,0],[6,2,7],[11,3,0]],
+    bassGrit: 0.13, bassBright: 0.55, padTopShift: 0,
+    wobble: [[0,0.75,'wow'],[2.75,0.75,'e']],
+    gains: { pad: 0.95, choir: 0.75, arp: 0.65, arpHigh: 0.35, motif: 0.85, lead: 0.68,
+      chops: 0.2, bass: 0.95, sub: 1.05, wobble: 0.55, metal: 0.9, rim: 0.8,
+      hat: 0.5, shaker: 0.15, glitch: 0.15, sweep: 0.2, crash: 0.35 },
+    sends: { pad: 0.65, choir: 0.7, lead: 0.66, motif: 0.62, arp: 0.5, metal: 0.6, rim: 0.5 },
+  },
 };
 
 function setEvents(id, events) {
@@ -3086,16 +3293,19 @@ function selectSong(id) {
   setEvents('kick', drumGrid(score.kick, 0.5));
   setEvents('snare', drumGrid(score.snare, 0.5, 54));
   setEvents('hat', drumGrid(score.hat, 0.12));
-  if (id === 'undertow') {
+  if (id === 'undertow' || id === 'deep-signal') {
     const metal = [], rim = [];
     for (let bar = 0; bar < loop.bars; bar++) {
       const chord = loop.chordAtBeat(bar * 4);
-      for (const [step, vel] of (bar % 2 ? [[3,0.42],[13,0.6]] : [[5,0.6],[11,0.35]])) {
+      const strikes = id === 'deep-signal'
+        ? (bar % 2 ? [[1,0.5],[7,0.3],[14,0.7]] : [[4,0.6],[11,0.45]])
+        : (bar % 2 ? [[3,0.42],[13,0.6]] : [[5,0.6],[11,0.35]]);
+      for (const [step, vel] of strikes) {
         metal.push({ beat: bar * 4 + step / 4, len: 0.5, note: chord.notes[bar % 3] + 12,
           voice: 'clank', vel, pan: step < 8 ? -0.45 : 0.45 });
       }
-      rim.push({ beat: bar * 4 + (bar % 2 ? 2.75 : 1.75), len: 0.1,
-        note: chord.notes[0] + 24, vel: 0.48 });
+      rim.push({ beat: bar * 4 + (id === 'deep-signal' ? (bar % 2 ? 3.25 : 1.25) : (bar % 2 ? 2.75 : 1.75)), len: 0.1,
+        note: chord.notes[0] + (id === 'deep-signal' ? 36 : 24), vel: 0.48 });
     }
     setEvents('metal', metal); setEvents('rim', rim);
   }
@@ -10177,11 +10387,14 @@ GAME.sewerCourse = { generate, create: GAME.run.create, step, respawn, respawnPo
 // ---- src/audio/catalog.js ----
 // Shared by the settings/player and the synth workers; IDs are saved in player settings.
 const songs = [
-  { id: 'neon-flight', name: 'Neon Flight' },
-  { id: 'skyline-rush', name: 'Skyline Rush' },
-  { id: 'midnight-drift', name: 'Midnight Drift' },
-  { id: 'afterburn', name: 'Afterburn' },
-  { id: 'undertow', name: 'Undertow', unlock: 'sewer' },
+  { id: 'neon-flight', name: 'Neon Flight', environment: 'surface' },
+  { id: 'skyline-rush', name: 'Skyline Rush', environment: 'surface' },
+  { id: 'midnight-drift', name: 'Midnight Drift', environment: 'surface' },
+  { id: 'afterburn', name: 'Afterburn', environment: 'surface' },
+  { id: 'undertow', name: 'Undertow', unlock: 'sewer', environment: 'sewer' },
+  { id: 'cloudrunner', name: 'Cloudrunner', environment: 'surface', passRank: 10 },
+  { id: 'prism-drive', name: 'Prism Drive', environment: 'surface', passRank: 30 },
+  { id: 'deep-signal', name: 'Deep Signal', environment: 'sewer', passRank: 60 },
 ];
 if (typeof AUDIO !== 'undefined') AUDIO.songs = songs;
 else GAME.songs = songs;
@@ -10227,6 +10440,201 @@ GAME.access = { load, sewerUnlocked: () => unlocked, grantSewer, environment: ()
 
 ;(function () {
 'use strict';
+// ---- src/game/pass.js ----
+// A permanent, free flight pass. XP, daily progress and completed attempt IDs share one
+// atomic save; milestone rewards are derived from that save and cannot be claimed twice.
+const KEY = 'neonflight.pass.v1', MAX_RANK = 100, MAX_ATTEMPTS = 8192;
+const FLIGHT_XP = Object.freeze({ easy: 60, medium: 90, hard: 130, extreme: 180 });
+const MEDAL_XP = Object.freeze({ bronze: 10, silver: 20, gold: 35, diamond: 50 });
+const xpForRank = rank => {
+  const n = Math.max(0, Math.min(MAX_RANK - 1, Math.floor(rank) - 1));
+  return 100 + 25 * n + Math.floor(n * n / 4);
+};
+const thresholds = [0];
+for (let rank = 1; rank < MAX_RANK; rank++) thresholds.push(thresholds[rank - 1] + xpForRank(rank));
+const MAX_XP = thresholds[MAX_RANK - 1];
+const totalForRank = rank => thresholds[Math.max(0, Math.min(MAX_RANK - 1, Math.floor(rank) - 1))];
+function rankForXP(xp) {
+  let rank = 1;
+  while (rank < MAX_RANK && xp >= thresholds[rank]) rank++;
+  return rank;
+}
+const REWARDS = Object.freeze([
+  { rank: 5, kind: 'stars', amount: 2, title: '2 stars' },
+  { rank: 10, kind: 'music', id: 'cloudrunner', amount: 1, title: 'Cloudrunner' },
+  { rank: 15, kind: 'flashlights', amount: 1, title: 'Flashlight · 5 uses' },
+  { rank: 20, kind: 'theme', id: 'cobalt', amount: 1, title: 'Cobalt Circuit' },
+  { rank: 25, kind: 'stars', amount: 3, title: '3 stars' },
+  { rank: 30, kind: 'music', id: 'prism-drive', amount: 1, title: 'Prism Drive' },
+  { rank: 35, kind: 'lifts', amount: 2, title: '2 lift boosts' },
+  { rank: 40, kind: 'theme', id: 'rose-quartz', amount: 1, title: 'Rose Quartz' },
+  { rank: 45, kind: 'stars', amount: 4, title: '4 stars' },
+  { rank: 50, kind: 'theme', id: 'sewer-biolume', amount: 1, title: 'Bioluminescent Depths' },
+  { rank: 55, kind: 'flashlights', amount: 1, title: 'Flashlight · 5 uses' },
+  { rank: 60, kind: 'music', id: 'deep-signal', amount: 1, title: 'Deep Signal' },
+  { rank: 65, kind: 'stars', amount: 5, title: '5 stars' },
+  { rank: 70, kind: 'theme', id: 'solar-eclipse', amount: 1, title: 'Solar Eclipse' },
+  { rank: 75, kind: 'lifts', amount: 2, title: '2 lift boosts' },
+  { rank: 80, kind: 'flashlights', amount: 2, title: '2 flashlights · 10 uses' },
+  { rank: 85, kind: 'stars', amount: 6, title: '6 stars' },
+  { rank: 90, kind: 'theme', id: 'sewer-foundry', amount: 1, title: 'Rustworks' },
+  { rank: 95, kind: 'flashlights', amount: 2, title: '2 flashlights · 10 uses' },
+  { rank: 100, kind: 'stars', amount: 10, title: '10 stars' },
+].map(reward => Object.freeze(reward)));
+
+// Quest progress is committed only when a course finishes. There are no shop, paid gear,
+// Extreme-unlock or specific-seed requirements, so every selected quest is playable.
+const medals = { bronze: 1, silver: 2, gold: 3, diamond: 4 };
+const courseQuest = (id, label, test, sewer = false) => Object.freeze({ id, sewer,
+  targets: [1, 2, 3], title: target => `${label} ${target} ${target === 1 ? 'course' : 'courses'}`,
+  add: flight => test(flight) ? 1 : 0 });
+const QUESTS = Object.freeze([
+  courseQuest('finish', 'Finish', () => true),
+  courseQuest('surface', 'Finish on the surface:', f => f.environment === 'surface'),
+  courseQuest('easy', 'Finish on Easy:', f => f.difficulty === 'easy'),
+  courseQuest('medium', 'Finish on Medium:', f => f.difficulty === 'medium'),
+  courseQuest('hard', 'Finish on Hard or Extreme:', f => ['hard', 'extreme'].includes(f.difficulty)),
+  courseQuest('clean', 'Finish without crashing:', f => f.crashes === 0),
+  courseQuest('accurate', 'Finish without missing a ring:', f => f.missed === 0),
+  courseQuest('swift', 'Finish in under 2 minutes:', f => f.time < 120),
+  Object.freeze({ id: 'stars', targets: [1, 2, 3], title: n => `Collect ${n} ${n === 1 ? 'star' : 'stars'} and finish`, add: f => f.stars }),
+  Object.freeze({ id: 'boosts', targets: [2, 4, 6], title: n => `Take ${n} course boosters and finish`, add: f => f.boosts }),
+  courseQuest('bronze', 'Earn Bronze or better:', f => (medals[f.medal] ?? 0) >= 1),
+  courseQuest('silver', 'Earn Silver or better:', f => (medals[f.medal] ?? 0) >= 2),
+  courseQuest('gold', 'Earn Gold or better:', f => (medals[f.medal] ?? 0) >= 3),
+  courseQuest('perfect', 'Finish with no crashes or missed rings:', f => f.crashes === 0 && f.missed === 0),
+  courseQuest('unassisted', 'Finish without using a lift gadget:', f => !f.liftUsed),
+  courseQuest('sewer', 'Finish in the Sewer:', f => f.environment === 'sewer', true),
+  courseQuest('sewer-clean', 'Finish in the Sewer without crashing:', f => f.environment === 'sewer' && f.crashes === 0, true),
+  Object.freeze({ id: 'sewer-stars', sewer: true, targets: [1, 2, 3],
+    title: n => `Collect ${n} Sewer ${n === 1 ? 'star' : 'stars'} and finish`, add: f => f.environment === 'sewer' ? f.stars : 0 }),
+]);
+const questById = new Map(QUESTS.map(quest => [quest.id, quest]));
+const listeners = new Set();
+const dayKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+function resetAt() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+}
+function hash(text) {
+  let result = 2166136261;
+  for (let i = 0; i < text.length; i++) result = Math.imul(result ^ text.charCodeAt(i), 16777619);
+  return result >>> 0;
+}
+function dailyFor(date = dayKey()) {
+  const candidates = QUESTS.filter(quest => !quest.sewer || GAME.access?.sewerUnlocked?.() === true)
+    .map(quest => ({ id: quest.id, score: hash(`${date}:${quest.id}`) }))
+    .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
+  return { date, quests: candidates.slice(0, 3).map(quest => ({ id: quest.id, progress: 0 })) };
+}
+const emptyLedger = () => ({ version: 1, totalXP: 0, attempts: [], daily: dailyFor() });
+let ledger = emptyLedger(), storageOK = true;
+const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 160;
+function read() {
+  const raw = localStorage.getItem(KEY);
+  if (raw === null) return emptyLedger();
+  const value = JSON.parse(raw);
+  if (!value || value.version !== 1 || !Number.isSafeInteger(value.totalXP) || value.totalXP < 0 || value.totalXP > MAX_XP
+      || !Array.isArray(value.attempts) || value.attempts.length > MAX_ATTEMPTS
+      || !value.attempts.every(validId) || new Set(value.attempts).size !== value.attempts.length
+      || !value.daily || typeof value.daily.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.daily.date)
+      || !Array.isArray(value.daily.quests) || value.daily.quests.length !== 3
+      || new Set(value.daily.quests.map(quest => quest?.id)).size !== 3
+      || !value.daily.quests.every((entry, tier) => questById.has(entry?.id)
+        && Number.isSafeInteger(entry.progress) && entry.progress >= 0
+        && entry.progress <= questById.get(entry.id).targets[tier])) throw new Error('Invalid flight pass save.');
+  return { version: 1, totalXP: value.totalXP, attempts: value.attempts.slice(), daily: {
+    date: value.daily.date, quests: value.daily.quests.map(quest => ({ id: quest.id, progress: quest.progress })),
+  } };
+}
+function rotateDaily(save) {
+  if (save.daily.date !== dayKey()) save.daily = dailyFor();
+  return save;
+}
+function notify() { for (const listener of listeners) listener(); }
+function refresh() {
+  try { ledger = rotateDaily(read()); storageOK = true; }
+  catch { storageOK = false; rotateDaily(ledger); }
+  notify();
+}
+function totalsForXP(xp) {
+  const rank = rankForXP(xp), totals = { stars: 0, lifts: 0, flashlights: 0, themes: [], music: [] };
+  for (const reward of REWARDS) {
+    if (reward.rank > rank) break;
+    if (reward.kind === 'theme') totals.themes.push(reward.id);
+    else if (reward.kind === 'music') totals.music.push(reward.id);
+    else totals[reward.kind] += reward.amount;
+  }
+  return totals;
+}
+function rewardTotals({ saved = false } = {}) { return totalsForXP((saved ? read() : ledger).totalXP); }
+function state() {
+  rotateDaily(ledger);
+  const rank = rankForXP(ledger.totalXP), atMax = rank === MAX_RANK;
+  return { rank, xp: ledger.totalXP, totalXP: ledger.totalXP, xpInRank: atMax ? 0 : ledger.totalXP - totalForRank(rank),
+    xpNeeded: atMax ? 0 : xpForRank(rank), maxRank: MAX_RANK, available: storageOK && !!navigator.locks?.request,
+    daily: { date: ledger.daily.date, resetAt: resetAt(), quests: ledger.daily.quests.map((entry, tier) => {
+      const quest = questById.get(entry.id), target = quest.targets[tier];
+      return { id: entry.id, title: quest.title(target), progress: entry.progress, target, xp: (tier + 1) * 100,
+        complete: entry.progress >= target };
+    }) }, rewards: REWARDS.map(reward => ({ ...reward, unlocked: rank >= reward.rank })), rewardTotals: rewardTotals() };
+}
+function normalizeFlight(value) {
+  if (!value || !validId(value.id) || typeof value.code !== 'string' || !value.code.length || value.code.length > 160
+      || !Object.hasOwn(FLIGHT_XP, value.difficulty) || !['surface', 'sewer'].includes(value.environment)
+      || !Number.isFinite(value.time) || value.time < 0
+      || !['crashes', 'missed', 'boosts', 'stars'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0)
+      || value.stars > 3 || typeof value.liftUsed !== 'boolean' || typeof value.flashlightUsed !== 'boolean'
+      || (value.medal !== null && value.medal !== undefined && typeof value.medal !== 'string')) return null;
+  const medal = value.medal?.toLowerCase() ?? null;
+  if (medal !== null && !Object.hasOwn(MEDAL_XP, medal)) return null;
+  return { ...value, medal };
+}
+async function completeFlight(summary) {
+  const flight = normalizeFlight(summary);
+  if (!flight) return { ok: false, message: 'This flight could not be added to the pass.' };
+  if (!navigator.locks?.request) return { ok: false, message: 'Open the online game to save flight pass progress.' };
+  try {
+    return await navigator.locks.request(KEY, () => {
+      const next = rotateDaily(read()), rankBefore = rankForXP(next.totalXP);
+      if (next.attempts.includes(flight.id)) { ledger = next; return { ok: true, duplicate: true, xp: 0,
+        flightXP: 0, dailyXP: 0, rankBefore, rankAfter: rankBefore, rewards: [] }; }
+      const flightXP = FLIGHT_XP[flight.difficulty] + (MEDAL_XP[flight.medal] ?? 0) + (flight.environment === 'sewer' ? 20 : 0);
+      let dailyXP = 0;
+      next.daily.quests.forEach((entry, tier) => {
+        const quest = questById.get(entry.id), target = quest.targets[tier];
+        if (entry.progress >= target) return;
+        entry.progress = Math.min(target, entry.progress + quest.add(flight));
+        if (entry.progress >= target) dailyXP += (tier + 1) * 100;
+      });
+      const beforeXP = next.totalXP;
+      next.totalXP = Math.min(MAX_XP, beforeXP + flightXP + dailyXP);
+      next.attempts.push(flight.id);
+      // At least 60 XP per finish reaches rank 100 before this history fills. Beyond
+      // the XP cap keep recent attempt IDs bounded without growing saves forever.
+      if (next.attempts.length > MAX_ATTEMPTS) next.attempts.shift();
+      localStorage.setItem(KEY, JSON.stringify(next));
+      ledger = next;
+      storageOK = true;
+      const rankAfter = rankForXP(next.totalXP);
+      const earnedXP = next.totalXP - beforeXP, earnedFlightXP = Math.min(flightXP, earnedXP);
+      return { ok: true, xp: earnedXP, flightXP: earnedFlightXP, dailyXP: earnedXP - earnedFlightXP, rankBefore, rankAfter,
+        rewards: REWARDS.filter(reward => reward.rank > rankBefore && reward.rank <= rankAfter).map(reward => ({ ...reward, unlocked: true })) };
+    });
+  } catch { storageOK = false; return { ok: false, message: 'Could not save pass progress. Your previous progress is safe.' }; }
+  finally { notify(); }
+}
+window.addEventListener('storage', event => { if (event.key === null || event.key === KEY) refresh(); });
+GAME.pass = { KEY, MAX_RANK, MAX_XP, FLIGHT_XP, MEDAL_XP, REWARDS, QUESTS, xpForRank, totalForRank, rankForXP,
+  refresh, state, completeFlight, rewardTotals,
+  ownsTheme: id => rewardTotals().themes.includes(id), ownsMusic: id => rewardTotals().music.includes(id),
+  onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
+refresh();
+
+})();
+
+;(function () {
+'use strict';
 // ---- src/game/settings.js ----
 // Player settings: one schema (ranges, defaults, labels) that the settings panel renders from and
 // every consumer reads through, persisted in this browser.
@@ -10254,12 +10662,16 @@ const SCHEMA = {
   speedFov: { type: 'bool', default: true, label: 'Widen view at speed', group: 'Camera' },
   // The most pixels a frame may have; below that the game lowers resolution itself when frames run late.
   quality: { type: 'choice', default: 'auto', label: 'Resolution', group: 'Graphics', options: [['auto', 'Auto'], ['high', '1440p'], ['balanced', '1080p'], ['performance', '720p']] },
-  theme: { type: 'choice', default: 'neon', label: 'Theme', group: 'City', options: [] },
+  theme: { type: 'choice', default: 'neon', label: 'Theme', group: 'City', environment: 'surface', options: [] },
+  sewerTheme: { type: 'choice', default: 'sewer-original', label: 'Sewer theme', group: 'City', environment: 'sewer', options: [['sewer-original', 'The Sewer']] },
   masterVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 1, format: percent, label: 'Volume', group: 'Sound' },
   musicVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.8, format: percent, label: 'Music', group: 'Sound' },
-  musicTrack: { type: 'choice', default: 'neon-flight', label: 'Song', group: 'Sound',
+  musicTrack: { type: 'choice', default: 'neon-flight', label: 'Song', group: 'Sound', environment: 'surface',
     note: 'Random picks from your owned surface songs for each new flight.',
-    options: [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])] },
+    options: [['random', 'Random'], ...GAME.songs.filter(s => s.environment !== 'sewer' && s.id !== 'undertow').map(s => [s.id, s.name])] },
+  sewerMusicTrack: { type: 'choice', default: 'undertow', label: 'Sewer song', group: 'Sound', environment: 'sewer',
+    note: 'Undertow is free. Random picks from your unlocked Sewer songs for each new flight.',
+    options: [['random', 'Random'], ...GAME.songs.filter(s => s.environment === 'sewer' || s.id === 'undertow').map(s => [s.id, s.name])] },
   effectsVolume: { type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, format: percent, label: 'Effects', group: 'Sound' },
 };
 
@@ -10269,40 +10681,44 @@ const schemaListeners = new Set();
 let watchedShop = null;
 
 const inSewer = () => GAME.access?.environment() === 'sewer';
-const ownsTheme = id => GAME.shop?.ownsTheme ? GAME.shop.ownsTheme(id) : id === 'neon';
-const ownsMusic = id => GAME.shop?.ownsMusic ? GAME.shop.ownsMusic(id) : id === 'neon-flight';
+const ownsTheme = id => id === 'sewer-original' || (GAME.shop?.ownsTheme ? GAME.shop.ownsTheme(id) : id === 'neon');
+const ownsMusic = id => id === 'undertow' || (GAME.shop?.ownsMusic ? GAME.shop.ownsMusic(id) : id === 'neon-flight');
 const THEME_ICONS = { neon: '◈', sunset: '☀', rain: '☂', toxic: '◉', arctic: '❄',
-  amber: '☀', overgrown: '❧', aurora: '✧', ember: '♨' };
+  amber: '☀', overgrown: '❧', aurora: '✧', ember: '♨', cobalt: '◇', 'rose-quartz': '⬡',
+  'solar-eclipse': '◐', 'sewer-original': '≈', 'sewer-biolume': '✧', 'sewer-foundry': '♨' };
+const sewerThemes = () => Array.isArray(GAME.sewerThemes) ? GAME.sewerThemes : GAME.sewerThemes?.list || [];
+const rowVisible = key => !SCHEMA[key].environment || SCHEMA[key].environment === (inSewer() ? 'sewer' : 'surface');
 
-// Ownership controls saved surface preferences. The Sewer has its own song, so visiting it
-// never overwrites the surface choice that should return when the player goes back up.
+// Surface and Sewer preferences persist independently when the environment changes.
 function ownedChoice(key, id) {
-  if (key === 'theme') return ownsTheme(id);
-  if (key === 'musicTrack') return id === 'random' || (id !== 'undertow' && ownsMusic(id));
+  if (key === 'theme' || key === 'sewerTheme') return ownsTheme(id);
+  if (key === 'musicTrack' || key === 'sewerMusicTrack') return id === 'random' || ownsMusic(id);
   return true;
 }
+function effectiveTheme() { return get(inSewer() ? 'sewerTheme' : 'theme'); }
+function effectiveMusicTrack() { return get(inSewer() ? 'sewerMusicTrack' : 'musicTrack'); }
 function displayValue(key) {
-  return key === 'musicTrack' && inSewer() ? 'undertow' : get(key);
+  // Existing soundtrack consumers also read the currently active song through this helper.
+  return key === 'musicTrack' && inSewer() ? get('sewerMusicTrack') : get(key);
 }
 function choiceStatus(key, id) {
-  if (key === 'theme') {
+  const hidden = !rowVisible(key);
+  if (key === 'theme' || key === 'sewerTheme') {
+    const item = (key === 'sewerTheme' ? sewerThemes() : GAME.themes?.list || []).find(t => t.id === id);
     const locked = !ownsTheme(id);
-    return { locked, available: !locked, icon: THEME_ICONS[id] || '◈',
-      note: locked ? `${GAME.shop?.themePrice?.(id) ?? 4} stars in the shop` : '' };
+    return { locked, available: !locked && !hidden, hidden, icon: THEME_ICONS[id] || '◈',
+      note: locked ? item?.passRank ? `Pass rank ${item.passRank}` : `${GAME.shop?.themePrice?.(id) ?? 4} stars in the shop` : '' };
   }
-  if (key === 'musicTrack') {
-    if (id === 'undertow') {
-      const locked = !GAME.access?.sewerUnlocked();
-      return { locked, available: !locked && inSewer(), hidden: !inSewer(), icon: '≈',
-        note: inSewer() ? 'Free in the Sewer' : '' };
-    }
+  if (key === 'musicTrack' || key === 'sewerMusicTrack') {
+    const item = GAME.songs.find(s => s.id === id);
     const locked = id !== 'random' && !ownsMusic(id);
-    return { locked, available: !locked && !inSewer(), icon: id === 'random' ? '⤨' : '♫',
-      note: locked ? `${GAME.shop?.MUSIC_PRICE ?? 5} stars in the shop` : inSewer() ? 'Surface music' : '' };
+    return { locked, available: !locked && !hidden, hidden, icon: id === 'random' ? '⤨' : id === 'undertow' ? '≈' : '♫',
+      note: locked ? item?.passRank ? `Pass rank ${item.passRank}` : `${GAME.shop?.MUSIC_PRICE ?? 5} stars in the shop`
+        : id === 'undertow' ? 'Free in the Sewer' : '' };
   }
-  return { locked: false, available: true, icon: '', note: '' };
+  return { locked: false, available: true, hidden: false, icon: '', note: '' };
 }
-const choiceAvailable = (key, id) => choiceStatus(key, id).available;
+const choiceAvailable = (key, id) => SCHEMA[key].options?.some(([value]) => value === id) && choiceStatus(key, id).available;
 const choiceOptions = key => SCHEMA[key].options.filter(([id]) => !choiceStatus(key, id).hidden);
 
 function valid(key, v) {
@@ -10364,18 +10780,25 @@ function setThemeOptions(options) {
   SCHEMA.theme.options = options;
   refreshCosmetics();
 }
+function setSewerThemeOptions(options) {
+  SCHEMA.sewerTheme.options = options;
+  refreshCosmetics();
+}
 function updateSongOptions() {
-  SCHEMA.musicTrack.options = [['random', 'Random'], ...GAME.songs.map(s => [s.id, s.name])];
+  for (const [key, sewer] of [['musicTrack', false], ['sewerMusicTrack', true]]) {
+    SCHEMA[key].options = [['random', 'Random'], ...GAME.songs.filter(s => (s.environment === 'sewer' || s.id === 'undertow') === sewer).map(s => [s.id, s.name])];
+  }
   refreshCosmetics();
 }
 function refreshCosmetics() {
-  for (const key of ['theme', 'musicTrack']) {
+  for (const key of ['theme', 'sewerTheme', 'musicTrack', 'sewerMusicTrack']) {
     if (values[key] !== undefined && !valid(key, values[key])) set(key, SCHEMA[key].default);
     for (const fn of schemaListeners) fn(key);
   }
 }
 
-GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, updateSongOptions,
+GAME.settings = { SCHEMA, load, get, set, reset, setThemeOptions, setSewerThemeOptions, updateSongOptions,
+  rowVisible, effectiveTheme, effectiveMusicTrack,
   displayValue, choiceStatus, choiceAvailable, choiceOptions, refreshCosmetics,
   onSchemaChange: fn => schemaListeners.add(fn), onChange: fn => listeners.add(fn), all: () => ({ ...values }) };
 
@@ -10461,9 +10884,10 @@ window.addEventListener('storage', e => {
 // Purchases may only spend claims that actually reached storage, including legacy earnings.
 function savedTotal() {
   const saved = tally(readSaved());
-  return saved.shared.size + saved.credit;
+  return saved.shared.size + saved.credit + (GAME.pass?.rewardTotals({ saved: true }).stars ?? 0);
 }
-GAME.starBank = { load, claim, finish, collected, savedTotal, total: () => claims.size + legacyCredit };
+GAME.starBank = { load, claim, finish, collected, savedTotal,
+  total: () => claims.size + legacyCredit + (GAME.pass?.rewardTotals().stars ?? 0) };
 
 })();
 
@@ -10491,6 +10915,10 @@ const listeners = new Set();
 const emptyLedger = () => ({ bought: 0, used: 0, flashlightVersion: 2, flashlightBought: 0, flashlightUsed: 0, flashlightEquipped: false,
   collapseKey: false, themes: [], themePrices: {}, music: [] });
 let ledger = emptyLedger(), storageOK = true;
+// Pass gifts are entitlements from its saved XP, separate from lifetime paid purchases.
+// Consuming either uses this same locked inventory ledger, so gifts cannot be claimed twice.
+let verifiedGifts = { lifts: 0, flashlights: 0 };
+const gifts = () => verifiedGifts;
 const spending = save => save.bought * LIFT.price + (save.collapseKey ? COLLAPSE_KEY.price : 0)
   + save.flashlightBought * FLASHLIGHT.price
   + Object.values(save.themePrices).reduce((sum, price) => sum + price, 0) + save.music.length * MUSIC_PRICE;
@@ -10509,9 +10937,9 @@ function paidThemePrices(value, themes) {
   }
   return Object.fromEntries(themes.map(id => [id, value[id]]));
 }
-function validInventory(bought, used, capacity) {
+function validInventory(bought, used, capacity, granted = 0) {
   return Number.isSafeInteger(bought) && Number.isSafeInteger(used)
-    && used >= 0 && bought >= used && bought - used <= capacity;
+    && bought >= 0 && used >= 0 && bought + granted >= used && bought - used <= capacity;
 }
 function flashlightInventory(value) {
   const hasBought = value.flashlightBought !== undefined, hasUsed = value.flashlightUsed !== undefined;
@@ -10527,18 +10955,21 @@ function flashlightInventory(value) {
     return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used * FLASHLIGHT.uses,
       flashlightEquipped: bought > used && value.flashlightEquipped !== false };
   }
-  if (!validInventory(bought * FLASHLIGHT.uses, used, LEGACY_FLASHLIGHT_CAPACITY * FLASHLIGHT.uses)) {
+  if (!validInventory(bought * FLASHLIGHT.uses, used, LEGACY_FLASHLIGHT_CAPACITY * FLASHLIGHT.uses,
+    gifts().flashlights * FLASHLIGHT.uses)) {
     throw new Error('invalid flashlight uses');
   }
   return { flashlightVersion: 2, flashlightBought: bought, flashlightUsed: used,
-    flashlightEquipped: bought * FLASHLIGHT.uses > used && value.flashlightEquipped !== false };
+    flashlightEquipped: (bought + gifts().flashlights) * FLASHLIGHT.uses > used && value.flashlightEquipped !== false };
 }
-const flashlightUses = save => save.flashlightBought * FLASHLIGHT.uses - save.flashlightUsed;
+const flashlightUses = save => (save.flashlightBought + gifts().flashlights) * FLASHLIGHT.uses - save.flashlightUsed;
+const lifts = save => save.bought + gifts().lifts - save.used;
 function read() {
+  verifiedGifts = GAME.pass?.rewardTotals({ saved: true }) ?? { lifts: 0, flashlights: 0 };
   const raw = localStorage.getItem(KEY);
   if (raw === null) return emptyLedger();
   const value = JSON.parse(raw);
-  if (!value || !validInventory(value.bought, value.used, LIFT.capacity)
+  if (!value || !validInventory(value.bought, value.used, LIFT.capacity, gifts().lifts)
       || (value.collapseKey !== undefined && typeof value.collapseKey !== 'boolean')) throw new Error('invalid shop save');
   const save = { bought: value.bought, used: value.used, collapseKey: value.collapseKey === true,
     ...flashlightInventory(value),
@@ -10555,10 +10986,11 @@ function refresh() {
 function state() {
   const uses = flashlightUses(ledger), currentUses = uses > 0 ? (uses - 1) % FLASHLIGHT.uses + 1 : 0;
   return { balance: Math.max(0, GAME.starBank.total() - spending(ledger)),
-    spent: spending(ledger), lifts: ledger.bought - ledger.used, collapseKey: ledger.collapseKey,
+    spent: spending(ledger), lifts: lifts(ledger), collapseKey: ledger.collapseKey,
     flashlights: Math.ceil(uses / FLASHLIGHT.uses), flashlightUses: uses, flashlightCurrentUses: currentUses,
     flashlightReserve: (uses - currentUses) / FLASHLIGHT.uses, flashlightEquipped: uses > 0 && ledger.flashlightEquipped,
-    themes: ledger.themes.slice(), music: ledger.music.slice(),
+    themes: [...ledger.themes, ...(GAME.pass?.rewardTotals().themes ?? [])],
+    music: [...ledger.music, ...(GAME.pass?.rewardTotals().music ?? [])],
     available: storageOK && !!navigator.locks?.request };
 }
 async function transaction(change) {
@@ -10578,7 +11010,7 @@ async function transaction(change) {
 }
 function buyLift() {
   return transaction((next, earned) => {
-    if (next.bought - next.used >= LIFT.capacity) return { ok: false, message: 'Your lift inventory is full.' };
+    if (lifts(next) >= LIFT.capacity) return { ok: false, message: 'Your lift inventory is full.' };
     if (earned - spending(next) < LIFT.price) return { ok: false, message: 'Find more stars to buy this boost.' };
     next.bought++;
     return { ok: true };
@@ -10604,10 +11036,12 @@ function buyCollapseKey() {
     return { ok: true };
   });
 }
-function ownsTheme(id) { return id === 'neon' || ledger.themes.includes(id); }
+function ownsTheme(id) {
+  return id === 'neon' || id === 'sewer-original' || ledger.themes.includes(id) || !!GAME.pass?.ownsTheme(id);
+}
 function ownsMusic(id) {
   if (id === 'undertow') return GAME.access?.sewerUnlocked?.() === true;
-  return id === 'neon-flight' || ledger.music.includes(id);
+  return id === 'neon-flight' || ledger.music.includes(id) || !!GAME.pass?.ownsMusic(id);
 }
 function buyCatalogItem(kind, id, catalog, price) {
   return transaction((next, earned) => {
@@ -10623,7 +11057,7 @@ const buyTheme = id => buyCatalogItem('themes', id, PAID_THEMES, themePrice(id))
 const buyMusic = id => buyCatalogItem('music', id, PAID_MUSIC, MUSIC_PRICE);
 function useLift(canUse, activate) {
   return transaction(next => {
-    if (!canUse() || next.bought <= next.used) return { ok: false };
+    if (!canUse() || lifts(next) <= 0) return { ok: false };
     next.used++;
     return { ok: true, activate };
   });
@@ -10644,7 +11078,7 @@ function setFlashlightEquipped(equipped) {
     return { ok: true };
   });
 }
-window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key.startsWith('neonflight.star.')) refresh(); });
+window.addEventListener('storage', e => { if (e.key === null || e.key === KEY || e.key === GAME.pass?.KEY || e.key.startsWith('neonflight.star.')) refresh(); });
 GAME.shop = { LIFT, FLASHLIGHT, COLLAPSE_KEY, THEME_PRICE, THEME_PRICES, themePrice, MUSIC_PRICE,
   state, refresh, buyLift, buyFlashlight, buyCollapseKey,
   ownsTheme, ownsMusic, buyTheme, buyMusic, useLift, useFlashlight, setFlashlightEquipped, onChange: fn => listeners.add(fn) };
@@ -10785,6 +11219,58 @@ const THEMES = [
     rain: 0,
     wetness: 0.12, soot: 1, clouds: 0.75, motes: { kind: 'ember', amount: 0.34 },
   },
+  {
+    id: 'cobalt', name: 'Cobalt Circuit', passRank: 20, collectibleStar: [1, 0.51, 0.16],
+    neon: [[0.12, 0.32, 1.5], [0.55, 0.95, 1.25], [0.9, 1.1, 1.25], [0.15, 0.68, 1.25]],
+    windows: [[0.65, 0.87, 1.15], [0.95, 1.05, 1.1]],
+    wall: [0.083, 0.112, 0.16], roof: [0.11, 0.16, 0.24],
+    sky: { zenith: [0.012, 0.036, 0.12], horizon: [0.12, 0.23, 0.37], glow: [0.045, 0.14, 0.28] },
+    fog: { low: [0.045, 0.09, 0.16], high: [0.09, 0.17, 0.29], density: 0.6 },
+    stars: 0.12, sun: null, rain: 0, wetness: 0.55, signs: 0.8, clouds: 0.2,
+  },
+  {
+    id: 'rose-quartz', name: 'Rose Quartz', passRank: 40, collectibleStar: [0.12, 1, 0.81],
+    neon: [[1.1, 0.42, 0.62], [0.72, 0.52, 1.15], [1.1, 0.75, 0.86], [0.38, 0.7, 1.0]],
+    windows: [[1.1, 0.72, 0.7], [0.72, 0.65, 1.1]],
+    wall: [0.072, 0.038, 0.073], roof: [0.12, 0.074, 0.13],
+    sky: { zenith: [0.065, 0.026, 0.13], horizon: [0.32, 0.15, 0.22], glow: [0.19, 0.075, 0.085] },
+    fog: { low: [0.1, 0.045, 0.092], high: [0.16, 0.095, 0.19], density: 0.58 },
+    stars: 0.18,
+    sun: { dir: [-0.5, 0.2, 1], top: [1.8, 1.15, 1.25], bottom: [1.4, 0.55, 0.72], size: 0.045,
+      stripes: 0, soft: 0.14, halo: [0.42, 0.16, 0.23] },
+    rain: 0, wetness: 0.13, signs: 0.3, clouds: 0.52, motes: { kind: 'pollen', amount: 0.15 },
+  },
+  {
+    id: 'solar-eclipse', name: 'Solar Eclipse', passRank: 70, collectibleStar: [0.3, 0.9, 1],
+    neon: [[0.95, 0.41, 0.1], [0.35, 0.44, 1.15], [0.68, 0.32, 0.08], [0.16, 0.68, 0.84]],
+    windows: [[0.95, 0.5, 0.17], [0.35, 0.47, 0.75]],
+    wall: [0.01, 0.016, 0.034], roof: [0.024, 0.029, 0.052],
+    sky: { zenith: [0.001, 0.004, 0.018], horizon: [0.045, 0.027, 0.06], glow: [0.07, 0.035, 0.016] },
+    fog: { low: [0.018, 0.017, 0.029], high: [0.023, 0.028, 0.062], density: 0.7 },
+    stars: 1,
+    sun: { dir: [0.23, 0.29, 1], top: [0.18, 0.075, 0.032], bottom: [0.055, 0.019, 0.014], size: 0.076,
+      stripes: 0, soft: 0.025, halo: [0.6, 0.22, 0.065] },
+    rain: 0, wetness: 0.3, signs: 0.55, clouds: 0.1, motes: { kind: 'dust', amount: 0.12 },
+  },
+];
+for (const t of THEMES) t.environment = 'surface';
+
+// These are cosmetic palettes over the same seeded tunnel network. The free choice keeps
+// each course's existing masonry; pass rewards never change a pipe, bend or collision.
+const SEWER_THEMES = [
+  { id: 'sewer-original', name: 'The Sewer', environment: 'sewer' },
+  { id: 'sewer-biolume', name: 'Bioluminescent Depths', environment: 'sewer', passRank: 50,
+    style: 2, cell: [2.4, 1.2], mortar: 0.065,
+    wallA: [0.062, 0.07, 0.18], wallB: [0.08, 0.11, 0.21], grout: [0.012, 0.027, 0.065],
+    lamp: [0.2, 2.0, 2.45], water: [0.013, 0.08, 0.105], fog: [0.013, 0.034, 0.063],
+    moss: 1.3, gloss: 0.8, mossColour: [0.06, 0.035, 0.16], mossGlow: [0.012, 0.04, 0.085],
+    collectibleStar: [0.6, 0.42, 1.0] },
+  { id: 'sewer-foundry', name: 'Rustworks', environment: 'sewer', passRank: 90,
+    style: 4, cell: [3.7, 2.3], mortar: 0.036,
+    wallA: [0.24, 0.085, 0.033], wallB: [0.05, 0.13, 0.13], grout: [0.025, 0.029, 0.028],
+    lamp: [2.5, 0.8, 0.18], water: [0.006, 0.047, 0.042], fog: [0.027, 0.028, 0.021],
+    moss: 0.35, gloss: 0.95, mossColour: [0.018, 0.055, 0.043], mossGlow: [0, 0, 0],
+    collectibleStar: [1.0, 0.65, 0.16] },
 ];
 
 // A theme with a missing or misshapen field would reach the shader as zeros: refuse it at load.
@@ -10822,6 +11308,14 @@ function check(t) {
   }
 }
 THEMES.forEach(check);
+for (const t of SEWER_THEMES.slice(1)) {
+  for (const key of ['wallA', 'wallB', 'grout', 'lamp', 'water', 'fog', 'mossColour', 'mossGlow', 'collectibleStar'])
+    if (!Array.isArray(t[key]) || t[key].length !== 3 || !t[key].every(v => Number.isFinite(v) && v >= 0))
+      throw new Error(`sewer theme ${t.id}: ${key} must be an RGB triple`);
+  if (!Array.isArray(t.cell) || t.cell.length !== 2 || !t.cell.every(v => Number.isFinite(v) && v > 0)
+    || !Number.isInteger(t.style) || t.style < 0 || t.style > 4 || !(t.mortar > 0)
+    || !(t.moss >= 0) || !(t.gloss >= 0 && t.gloss <= 1)) throw new Error(`invalid sewer theme ${t.id}`);
+}
 
 const byId = new Map(THEMES.map(t => [t.id, t]));
 
@@ -10833,6 +11327,17 @@ function theme(id) {
 
 GAME.settings.setThemeOptions(THEMES.map(t => [t.id, t.name]));
 GAME.themes = { list: THEMES, theme };
+const sewerById = new Map(SEWER_THEMES.map(t => [t.id, t]));
+GAME.sewerThemes = {
+  list: SEWER_THEMES,
+  theme(id) {
+    const t = sewerById.get(id);
+    if (!t) throw new Error(`unknown sewer theme "${id}"`);
+    return t;
+  },
+  resolve(id) { return id === 'sewer-original' ? null : this.theme(id); },
+};
+GAME.settings.setSewerThemeOptions?.(SEWER_THEMES.map(t => [t.id, t.name]));
 
 })();
 
@@ -11963,6 +12468,7 @@ let cutAt = null;                  // audio time of the finish cut, until a leve
 let drop = null;                   // the scheduled build and drop
 let volumes = { master: 1, music: 1, effects: 1 };
 let preference = 'neon-flight', requestedSong = null, renderController = null, songError = null, watchedShop = null;
+let sewerPreference = 'undertow';
 let hasFlown = false;
 let environment = 'surface', surfaceSong = null, surfaceSelectionChanged = false;
 let alarm = false, alarmBuffer = null, alarmTask = null, alarmSource = null;
@@ -12077,18 +12583,28 @@ async function renderSong(song, signal) {
 }
 
 const songName = id => GAME.songs.find(s => s.id === id)?.name;
-const surfaceSongAvailable = song => !!song && !song.unlock &&
+const surfaceSongAvailable = song => !!song && song.environment !== 'sewer' && !song.unlock &&
   (song.id === 'neon-flight' || !!GAME.shop?.ownsMusic?.(song.id));
+const sewerSongAvailable = song => !!song && (song.environment === 'sewer' || song.id === 'undertow')
+  && !!GAME.access?.sewerUnlocked?.() && (song.id === 'undertow' || !!GAME.shop?.ownsMusic?.(song.id));
 const surfacePreferenceAvailable = value => value === 'random' || GAME.songs.some(s => s.id === value && surfaceSongAvailable(s));
+const sewerPreferenceAvailable = value => value === 'random' || GAME.songs.some(s => s.id === value && sewerSongAvailable(s));
 const songAvailable = id => environment === 'sewer'
-  ? id === 'undertow' && !!GAME.access?.sewerUnlocked?.()
+  ? GAME.songs.some(s => s.id === id && sewerSongAvailable(s))
   : GAME.songs.some(s => s.id === id && surfaceSongAvailable(s));
 function randomSong() {
-  // Discovering the Sewer never adds Undertow to the surface shuffle.
-  const available = GAME.songs.filter(surfaceSongAvailable);
+  const available = GAME.songs.filter(environment === 'sewer' ? sewerSongAvailable : surfaceSongAvailable);
   const different = available.filter(s => s.id !== requestedSong && s.id !== meta?.song);
   const candidates = different.length ? different : available;
   return candidates[Math.floor(Math.random() * candidates.length)].id;
+}
+const selectedSewerSong = () => sewerPreference === 'random' ? randomSong() : sewerPreference;
+function setSewerSong(value) {
+  // The default can be stored before discovery; it never starts underground music above ground.
+  if (value !== 'undertow' && !sewerPreferenceAvailable(value)) throw new Error(`unavailable Sewer song "${value}"`);
+  sewerPreference = value;
+  return environment === 'sewer' && GAME.access?.sewerUnlocked?.()
+    ? requestSong(selectedSewerSong()) : Promise.resolve(true);
 }
 
 async function requestSong(song) {
@@ -12118,16 +12634,16 @@ async function requestSong(song) {
 }
 
 function setSong(value) {
-  if (value === 'undertow') {
-    if (!songAvailable(value)) throw new Error(`unavailable song "${value}"`);
-    return requestSong(value);
+  if (GAME.songs.some(s => s.id === value && (s.environment === 'sewer' || s.id === 'undertow'))) {
+    if (environment !== 'sewer') throw new Error(`unavailable song "${value}"`);
+    return setSewerSong(value);
   }
   if (!surfacePreferenceAvailable(value)) throw new Error(`unavailable song "${value}"`);
   const changed = value !== preference;
   preference = value;
   if (environment === 'sewer') {
     surfaceSelectionChanged ||= changed;
-    return requestSong('undertow');
+    return GAME.access?.sewerUnlocked?.() ? requestSong(selectedSewerSong()) : Promise.resolve(false);
   }
   return requestSong(value === 'random' ? randomSong() : value);
 }
@@ -12148,8 +12664,15 @@ function refreshOwnership() {
   if (surfaceSong && !GAME.songs.some(s => s.id === surfaceSong && surfaceSongAvailable(s))) surfaceSong = null;
   setVolumes(volumes);
   const current = requestedSong ?? meta?.song;
+  if (!sewerPreferenceAvailable(sewerPreference)) sewerPreference = 'undertow';
+  if (environment === 'sewer' && !GAME.access?.sewerUnlocked?.()) {
+    renderController?.abort();
+    return;
+  }
   if (environment === 'surface' && current && !songAvailable(current)) {
     requestSong(preference === 'random' ? randomSong() : preference);
+  } else if (environment === 'sewer' && current && !songAvailable(current)) {
+    requestSong(selectedSewerSong());
   }
 }
 
@@ -12164,7 +12687,8 @@ function setEnvironment(next) {
     surfaceSong = requestedSong ?? meta?.song ?? null;
     surfaceSelectionChanged = false;
     environment = next;
-    return requestSong('undertow');
+    if (!sewerPreferenceAvailable(sewerPreference)) sewerPreference = 'undertow';
+    return requestSong(selectedSewerSong());
   }
   environment = next;
   if (!surfacePreferenceAvailable(preference)) preference = 'neon-flight';
@@ -12179,7 +12703,11 @@ function setEnvironment(next) {
 // get a different random choice. Called by Fly only, never by crash recovery or resume.
 function prepareRun() {
   if (environment === 'sewer') {
-    if (requestedSong !== 'undertow' && meta?.song !== 'undertow') requestSong('undertow');
+    if (!GAME.access?.sewerUnlocked?.()) return;
+    const current = requestedSong ?? meta?.song;
+    if (sewerPreference === 'random' && hasFlown) requestSong(randomSong());
+    else if (!songAvailable(current) || (sewerPreference !== 'random' && current !== sewerPreference))
+      requestSong(selectedSewerSong());
   } else if (preference === 'random' && hasFlown) requestSong(randomSong());
   hasFlown = true;
 }
@@ -12531,10 +13059,10 @@ function setVolumes(v) {
 }
 
 GAME.sound = {
-  load, unlock, setSong, prepareRun, songStatus, setEnvironment, setAlarm, setSceneMuted,
+  load, unlock, setSong, setSewerSong, prepareRun, songStatus, setEnvironment, setAlarm, setSceneMuted,
   setLevel, startRun, scheduleDrop, cut, untilBeat, beatSec: BEAT_SEC, chord, play, blast, muffle, setVolumes,
   state: () => ({ loaded: !!buffers, unlocked: !!ctx, playing: started, context: ctx ? ctx.state : null, level,
-    song: meta?.song ?? null, requestedSong, preference, songError,
+    song: meta?.song ?? null, requestedSong, preference, sewerPreference, songError,
     environment, alarm, alarmPlaying: !!alarmSource, blastsReady: !!blastBuffers, blastsPlaying: blastSources.size, sceneMuted,
     volumes: { ...volumes }, plays: { ...plays } }),
 };
@@ -16598,6 +17126,7 @@ uniform highp sampler2D uSewerGeometry;
 uniform vec4 uSewerCount, uSewerCount2;
 uniform float uSewerMotion, uSewerClock, uSewerDarkness, uFlashlight, uUnderwater;
 uniform vec3 uThemeWallA, uThemeWallB, uThemeGrout, uThemeLamp, uThemeWater, uThemeFog;
+uniform vec3 uThemeMoss, uThemeMossGlow;
 uniform vec4 uThemeStyle;
 uniform vec4 uDownArrowC, uDownArrowN, uMazeCue, uWarningC, uWarningN;
 uniform float uWarningDepth;
@@ -17058,7 +17587,7 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
     col += vec3(0.037, 0.042, 0.037) * ribBevel;
     float waterY = b.w > -99999.0 ? b.w : a.y - a.w * 0.65;
     float damp = (1.0 - smoothstep(waterY + 2.0, waterY + 15.0, p.y)) * smoothstep(0.34, 0.76, grime);
-    col = mix(col, vec3(0.018, 0.065, 0.033) * (0.7 + grain * 0.6), damp * min(0.83 * uThemeExtra.x, 0.95));
+    col = mix(col, uThemeMoss * (0.7 + grain * 0.6), damp * min(0.83 * uThemeExtra.x, 0.95));
     float streak = tnoise(vec3(uv.x * 0.42, p.y * 0.04, angle * 3.0));
     col *= 1.0 - smoothstep(0.61, 0.85, streak) * 0.3;
     // Embedded iron services and drain courses remain flush with the exact collision wall.
@@ -17073,6 +17602,9 @@ vec3 sewerSurface(SewerHit h, vec3 p, vec3 rd, float pixel, float bankEdge) {
     col = mix(col, iron, conduit);
     col *= 1.0 - bandAA(service - 0.43, 0.075, pixel) * 0.53;
     col *= light;
+    // Bioluminescence is a cosmetic colour layer. Outages still extinguish its glow so the
+    // pass palette cannot reveal an unlit route or replace the flashlight's visibility.
+    col += uThemeMossGlow * damp * (0.45 + grain * 0.55) * (1.0 - uSewerDarkness);
     if(kind>2.5&&kind<3.5) {
       float phase=sewerData(index,2).x,theta=angle-phase;
       float rimAt=1.2+0.65*sin(theta*5.0)+0.15*sin(theta*11.0);
@@ -17704,15 +18236,16 @@ function create(gfx) {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const data = new Float32Array(ATLAS_WIDTH * ATLAS_ROWS * 4);
   const atlas = gfx.createTexture(ATLAS_WIDTH, ATLAS_ROWS, { format: 'rgba32f', filter: 'nearest', data });
-  let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME;
+  let world = null, flows = [], last = null, counts = [0, 0, 0, 0], extra = [0, 0, 0, 0], clipped = 0, theme = DEFAULT_THEME, palette = null;
   let waterSites=[],siteByPipe=new Map(),activeBursts=[],currentCount=0;
   let darkness = 0, darknessTarget = 0, lastLightTime = null, lightEnabled = false, water = 0, air = 1, lastSeals = '', lastSealMoving = false;
   function setWorld(city, course) {
     if (!city?.sewer || !Array.isArray(city.sewer.tunnels) || !city.sewer.tunnels.length) throw new Error('sewer-flight needs a sewer map');
-    world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = world.theme || DEFAULT_THEME;
+    world = city.sewer; flows = inflowSheets(world); last = null; clipped = 0; theme = palette || world.theme || DEFAULT_THEME;
     waterSites=GAME.sewerWater.sites(world);siteByPipe=new Map(waterSites.map(site=>[world.pipes[site.pipe],site]));activeBursts=[];currentCount=0;
     darkness = 0; darknessTarget = 0; lastLightTime = null; lightEnabled = false; water = 0; air = 1; lastSeals = ''; lastSealMoving = false;
   }
+  function setTheme(value = null) { palette = value; theme = palette || world?.theme || DEFAULT_THEME; }
   const away = (position, centre) => Math.hypot(...centre.map((v, i) => v - position[i]));
   function select(items, position, maximum, distance) {
     return items.map((value, index) => ({ value, index, distance: Math.max(0, distance(value)) }))
@@ -17825,11 +18358,12 @@ function create(gfx) {
       uThemeWallA: theme.wallA, uThemeWallB: theme.wallB, uThemeGrout: theme.grout, uThemeLamp: theme.lamp,
       uThemeWater: theme.water, uThemeFog: theme.fog, uThemeStyle: [theme.style, ...theme.cell, theme.mortar],
       uThemeExtra: [theme.moss, theme.gloss],
-      uBoost: [0.28, 1.0, 0.43], uCollectibleColour: [0.48, 1.0, 0.32],
+      uThemeMoss: theme.mossColour || [0.018, 0.065, 0.033], uThemeMossGlow: theme.mossGlow || [0, 0, 0],
+      uBoost: [0.28, 1.0, 0.43], uCollectibleColour: theme.collectibleStar || [0.48, 1.0, 0.32],
       ...GAME.overlay.uniforms(rings, guide, stars),
     });
   }
-  return { setWorld, draw, visible: () => ({ tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3],
+  return { setWorld, setTheme, draw, visible: () => ({ theme: palette?.id || 'sewer-original', tunnels: counts[0], pipes: counts[1], dirt: counts[2], inflows: counts[3],
     fans: extra[0], sheets: extra[1], wallFans: extra[2], currents:currentCount, bursts:activeBursts.length, clipped, darkness, darknessTarget, underwater: water, oxygen: air, flashlight: lightEnabled }) };
 }
 
@@ -19371,7 +19905,8 @@ function lookOf(world) {
   const theme = world.theme;
   if (!theme) return { wall: [0.21, 0.105, 0.062], material: 2, water: [0.013, 0.052, 0.022], curtain: [0.035, 0.15, 0.085], fog: [0.012, 0.030, 0.031] };
   return { wall: theme.wallA, material: theme.style === 0 || theme.style === 2 ? 2 : 5, water: scale(theme.water, 1.45),
-    curtain: theme.water.map(v => v * 3.5 + 0.005), fog: theme.fog };
+    curtain: theme.water.map(v => v * 3.5 + 0.005), fog: theme.fog,
+    moss: theme.mossColour || [0.014, 0.056, 0.031], lamp: theme.passRank ? scale(theme.lamp, 1.33) : [2.8, 1.25, 0.35] };
 }
 
 function prepare(world) {
@@ -19542,7 +20077,7 @@ function wallColour(tube, p) {
   const rib = Math.abs((along + phase + 10) % 20 - 10) < 0.75;
   const damp = tube.water === null ? 0 : 1 - clamp((p[1] - tube.water - 2) / 12, 0, 1);
   const base = rib ? [0.18, 0.20, 0.18] : tube.look.wall;
-  const style = { colour: base.map((v, i) => v * (1 - damp * 0.58) + [0.014, 0.056, 0.031][i] * damp), material: rib ? 0 : tube.look.material };
+  const style = { colour: base.map((v, i) => v * (1 - damp * 0.58) + (tube.look.moss || [0.014, 0.056, 0.031])[i] * damp), material: rib ? 0 : tube.look.material };
   if (Math.abs(tube.axis[1]) < 0.15) {
     const radial = sub(p, axisPoint(tube, p)), height = dot(radial, tube.v);
     const serviceHeight = (tube.water ?? tube.a[1] - tube.radius * 0.65) - tube.a[1] + 5;
@@ -19856,7 +20391,7 @@ function lampMesh(builder, tube) {
     builder.quad(point(-0.78, -1.24), point(0.78, -1.24), point(0.78, 1.24), point(-0.78, 1.24), [0.050, 0.075, 0.064], normal, 6);
     const lightOffset = scale(normal, 0.005);
     builder.quad(add(point(-0.66, -1.10), lightOffset), add(point(0.66, -1.10), lightOffset), add(point(0.66, 1.10), lightOffset), add(point(-0.66, 1.10), lightOffset),
-      tube.dark ? [0.018, 0.024, 0.021] : [2.8, 1.25, 0.35], normal, tube.dark ? 9 : 4);
+      tube.dark ? [0.018, 0.024, 0.021] : tube.look.lamp || [2.8, 1.25, 0.35], normal, tube.dark ? 9 : 4);
     for (let y = -0.9; y < 1.1; y += 0.3) {
       const offset = scale(normal, 0.011);
       builder.quad(add(point(-0.66, y), offset), add(point(0.66, y), offset), add(point(0.66, y + 0.045), offset), add(point(-0.66, y + 0.045), offset), [0.04, 0.050, 0.036], normal, 0);
@@ -20098,7 +20633,7 @@ function create(gfx) {
   const mesh = GAME.mesh.create(gfx);
   let fog = [0.012, 0.030, 0.031], wallHosts = [];
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
-  let world, tubes = [], sheets = [], cache = new Map(), propCache = new Map(), flowCache = new Map(), lastVisible = {};
+  let world, sourceWorld, palette = null, tubes = [], sheets = [], cache = new Map(), propCache = new Map(), flowCache = new Map(), lastVisible = {};
   let waterSites = [], pipeSites = new Map();
   let darkness = 0, darknessTarget = 0, lastLightTime = null;
   const markers = { opaque: mesh.upload(new Float32Array(0), { dynamic: true }), transparent: mesh.upload(new Float32Array(0), { dynamic: true }), xray: mesh.upload(new Float32Array(0), { dynamic: true }) };
@@ -20120,11 +20655,23 @@ function create(gfx) {
   function setWorld(city) {
     if (!city?.sewer?.tunnels?.length) throw new Error('sewer-lite needs a connected sewer map');
     release(cache); release(propCache); release(flowCache);
-    world = city.sewer; tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
+    sourceWorld = city.sewer;
+    world = palette ? { ...sourceWorld, theme: palette } : sourceWorld;
+    tubes = prepare(world); sheets = inflowSheets(world); lastVisible = {};
     waterSites = GAME.sewerWater.sites(world); pipeSites = new Map(waterSites.map(site=>[site.pipe,site]));
     darkness = 0; darknessTarget = 0; lastLightTime = null;
     warningSign = null;
     fog = tubes[0].look.fog; wallHosts = (world.wallFans || []).map(fan => wallHost(tubes, fan));
+  }
+  function setTheme(value = null) {
+    if (palette === value) return;
+    palette = value;
+    if (sourceWorld) {
+      const light = { darkness, darknessTarget, lastLightTime };
+      setWorld({ sewer: sourceWorld });
+      // A cosmetic preview while paused must not briefly relight an outage.
+      ({ darkness, darknessTarget, lastLightTime } = light);
+    }
   }
   function tunnelHandle(index) {
     if (!cache.has(index)) {
@@ -20286,7 +20833,8 @@ function create(gfx) {
       // Emergency pigment stays legible through water without brightening the tunnel.
       mesh.draw(warning, cam, { ...opts, fog: cameraFog, underwater: 0, unlit: true });
     }
-    const frame = GAME.mesh.markers(rings, guide, stars, { time, cam, theme: COURSE_COLOURS });
+    const frame = GAME.mesh.markers(rings, guide, stars, { time, cam,
+      theme: palette?.collectibleStar ? { ...COURSE_COLOURS, collectibleStar: palette.collectibleStar } : COURSE_COLOURS });
     for (const kind of ['opaque', 'transparent', 'xray']) {
       mesh.update(markers[kind], frame[kind]);
       // Course lights are the player's remaining navigation aid when the fixtures are off.
@@ -20307,12 +20855,12 @@ function create(gfx) {
     evict(cache, MAX_TUNNELS, new Set(selected.map(t => t.index)));
     evict(propCache, MAX_PROPS, new Set(props.map(p => `${p.kind}:${p.index}`)));
     evict(flowCache, MAX_FLOWS, new Set(flows.map(f => f.index)));
-    lastVisible = { tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length + shutters,
+    lastVisible = { theme: palette?.id || 'sewer-original', tunnels: selected.length, pipes: props.filter(p => p.kind === 'pipe').length + shutters,
       dirt: props.filter(p => p.kind === 'dirt').length, inflows: flows.length, sheets: curtains.length, clipped: tubes.length - selected.length,
       resident: { tunnels: cache.size, props: propCache.size, flows: flowCache.size }, mesh: true, bursts:nearbyBursts.length,
       darkness, darknessTarget, underwater: water, oxygen: clamp(Number(oxygen) || 0, 0, 1), flashlight: !!flashlight, jets, currents: jets };
   }
-  return { setWorld, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
+  return { setWorld, setTheme, draw, prepare: warmup, program: mesh.program, visible: () => ({ ...lastVisible }),
     dispose: () => { release(cache); release(propCache); release(flowCache); ringLight?.dispose(); mesh.dispose(spinning); mesh.dispose(currents); mesh.dispose(bursting); mesh.dispose(cueMesh); mesh.dispose(warning); for (const handle of Object.values(markers)) mesh.dispose(handle); } };
 }
 
@@ -21121,10 +21669,10 @@ function choiceRow(parent, key, s) {
       const focused = list.contains(document.activeElement);
       options = JSON.stringify(choices);
       list.replaceChildren();
-      list.style.gridTemplateColumns = `repeat(${choices.length <= 4 ? choices.length : 3}, 1fr)`;
+      list.style.gridTemplateColumns = `repeat(${choices.length <= 4 ? Math.max(1, choices.length) : 3}, 1fr)`;
       buttons = choices.map(([id, label]) => {
         const b = el('button', 'set-option', list);
-        if (key === 'theme' || key === 'musicTrack') {
+        if (['theme', 'sewerTheme', 'musicTrack', 'sewerMusicTrack'].includes(key)) {
           const icon = el('span', 'set-option-icon', b);
           icon.setAttribute('aria-hidden', 'true');
           el('span', 'set-option-label', b, label);
@@ -21182,15 +21730,16 @@ function createSettingsPanel(panel, device) {
   function updateVisibility() {
     for (const key of rows.keys()) {
       const when = settings.SCHEMA[key].when;
-      if (when) body.querySelector(`[data-setting="${key}"]`).hidden = settings.get(when[0]) !== when[1];
+      body.querySelector(`[data-setting="${key}"]`).hidden = !settings.rowVisible(key) || !!when && settings.get(when[0]) !== when[1];
     }
+    for (const group of groups.values()) group.hidden = ![...group.querySelectorAll('[data-setting]')].some(row => !row.hidden);
   }
   updateVisibility();
   settings.onChange(key => {
     if (rows.has(key)) rows.get(key)(settings.displayValue(key));
     updateVisibility();
   });
-  settings.onSchemaChange(key => rows.get(key)?.(settings.displayValue(key)));
+  settings.onSchemaChange(key => { rows.get(key)?.(settings.displayValue(key)); updateVisibility(); });
 
   // Focus must not stay on a hidden button: Enter would go to it instead of the shown screen's main
   // button (main.js), so opening and closing leave nothing focused.
@@ -21215,6 +21764,8 @@ function createSettingsPanel(panel, device) {
       if (backTo) throw new Error('the settings panel is already open');
       backTo = then;
       before = settings.all();
+      settings.refreshCosmetics();
+      updateVisibility();
       panel.classList.remove('hidden');
       dropFocus();
     },
@@ -21285,16 +21836,16 @@ function create(panel, { touch, collapseHint = () => null }) {
     button.addEventListener('click', () => {
       const owned = kind === 'theme' ? GAME.shop.ownsTheme(item.id) : GAME.shop.ownsMusic(item.id);
       if (!owned) purchase(kind, item.id);
-      else if (GAME.settings.choiceAvailable(kind === 'theme' ? 'theme' : 'musicTrack', item.id)) {
-        GAME.settings.set(kind === 'theme' ? 'theme' : 'musicTrack', item.id);
+      else if (GAME.settings.choiceAvailable(kind === 'theme' ? 'theme' : item.id === 'undertow' ? 'sewerMusicTrack' : 'musicTrack', item.id)) {
+        GAME.settings.set(kind === 'theme' ? 'theme' : item.id === 'undertow' ? 'sewerMusicTrack' : 'musicTrack', item.id);
         q('#shop-message').textContent = `${item.name} selected.`;
       }
       render();
     });
     cards.push({ kind, item, card, status, price, button });
   }
-  GAME.themes.list.forEach((theme, index) => { if (theme.id !== 'neon') addCard('theme', theme, index); });
-  GAME.songs.forEach((song, index) => { if (!['neon-flight', 'undertow'].includes(song.id)) addCard('music', song, index); });
+  GAME.themes.list.forEach((theme, index) => { if (theme.id !== 'neon' && !theme.passRank && GAME.shop.themePrice(theme.id) !== undefined) addCard('theme', theme, index); });
+  GAME.songs.forEach((song, index) => { if (!['neon-flight', 'undertow'].includes(song.id) && !song.passRank) addCard('music', song, index); });
   q('#shop-how').textContent = touch ? 'Tap LIFT during flight.' : 'Press Space during flight.';
   function render() {
     const inSewer = GAME.access.environment() === 'sewer';
@@ -21309,14 +21860,14 @@ function create(panel, { touch, collapseHint = () => null }) {
       : 'Buy songs once. Random in Settings plays your owned surface songs.';
     const s = GAME.shop.state(), item = GAME.shop.LIFT;
     q('#shop-balance').textContent = `★ ${s.balance}`;
-    q('#shop-owned').textContent = `${s.lifts} / ${item.capacity} ready`;
+    q('#shop-owned').textContent = s.lifts > item.capacity ? `${s.lifts} ready · includes pass rewards` : `${s.lifts} / ${item.capacity} ready`;
     q('#shop-price').textContent = `★ ${item.price}`;
     q('#shop-height').textContent = `+${item.height} lift`;
     for (const [i, slot] of [...panel.querySelectorAll('.shop-slot')].entries()) {
       slot.classList.toggle('filled', i < s.lifts);
       slot.textContent = i < s.lifts ? '↑' : '·';
     }
-    q('#shop-slots').setAttribute('aria-label', `${s.lifts} lift boosts owned, capacity ${item.capacity}`);
+    q('#shop-slots').setAttribute('aria-label', `${s.lifts} lift boosts owned${s.lifts > item.capacity ? ', including pass rewards' : `, capacity ${item.capacity}`}`);
     const hadFocus = document.activeElement === buy;
     buy.disabled = busy || !s.available || s.lifts >= item.capacity || s.balance < item.price;
     if (hadFocus && buy.disabled) q('#shop-done').focus();
@@ -21353,7 +21904,7 @@ function create(panel, { touch, collapseHint = () => null }) {
       const isTheme = kind === 'theme', sewerSong = item.id === 'undertow';
       const owned = isTheme ? GAME.shop.ownsTheme(item.id) : GAME.shop.ownsMusic(item.id);
       const cost = isTheme ? GAME.shop.themePrice(item.id) : GAME.shop.MUSIC_PRICE;
-      const key = isTheme ? 'theme' : 'musicTrack';
+      const key = isTheme ? 'theme' : sewerSong ? 'sewerMusicTrack' : 'musicTrack';
       const usable = GAME.settings.choiceAvailable(key, item.id);
       const selected = usable && GAME.settings.displayValue(key) === item.id;
       card.classList.toggle('owned', owned);
@@ -21435,6 +21986,137 @@ function create(panel, { touch, collapseHint = () => null }) {
   };
 }
 GAME.shopPanel = { create };
+
+})();
+
+;(function () {
+'use strict';
+// ---- src/ui/pass-panel.js ----
+// Permanent flight pass. Rewards are saved with XP, so opening the track never grants twice.
+function create(panel) {
+  const { el } = GAME.hud;
+  const q = selector => panel.querySelector(selector);
+  const number = n => Math.max(0, Math.floor(n)).toLocaleString();
+  const glyph = kind => ({ stars: '★', lifts: '↑', flashlights: '◒', theme: '◈', music: '♫' })[kind] || '✦';
+  let origin = null, opener = null, timer = null;
+  const ranks = new Map(), quests = new Map();
+  const rewards = new Map(GAME.pass.REWARDS.map(reward => [reward.rank, reward]));
+  for (let rank = 1; rank <= 100; rank++) {
+    const reward = rewards.get(rank);
+    const cell = el('li', 'pass-rank' + (reward ? ' milestone' : ''), q('#pass-track'));
+    cell.dataset.rank = String(rank);
+    el('span', 'pass-rank-number', cell, String(rank));
+    if (reward) {
+      el('span', 'pass-reward-icon', cell, glyph(reward.kind)).setAttribute('aria-hidden', 'true');
+      el('span', 'pass-reward-title', cell, reward.title);
+    } else el('span', 'pass-rank-dot', cell, '·').setAttribute('aria-hidden', 'true');
+    ranks.set(rank, cell);
+  }
+  function render() {
+    const state = GAME.pass.state();
+    const atMax = state.rank >= state.maxRank;
+    q('#pass-rank-value').textContent = number(state.rank);
+    q('#pass-rank-total').textContent = `/ ${state.maxRank}`;
+    q('#pass-xp-label').textContent = atMax ? 'All 100 ranks reached' : `${number(state.xpInRank)} / ${number(state.xpNeeded)} XP`;
+    q('#pass-total-xp').textContent = `${number(state.totalXP)} lifetime XP`;
+    const progress = atMax ? 1 : Math.min(1, state.xpInRank / Math.max(1, state.xpNeeded));
+    q('#pass-xp-fill').style.width = `${progress * 100}%`;
+    const bar = q('#pass-xp-bar');
+    bar.setAttribute('aria-valuemax', String(atMax ? 100 : state.xpNeeded));
+    bar.setAttribute('aria-valuenow', String(atMax ? 100 : state.xpInRank));
+    bar.setAttribute('aria-valuetext', atMax ? 'Pass completed' : `${state.xpInRank} of ${state.xpNeeded} XP toward rank ${state.rank + 1}`);
+    const next = state.rewards.find(reward => !reward.unlocked);
+    q('#pass-next-icon').textContent = next ? glyph(next.kind) : '✦';
+    q('#pass-next-label').textContent = next ? `Next reward · Rank ${next.rank}` : 'Pass complete';
+    q('#pass-next-title').textContent = next ? next.title : 'Every reward unlocked';
+    q('#pass-storage').hidden = state.available !== false;
+    q('#pass-track-note').textContent = atMax ? 'Every fifth rank reward is yours.' : 'Rewards unlock automatically every fifth rank.';
+    for (const [rank, cell] of ranks) {
+      const earned = rank <= state.rank;
+      cell.classList.toggle('earned', earned);
+      cell.classList.toggle('current', rank === state.rank);
+      if (rank === state.rank) cell.setAttribute('aria-current', 'step');
+      else cell.removeAttribute('aria-current');
+      const reward = rewards.get(rank);
+      const label = `Rank ${rank}${reward ? ` · ${reward.title}` : ''} · ${earned ? 'unlocked' : 'locked'}`;
+      cell.setAttribute('aria-label', label); cell.title = label;
+    }
+    const active = new Set();
+    for (const quest of state.daily.quests) {
+      active.add(quest.id);
+      let row = quests.get(quest.id);
+      if (!row) {
+        const card = el('article', 'pass-quest', q('#pass-quests'));
+        card.dataset.quest = quest.id;
+        const head = el('div', 'pass-quest-head', card);
+        const xp = el('strong', 'pass-quest-xp', head);
+        const status = el('span', 'pass-quest-status', head);
+        const title = el('h4', '', card);
+        const progress = el('div', 'pass-quest-progress', card);
+        const fill = el('span', '', progress);
+        const readout = el('span', 'pass-quest-count', card);
+        row = { card, xp, status, title, progress, fill, readout }; quests.set(quest.id, row);
+      }
+      q('#pass-quests').appendChild(row.card);
+      row.xp.textContent = `${quest.xp} XP`;
+      row.title.textContent = quest.title;
+      row.status.textContent = quest.complete ? '✓ Complete' : 'Daily task';
+      row.card.classList.toggle('complete', quest.complete);
+      row.fill.style.width = `${Math.min(1, quest.progress / Math.max(1, quest.target)) * 100}%`;
+      row.readout.textContent = quest.complete ? 'XP added to your pass' : `${number(quest.progress)} / ${number(quest.target)}`;
+      row.progress.setAttribute('aria-label', `${quest.title}: ${quest.progress} of ${quest.target}`);
+    }
+    for (const [id, row] of quests) if (!active.has(id)) { row.card.remove(); quests.delete(id); }
+    const remaining = Math.max(0, state.daily.resetAt - Date.now());
+    const minutes = Math.ceil(remaining / 60000);
+    q('#pass-reset').textContent = `New tasks in ${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+    q('#pass-reset').title = `Resets at local midnight · ${new Date(state.daily.resetAt).toLocaleString()}`;
+    for (const id of ['title-pass', 'pause-pass']) {
+      const badge = document.querySelector(`#${id} .pass-opener-rank`);
+      if (badge) badge.textContent = `R${state.rank}`;
+    }
+  }
+  function close() {
+    if (!origin) return;
+    panel.classList.add('hidden');
+    clearInterval(timer); timer = null;
+    origin.inert = false;
+    opener.setAttribute('aria-expanded', 'false'); opener.focus();
+    origin = opener = null;
+  }
+  q('#pass-done').addEventListener('click', close);
+  q('#pass-current').addEventListener('click', () => {
+    const current = ranks.get(GAME.pass.state().rank);
+    current.scrollIntoView({ block: 'center', behavior: 'auto' });
+  });
+  panel.addEventListener('click', e => { if (e.target === panel) close(); });
+  panel.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const buttons = [...panel.querySelectorAll('button:not(:disabled)')].filter(button => button.getClientRects().length);
+      const first = buttons[0], last = buttons.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    e.stopPropagation();
+  });
+  GAME.pass.onChange(render);
+  render();
+  return {
+    open(button) {
+      if (origin) return;
+      opener = button; origin = button.closest('.screen'); origin.inert = true;
+      opener.setAttribute('aria-expanded', 'true');
+      GAME.pass.refresh(); render();
+      panel.classList.remove('hidden');
+      q('.pass-content').scrollTop = 0;
+      q('#pass-done').focus();
+      timer = setInterval(() => { GAME.pass.refresh(); render(); }, 30000);
+    },
+    close, refresh: render, get isOpen() { return !!origin; },
+  };
+}
+GAME.passPanel = { create };
 
 })();
 
@@ -21678,7 +22360,7 @@ const stage = $('game-stage');
 const overlay = $('overlay'), pausePanel = $('pause'), results = $('results'), infoScreen = $('info'), settingsScreen = $('settings');
 const startBtn = $('start'), shuffleBtn = $('shuffle'), statusEl = $('status');
 const courseDialog = $('course-dialog');
-const shopScreen = $('shop');
+const shopScreen = $('shop'), passScreen = $('pass');
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 // Running inside the native app wrapper (app/, Capacitor), which locks the orientation natively.
 document.body.classList.toggle('native-app', !!window.Capacitor?.isNativePlatform?.());
@@ -21715,7 +22397,7 @@ function recoverGraphics(err) {
   touchStick?.setEnabled(false);
   GAME.sound.setSceneMuted(true);
   if (document.pointerLockElement) document.exitPointerLock();
-  for (const screen of [pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen, $('course-loading'), $('sewer-reveal')])
+  for (const screen of [pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen, passScreen, $('course-loading'), $('sewer-reveal')])
     screen.classList.add('hidden');
   overlay.inert = false;
   overlay.classList.remove('hidden');
@@ -21790,7 +22472,7 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 const resolution = GAME.resolution;
 
 // ---- World and run ----------------------------------------------------------------------------
-let renderer, sewerFlightRenderer, hud, input, target, settingsPanel, shopPanel, soundtrack, touchStick;
+let renderer, sewerFlightRenderer, hud, input, target, settingsPanel, shopPanel, passPanel, soundtrack, touchStick;
 const usesTouchStick = () => TOUCH && GAME.settings.get('mobileSteering') === 'stick';
 const syncTouchStick = () => {
   const selected = usesTouchStick();
@@ -21875,7 +22557,7 @@ async function loadCourse(seed, selectedDifficulty = difficulty, environment = c
   const options = worldOptions(environment), cached = GAME.courseLoader.has(seed, nextDifficulty, options);
   const loading = $('course-loading'), cancel = $('loading-cancel');
   const focus = document.activeElement;
-  const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen];
+  const screens = [overlay, pausePanel, results, courseDialog, infoScreen, settingsScreen, shopScreen, passScreen];
   const inert = screens.map(screen => screen.inert);
   let patience;
   courseLoading = true;
@@ -21925,6 +22607,42 @@ let newStars = 0;
 let pendingStars = new Set();
 let usingLift = false;
 let flashlightActive = false;
+const flightProgress = new WeakMap();
+let flightSerial = 0;
+const progressSession = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function refreshPassButtons() {
+  const { rank } = GAME.pass.state();
+  for (const id of ['title-pass', 'pause-pass']) $(id).querySelector('.pass-opener-rank').textContent = `R${rank}`;
+}
+function showFlightXP(flight = run) {
+  const record = flightProgress.get(flight), el = $('results-pass-xp');
+  if (!el) return;
+  const result = record?.result;
+  el.textContent = !record?.submitted ? '' : !result ? 'Saving flight XP…' : !result.ok
+    ? result.message || 'Flight XP could not be saved.'
+    : `+${result.xp} XP${result.dailyXP ? ` · includes ${result.dailyXP} daily quest XP` : ''} · Pass rank ${result.rankAfter}`;
+}
+function saveFlightXP() {
+  const flight = run, record = flightProgress.get(flight);
+  if (!record || record.submitted || !flight.finished || flight.crashed || collapse
+      || flight.next !== flight.course.gates.length) return;
+  record.submitted = true;
+  const medal = flight.powerUsed ? null : GAME.run.medalFor(GAME.run.total(flight), GAME.run.medals(course));
+  GAME.pass.completeFlight({ id: record.id, code: seedCode, difficulty, environment: starEnvironment(),
+    time: flight.time, crashes: flight.crashes, missed: flight.missed, boosts: boostsTaken,
+    stars: pendingStars.size, medal, liftUsed: flight.powerUsed, flashlightUsed: record.flashlight })
+    .then(result => {
+      record.result = result;
+      if (run === flight) {
+        showFlightXP(flight);
+        if (result.ok && result.rankAfter > result.rankBefore)
+          hud.toast(`Pass rank ${result.rankAfter}${result.rewards?.length ? ' · rewards unlocked' : ''}`, 'good', 4);
+      }
+    }).catch(() => {
+      record.result = { ok: false, message: 'Flight XP could not be saved.' };
+      if (run === flight) showFlightXP(flight);
+    });
+}
 // Buying a key while paused must add the secret to this course without replacing its run.
 async function ensureCollapsePrepared() {
   if (graphics.recovering || !course || isSewer() || collapse || courseLoading || !GAME.shop.state().collapseKey || !['hard', 'extreme'].includes(difficulty)
@@ -21965,6 +22683,7 @@ function newRun() {
   flashlightActive = false;
   soundtrack?.reset();
   run = GAME.run.create(city, course);
+  flightProgress.set(run, { id: `${progressSession}:${++flightSerial}`, flashlight: false, submitted: false });
   for (const id of savedStars()) run.stars.add(id);
   stepBefore = null;
   guide = GAME.guide.create(course);
@@ -22170,6 +22889,7 @@ function handle(events) {
       hud.toast('Oxygen refilling', 'good', 2);
     } else if (e.type === 'finish') {
       if (!collapse) {
+        saveFlightXP();
         newStars = GAME.starBank.finish(seedCode, difficulty, run, pendingStars).length;
         pendingStars.clear();
         GAME.shop.refresh();
@@ -22283,6 +23003,7 @@ function showResults() {
   resetCopy($('results-copy'));
   GAME.hud.showResults(results, { time: run.time, penalty: run.penalty, missed: run.missed, crashes: run.crashes, offCourse: run.offCourse, medals, medal, best, code: seedCode, difficulty,
     stars: run.stars.size, starTotal: course.stars.length, newStars, starBank: GAME.starBank.total(), assisted: run.powerUsed });
+  showFlightXP();
   $('extreme-result').textContent = difficulty === 'hard' && unlockMedal
     ? `${firstExtremeUnlock ? 'Extreme unlocked' : 'Extreme available'} for course ${seedCode} · select it from the menu` : '';
   if (!run.powerUsed && (best === null || total < best)) writeBest(seedCode, total);
@@ -22406,7 +23127,7 @@ function loop(now) {
   if (mode !== 'sewer-reveal') soundtrack.frame(run.next / course.gates.length);
   if (settingsPanel.isOpen) {
     settingsPanel.note('quality', `drawing ${w} × ${h}`);
-    settingsPanel.note('musicTrack', GAME.sound.songStatus());
+    settingsPanel.note(isSewer() ? 'sewerMusicTrack' : 'musicTrack', GAME.sound.songStatus());
   }
   hudFrame(view);
   api.frames++;
@@ -22465,6 +23186,7 @@ function closeInfo(restoreFocus = true) {
 
 function hideScreens() {
   shopPanel?.close();
+  passPanel?.close();
   closeInfo(false);
   closeCourseOptions(false);
   for (const s of [overlay, pausePanel, results]) s.classList.add('hidden');
@@ -22486,12 +23208,19 @@ function applyTheme(id) {
   stage.style.setProperty('--star', `rgb(${theme.collectibleStar.map(v => Math.round(v ** (1 / 2.2) * 255)).join(', ')})`);
   if (course && graphics.compatibility && !isSewer()) prepareCourseGraphics().catch(fail);
 }
+function applySewerTheme() {
+  const id = GAME.settings.get('sewerTheme');
+  sewerFlightRenderer?.setTheme(GAME.sewerThemes.resolve(GAME.shop.ownsTheme(id) ? id : 'sewer-original'));
+  if (course && graphics.compatibility && isSewer()) prepareCourseGraphics().catch(fail);
+}
 
 // Settings the game applies itself; the camera and the input read theirs every frame.
 function applySetting(key, value) {
   if (VOLUME_KEYS.includes(key)) applyVolumes();
   else if (key === 'musicTrack') GAME.sound.setSong(value);
+  else if (key === 'sewerMusicTrack') GAME.sound.setSewerSong(value);
   else if (key === 'theme') applyTheme(value);
+  else if (key === 'sewerTheme') applySewerTheme();
   else if (key === 'quality') resolution.setBudget(graphics.compatibility && value === 'auto' ? 'compatibility' : value);
   else if (key === 'mobileSteering') { input.reset(); syncTouchStick(); }
   else if (key === 'invertY' && mode === 'paused' && !settingsPanel.isOpen) showPause();
@@ -22875,6 +23604,7 @@ async function fly({ calibrate = false, seed = null } = {}) {
       hud.show(true);
       newRun();
       flashlightActive = equipped;
+      flightProgress.get(run).flashlight = equipped;
       GAME.sound.prepareRun();
       startCountdown(COUNT_TICKS);
       if (locked) hud.hint(playHint()); else hud.hint(LOCK_HINT, 10);
@@ -22985,7 +23715,7 @@ document.addEventListener('fullscreenchange', () => {
 window.addEventListener('keydown', e => {
   if (graphics.recovering) return;
   if (mode === 'sewer-reveal') { e.preventDefault(); return; }
-  if (shopPanel?.isOpen) return;
+  if (shopPanel?.isOpen || passPanel?.isOpen) return;
   if (courseLoading) {
     if (e.code === 'Escape' && course) { e.preventDefault(); GAME.courseLoader.cancel(); }
     if (e.key === 'Tab') { e.preventDefault(); if (!$('loading-cancel').hidden) $('loading-cancel').focus(); }
@@ -23047,11 +23777,13 @@ infoScreen.addEventListener('click', e => { if (e.target === infoScreen) closeIn
 $('title-settings').addEventListener('click', action(() => openSettings(overlay, showTitle)));
 $('pause-settings').addEventListener('click', action(() => openSettings(pausePanel, showPause)));
 for (const id of ['title-shop', 'pause-shop']) $(id).addEventListener('click', () => { flowVersion++; shopPanel.open($(id)); });
+for (const id of ['title-pass', 'pause-pass']) $(id).addEventListener('click', () => { flowVersion++; passPanel.open($(id)); });
 $('rotate-sideways').addEventListener('click', action(playSideways));
 
 // ---- Boot -------------------------------------------------------------------------------------
 async function boot() {
   steadyLandscapeView();
+  GAME.pass.refresh();
   GAME.starBank.load();
   GAME.shop.refresh();
   GAME.settings.load();
@@ -23062,6 +23794,7 @@ async function boot() {
   applyVolumes();
   // Music renders while the shaders compile; it starts playing at the first press once ready.
   GAME.sound.load(GAME.settings.get('musicTrack'));
+  GAME.sound.setSewerSong(GAME.settings.get('sewerMusicTrack'));
   if (menuEnvironment === 'sewer') GAME.sound.setEnvironment('sewer');
   // Compatibility prepares small display/glow and geometry/sky programs. The full renderer
   // prepares its display passes and two scenes in sequence.
@@ -23080,6 +23813,11 @@ async function boot() {
     return selected?.collapse?.visibilityTime !== undefined
       ? { seconds: selected.collapse.visibilityTime, code: seedCode, difficulty: selected.difficulty } : null;
   } });
+  passPanel = GAME.passPanel.create(passScreen, { touch: TOUCH });
+  GAME.pass.onChange(() => {
+    GAME.shop.refresh();
+    refreshPassButtons();
+  });
   GAME.shop.onChange(() => { refreshShopButtons(); ensureCollapsePrepared(); });
   GAME.access.onChange(() => {
     GAME.settings.updateSongOptions();
@@ -23093,8 +23831,10 @@ async function boot() {
     }
   });
   refreshShopButtons();
+  refreshPassButtons();
   resolution.setBudget(graphics.compatibility && GAME.settings.get('quality') === 'auto' ? 'compatibility' : GAME.settings.get('quality'));
   applyTheme(params.get('theme') ?? GAME.settings.get('theme'));
+  applySewerTheme();
   GAME.settings.onChange(applySetting);
   refreshInfo();
   await loadCourse(params.has('seed') ? GAME.rng.codeToSeed(params.get('seed')) : GAME.rng.randomSeed());
@@ -23102,7 +23842,7 @@ async function boot() {
   showTitle();
 
   if (params.has('freeze')) return startFrozen();
-  startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('title-shop').disabled = $('course-load').disabled = false;
+  startBtn.disabled = shuffleBtn.disabled = $('title-settings').disabled = $('title-shop').disabled = $('title-pass').disabled = $('course-load').disabled = false;
   startBtn.textContent = 'fly';
   api.ready = true;
   api.state = () => ({
@@ -23146,8 +23886,10 @@ async function boot() {
     stars: course.stars.map(s => ({ ...s, collected: run.stars.has(s.id), saved: savedStars().includes(s.id) })),
     newStars, pendingStars: [...pendingStars], starBank: GAME.starBank.total(),
     shop: GAME.shop.state(), shopOpen: shopPanel.isOpen, powerUsed: run.powerUsed, powerLift: run.powerLift, flashlightActive,
+    pass: GAME.pass.state(), passOpen: passPanel.isOpen,
     settings: GAME.settings.all(), settingsOpen: settingsPanel.isOpen, sound: GAME.sound.state(),
-    view: { ...drawn, theme: isSewer() ? 'sewer' : renderer.theme.id, maxPixels: resolution.maxPixels,
+    view: { ...drawn, theme: isSewer() ? 'sewer' : renderer.theme.id,
+      sewerTheme: isSewer() ? GAME.settings.get('sewerTheme') : undefined, maxPixels: resolution.maxPixels,
       sewerVisible: isSewer() ? sewerFlightRenderer.visible() : undefined },
   });
   if (AUTOPILOT) api.autopilot = autopilotTools();

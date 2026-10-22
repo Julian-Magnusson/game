@@ -126,6 +126,19 @@ the course or starting a new attempt.
 Course and flight summaries show collected slots without a lifetime “Stars saved” total.
 Shop shows the stars still available to spend after purchases.
 
+The **Flight Pass** has **100 ranks** and never expires. Finish courses for XP, including replays;
+higher difficulties, medals and Sewer flights award more. Each rank requires more XP than the
+previous one. Three daily tasks rotate at **local midnight** from **18 quest types**, paying
+**100, 200 and 300 XP** once per day. Only finished courses count toward tasks.
+Every fifth rank automatically unlocks stars, music, themes or gear. The full pass awards
+**30 stars**, **four lift boosts** and **six five-use flashlights**. Exclusive surface themes are
+**Cobalt Circuit**, **Rose Quartz** and **Solar Eclipse**; underground themes are **Bioluminescent
+Depths** and **Rustworks**. New songs are **Cloudrunner**, **Prism Drive** and Sewer-only
+**Deep Signal**. These cosmetics are earned only through the pass. Settings show their required
+rank with a dimmed lock. Sewer settings show only underground themes and music, keeping your
+surface choices saved separately. Pass rewards add to existing gear and star credit without
+charging stars or changing earlier purchases; progress and used items survive reloads.
+
 Shop has **Gear**, **Themes** and **Music** tabs. **Neon Night** and **Neon Flight** are included
 at the start and appear only in Settings. Synthwave Sunset, Amber Haze and Ember City cost
 **2 stars**; Toxic Haze and Aurora Night cost **3**; Tokyo Rain costs **4**; Arctic Dawn and
@@ -133,7 +146,7 @@ Overgrown City cost **5**. **Skyline Rush**, **Midnight Drift** and
 **Afterburn** cost **5 stars each**. Purchases are saved once per browser, and settings reset
 keeps ownership. Select owned items in Shop or Settings; locked Settings choices have dimmed
 icons and a lock. Random music plays only your owned surface songs. **Undertow** is free upon
-discovering The Sewer, plays exclusively underground, and is the Sewer's only song. It is hidden
+discovering The Sewer and plays exclusively underground alongside the earned **Deep Signal**. It is hidden
 from surface Settings and Shop. Your
 surface music preference returns when you go back up. Existing boosts, keys, star claims and
 spending are preserved; cosmetic purchases do not change medals or count as assisted flights.
