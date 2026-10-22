@@ -399,7 +399,8 @@
   .pass-eyebrow { margin: 0 0 4px; color: #b6a0ff; font-size: 10px; text-transform: uppercase; letter-spacing: .2em; }
   #pass-title { margin: 0; font-size: 30px; font-weight: 300; letter-spacing: .16em; }
   #pass-done { min-height: 44px; padding: 10px 18px; letter-spacing: .12em; }
-  .pass-content { overflow-y: auto; min-height: 0; padding-right: 3px; touch-action: pan-y; overscroll-behavior: contain; }
+  .pass-content { overflow-y: auto; overflow-x: hidden; min-height: 0; padding-right: 3px; touch-action: pan-y; overscroll-behavior: contain; }
+  #pass-summary-view[hidden], #pass-all-view[hidden], #pass-ready[hidden], .pass-claim[hidden], .pass-reward-state[hidden] { display: none; }
   .pass-overview { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
   .pass-progress-card { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 16px;
     border: 1px solid #b6a0ff55; padding: 16px; border-radius: 5px; background: #b6a0ff08; }
@@ -430,25 +431,76 @@
   .pass-quest-progress { height: 3px; overflow: hidden; background: #91a8be20; border-radius: 3px; }
   .pass-quest-progress span { display: block; height: 100%; background: #b6a0ff; }
   .complete .pass-quest-progress span { background: var(--green); }
-  .pass-quest-count { display: block; margin-top: 7px; color: #91a8be; font-size: 10px; }
+  .pass-quest-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+  .pass-quest-count { color: #91a8be; font-size: 10px; line-height: 1.4; }
+  .pass-quest .pass-quest-change { min-height: 44px; padding: 6px 10px; flex: none; border-radius: 999px; border-color: #b6a0ff55;
+    color: #d2c5ff; font-size: 10px; letter-spacing: .02em; box-shadow: none; }
+  .pass-quest-change:disabled { color: #91a8be; border-color: #91a8be25; opacity: .55; }
+  #pass-rerolls { margin: 0 0 9px; color: #b6a0ff; font-size: 10px; }
   .pass-rules { color: #91a8be; font-size: 11px; line-height: 1.5; margin: 10px 0 0; }
-  #pass-current { min-height: 36px; padding: 6px 10px; font-size: 10px; letter-spacing: .1em; box-shadow: none; }
-  #pass-track { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 7px; list-style: none; padding: 0; margin: 0; }
+  .pass-view-toggle { min-height: 44px; padding: 6px 12px; font-size: 10px; letter-spacing: .04em; box-shadow: none;
+    color: #c8baff; border-color: #b6a0ff55; border-radius: 999px; }
+  #pass-track-viewport { --pass-gap: 16px; overflow: hidden; padding: 2px 0; }
+  #pass-track { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 4 * var(--pass-gap)) / 5);
+    gap: var(--pass-gap); width: 100%; list-style: none; padding: 0; margin: 0; will-change: transform; }
+  #pass-track.moving { transition: transform .55s cubic-bezier(.22,.7,.22,1); }
   .pass-rank { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px;
-    padding: 8px 4px; min-width: 0; box-sizing: border-box; border: 1px solid #7f93b31f; border-radius: 4px;
-    background: #ffffff02; color: #617289; text-align: center; }
-  .pass-rank-number { font-size: 11px; font-variant-numeric: tabular-nums; }
+    padding: 10px 6px; min-width: 0; box-sizing: border-box; border: 1px solid #7f93b340; border-radius: 7px;
+    background: #ffffff04; color: #a4b3c8; text-align: center; }
+  .pass-chain-rank { min-height: 168px; transition: opacity .4s ease, border-color .4s ease; }
+  .pass-chain-rank:not(:last-child)::after { content: '›'; position: absolute; z-index: 1; left: 100%; top: calc(50% - 12px);
+    width: var(--pass-gap); color: #9e89cf88; font-size: 22px; line-height: 24px; text-align: center; }
+  .pass-chain-rank.peek { opacity: .26; }
+  .pass-rank-label { font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+  .pass-rank-number { font-size: 25px; line-height: 1.1; font-weight: 400; font-variant-numeric: tabular-nums; }
   .pass-rank-dot { margin: auto; color: #5c6583; font-size: 25px; line-height: 1; }
-  .pass-rank.milestone { border-color: #d8bc7540; background: #d8bc7506; }
-  .pass-rank.milestone .pass-rank-number { color: #b59e68; }
-  .pass-reward-icon { font-size: 21px; line-height: 1; color: #947f65; }
-  .pass-reward-title { font-size: 10px; color: #8a94a6; overflow-wrap: anywhere; }
+  .pass-rank-state { margin-top: auto; min-height: 1.4em; font-size: 9px; color: #c6b4ff; }
+  .pass-rank.milestone { border-color: #d8bc7560; background: linear-gradient(150deg, #d8bc7510, #d8bc7504); }
+  .pass-rank.milestone .pass-rank-number { color: #ddc890; }
+  .pass-reward-icon { font-size: 24px; line-height: 1; color: #d9bd78; }
+  .pass-reward-title { font-size: 11px; line-height: 1.35; color: #c4c8d5; overflow-wrap: anywhere; }
+  .pass-reward-state { margin-top: auto; font-size: 9px; color: #97a7bf; }
   .pass-rank.earned { color: #b7f3d5; border-color: #4dffc040; background: #4dffc007; }
   .pass-rank.earned .pass-rank-dot { color: #4dffc077; }
   .pass-rank.earned .pass-reward-icon, .pass-rank.earned .pass-rank-number { color: #b7f3d5; }
   .pass-rank.earned .pass-reward-title { color: #b3c8bc; }
-  .pass-rank.current { border-color: #c6b4ff; box-shadow: inset 0 0 14px #b6a0ff1c; }
-  #pass-track-note { margin: 9px 0 0; color: #91a8be; font-size: 10px; }
+  .pass-rank.claimable { border-color: #e8cc87aa; background: #ffd45a0a; }
+  .pass-rank.claimed .pass-reward-state { color: #8bc9ad; }
+  .pass-rank.current { border-color: #c6b4ff; background: linear-gradient(160deg, #b6a0ff22, #b6a0ff07);
+    box-shadow: inset 0 0 20px #b6a0ff12; }
+  .pass-claim { min-height: 44px; padding: 7px 15px; border-radius: 999px; border-color: #e3c97e;
+    color: #fff0b9; background: linear-gradient(135deg, #9f7d342b, #ffd45a15); box-shadow: 0 0 14px #ffd45a0d;
+    font-size: 11px; letter-spacing: .04em; }
+  .btn.pass-claim:hover:not(:disabled) { background: #ffd45a25; border-color: #ffe7a0; }
+  .pass-claim:disabled { opacity: .55; }
+  .pass-rank .pass-rank-claim { width: 100%; margin-top: auto; padding: 6px 3px; font-size: 10px; letter-spacing: 0; }
+  #pass-ready { margin-top: 16px; padding: 12px 14px; border: 1px solid #ffd45a44; border-radius: 8px;
+    background: linear-gradient(120deg, #ffd45a0b, #ffd45a02); }
+  #pass-ready .pass-section-head { margin: 0 0 8px; }
+  #pass-ready .pass-section-head h3 { color: #e4c981; }
+  #pass-ready-count { color: #b49f75; font-size: 10px; }
+  #pass-ready-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 156px; overflow-y: auto;
+    overscroll-behavior: contain; margin: 0; padding: 0 3px 0 0; list-style: none; scrollbar-width: thin; }
+  .pass-ready-reward { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+    border: 1px solid #ffd45a22; border-radius: 6px; background: #ffd45a05; }
+  .pass-ready-icon { flex: none; width: 25px; text-align: center; color: #e4c981; font-size: 23px; }
+  .pass-ready-copy { flex: 1; min-width: 0; }
+  .pass-ready-copy span { display: block; color: #b69e76; font-size: 9px; }
+  .pass-ready-copy strong { display: block; margin-top: 3px; color: #f1dfb5; font-size: 12px; line-height: 1.3; font-weight: 400; overflow-wrap: anywhere; }
+  .pass-ready-reward .pass-ready-claim { flex: none; padding: 7px 15px; }
+  #pass-all-view > .pass-section-head { margin-top: 0; }
+  #pass-all-track { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 14px 0 0; list-style: none; }
+  .pass-all-rank { min-height: 138px; }
+  .pass-all-rank .pass-rank-number { font-size: 19px; }
+  .pass-all-rank .pass-reward-title { font-size: 10px; }
+  #pass-track-note { margin: 9px 0 0; color: #91a8be; font-size: 10px; line-height: 1.4; }
+  #pass-feedback { margin: 0 0 12px; padding: 9px 12px; color: #b7f3d5; border: 1px solid #4dffc033;
+    border-radius: 6px; background: #4dffc008; font-size: 12px; line-height: 1.4; }
+  #pass-feedback:empty { display: none; }
+  #pass-feedback.error { color: #ffd19d; border-color: #ffad6140; background: #ffad6108; }
+  @media (prefers-reduced-motion: reduce) {
+    #pass-track.moving, .pass-chain-rank { transition: none; }
+  }
   #pass-storage { margin: 10px 0 0; color: var(--amber); font-size: 11px; }
   #pass-storage[hidden], #results-pass-xp:empty { display: none; }
   #results-pass-xp { margin: 10px 0 0; color: #c5b3ff; font-size: 12px; }
@@ -466,7 +518,17 @@
     #pass-quests { grid-template-columns: 1fr; gap: 8px; }
     .pass-quest { padding: 11px 12px; }
     .pass-quest h4 { min-height: 0; margin: 7px 0; }
-    #pass-track { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    #pass-track-viewport { --pass-gap: 9px; }
+    .pass-chain-rank { min-height: 154px; padding: 9px 3px; }
+    .pass-chain-rank .pass-rank-number { font-size: 23px; }
+    .pass-chain-rank .pass-reward-title { font-size: 9px; }
+    .pass-rank-claim { font-size: 9px; }
+    .pass-rank-label, .pass-rank-state, .pass-reward-state { font-size: 8px; }
+    #pass-ready-list { grid-template-columns: 1fr; }
+    #pass-ready { padding: 11px; }
+    #pass-all-track { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .pass-all-rank { padding: 9px 3px; }
+    .pass-all-rank .pass-reward-title { font-size: 9px; }
     .pass-section-head { margin-top: 18px; }
   }
   @media (max-height: 500px) {
@@ -812,21 +874,34 @@
       <button id="pass-done" class="btn" type="button">back</button>
     </header>
     <div class="pass-content">
-      <section class="pass-overview" aria-label="Pass progress">
-        <div class="pass-progress-card">
-          <div class="pass-rank-badge"><strong id="pass-rank-value">1</strong><span id="pass-rank-total">/ 100</span></div>
-          <div><div class="pass-progress-top"><strong>Your rank</strong><span id="pass-xp-label">0 / 100 XP</span></div>
-            <div id="pass-xp-bar" role="progressbar" aria-label="XP toward next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="pass-xp-fill"></span></div>
-            <span id="pass-total-xp">0 lifetime XP</span></div>
-        </div>
-        <div class="pass-next"><span id="pass-next-icon" aria-hidden="true">★</span><div><span id="pass-next-label">Next reward · Rank 5</span><strong id="pass-next-title">2 stars</strong></div></div>
+      <p id="pass-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+      <div id="pass-summary-view">
+        <section class="pass-overview" aria-label="Pass progress">
+          <div class="pass-progress-card">
+            <div class="pass-rank-badge"><strong id="pass-rank-value">1</strong><span id="pass-rank-total">/ 100</span></div>
+            <div><div class="pass-progress-top"><strong>Your rank</strong><span id="pass-xp-label">0 / 100 XP</span></div>
+              <div id="pass-xp-bar" role="progressbar" aria-label="XP toward next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="pass-xp-fill"></span></div>
+              <span id="pass-total-xp">0 lifetime XP</span></div>
+          </div>
+          <div class="pass-next"><span id="pass-next-icon" aria-hidden="true">★</span><div><span id="pass-next-label">Next reward · Rank 5</span><strong id="pass-next-title">2 stars</strong></div></div>
+        </section>
+        <div class="pass-section-head"><h3>Your rank chain</h3><button id="pass-view-all" class="btn pass-view-toggle" type="button" aria-controls="pass-all-view" aria-expanded="false">View rank rewards ↗</button></div>
+        <div id="pass-track-viewport"><ol id="pass-track" aria-label="Your rank and the next ranks"></ol></div>
+        <p id="pass-track-note">A reward every fifth rank. Claim earned rewards whenever you are ready.</p>
+        <section id="pass-ready" aria-label="Earned rewards ready to claim" hidden>
+          <div class="pass-section-head"><h3>Ready to claim</h3><span id="pass-ready-count"></span></div>
+          <ul id="pass-ready-list"></ul>
+        </section>
+        <div class="pass-section-head"><h3>Daily tasks</h3><span id="pass-reset"></span></div>
+        <p id="pass-rerolls">3 changes left · one per task</p>
+        <div id="pass-quests"></div>
+        <p class="pass-rules">Finish courses to earn XP and progress tasks. Change each unfinished task once a day; its progress restarts. New tasks and changes arrive at local midnight. Your pass never expires.</p>
+      </div>
+      <section id="pass-all-view" aria-label="All rank rewards" hidden>
+        <div class="pass-section-head"><h3>All rank rewards</h3><button id="pass-view-back" class="btn pass-view-toggle" type="button">← Your rank chain</button></div>
+        <p class="pass-rules">Every rank from 1 to 100. Rewards arrive every fifth rank; the ranks between them need no claim.</p>
+        <ol id="pass-all-track" aria-label="All 100 pass ranks"></ol>
       </section>
-      <div class="pass-section-head"><h3>Daily tasks</h3><span id="pass-reset"></span></div>
-      <div id="pass-quests"></div>
-      <p class="pass-rules">Finish courses to earn XP and progress tasks. Three new tasks arrive at local midnight. Each rank needs more XP; your pass never expires.</p>
-      <div class="pass-section-head"><h3>Rank rewards</h3><button id="pass-current" class="btn" type="button">your rank ↓</button></div>
-      <ol id="pass-track" aria-label="All 100 pass ranks"></ol>
-      <p id="pass-track-note">Rewards unlock automatically every fifth rank.</p>
       <p id="pass-storage" hidden>Pass saving is unavailable. Open the online game to save XP and rewards.</p>
     </div>
   </div>
@@ -10441,8 +10516,8 @@ GAME.access = { load, sewerUnlocked: () => unlocked, grantSewer, environment: ()
 ;(function () {
 'use strict';
 // ---- src/game/pass.js ----
-// A permanent, free flight pass. XP, daily progress and completed attempt IDs share one
-// atomic save; milestone rewards are derived from that save and cannot be claimed twice.
+// A permanent, free flight pass. XP, daily progress, task changes and claimed rewards
+// share one atomic save, so neither a finish nor a reward can be collected twice.
 const KEY = 'neonflight.pass.v1', MAX_RANK = 100, MAX_ATTEMPTS = 8192;
 const FLIGHT_XP = Object.freeze({ easy: 60, medium: 90, hard: 130, extreme: 180 });
 const MEDAL_XP = Object.freeze({ bronze: 10, silver: 20, gold: 35, diamond: 50 });
@@ -10525,16 +10600,17 @@ function dailyFor(date = dayKey()) {
   const candidates = QUESTS.filter(quest => !quest.sewer || GAME.access?.sewerUnlocked?.() === true)
     .map(quest => ({ id: quest.id, score: hash(`${date}:${quest.id}`) }))
     .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
-  return { date, quests: candidates.slice(0, 3).map(quest => ({ id: quest.id, progress: 0 })) };
+  const quests = candidates.slice(0, 3).map(quest => ({ id: quest.id, progress: 0, rerolled: false }));
+  return { date, quests, seen: quests.map(quest => quest.id) };
 }
-const emptyLedger = () => ({ version: 1, totalXP: 0, attempts: [], daily: dailyFor() });
+const emptyLedger = () => ({ version: 2, totalXP: 0, attempts: [], claimed: [], daily: dailyFor() });
 let ledger = emptyLedger(), storageOK = true;
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 160;
 function read() {
   const raw = localStorage.getItem(KEY);
   if (raw === null) return emptyLedger();
   const value = JSON.parse(raw);
-  if (!value || value.version !== 1 || !Number.isSafeInteger(value.totalXP) || value.totalXP < 0 || value.totalXP > MAX_XP
+  if (!value || ![1, 2].includes(value.version) || !Number.isSafeInteger(value.totalXP) || value.totalXP < 0 || value.totalXP > MAX_XP
       || !Array.isArray(value.attempts) || value.attempts.length > MAX_ATTEMPTS
       || !value.attempts.every(validId) || new Set(value.attempts).size !== value.attempts.length
       || !value.daily || typeof value.daily.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.daily.date)
@@ -10543,8 +10619,23 @@ function read() {
       || !value.daily.quests.every((entry, tier) => questById.has(entry?.id)
         && Number.isSafeInteger(entry.progress) && entry.progress >= 0
         && entry.progress <= questById.get(entry.id).targets[tier])) throw new Error('Invalid flight pass save.');
-  return { version: 1, totalXP: value.totalXP, attempts: value.attempts.slice(), daily: {
-    date: value.daily.date, quests: value.daily.quests.map(quest => ({ id: quest.id, progress: quest.progress })),
+  const earnedRanks = REWARDS.filter(reward => reward.rank <= rankForXP(value.totalXP)).map(reward => reward.rank);
+  // The first pass awarded milestones automatically. Preserve those gifts, including
+  // gear already used and stars already spent, when an existing player first updates.
+  const claimed = value.version === 1 ? earnedRanks : value.claimed;
+  if (!Array.isArray(claimed) || claimed.length > REWARDS.length || new Set(claimed).size !== claimed.length
+      || !claimed.every(rank => earnedRanks.includes(rank))) throw new Error('Invalid flight pass claims.');
+  if (value.version === 2) {
+    const seen = value.daily.seen;
+    if (!value.daily.quests.every(quest => typeof quest.rerolled === 'boolean')
+        || !Array.isArray(seen) || seen.length !== 3 + value.daily.quests.filter(quest => quest.rerolled).length
+        || new Set(seen).size !== seen.length || !seen.every(id => questById.has(id))
+        || !value.daily.quests.every(quest => seen.includes(quest.id))) throw new Error('Invalid daily task changes.');
+  }
+  return { version: 2, totalXP: value.totalXP, attempts: value.attempts.slice(), claimed: claimed.slice(), daily: {
+    date: value.daily.date, quests: value.daily.quests.map(quest => ({ id: quest.id, progress: quest.progress,
+      rerolled: value.version === 2 ? quest.rerolled : false })),
+    seen: value.version === 2 ? value.daily.seen.slice() : value.daily.quests.map(quest => quest.id),
   } };
 }
 function rotateDaily(save) {
@@ -10557,27 +10648,73 @@ function refresh() {
   catch { storageOK = false; rotateDaily(ledger); }
   notify();
 }
-function totalsForXP(xp) {
-  const rank = rankForXP(xp), totals = { stars: 0, lifts: 0, flashlights: 0, themes: [], music: [] };
+function totalsForClaims(claimed) {
+  const totals = { stars: 0, lifts: 0, flashlights: 0, themes: [], music: [] };
   for (const reward of REWARDS) {
-    if (reward.rank > rank) break;
+    if (!claimed.includes(reward.rank)) continue;
     if (reward.kind === 'theme') totals.themes.push(reward.id);
     else if (reward.kind === 'music') totals.music.push(reward.id);
     else totals[reward.kind] += reward.amount;
   }
   return totals;
 }
-function rewardTotals({ saved = false } = {}) { return totalsForXP((saved ? read() : ledger).totalXP); }
+function rewardTotals({ saved = false } = {}) { return totalsForClaims((saved ? read() : ledger).claimed); }
 function state() {
   rotateDaily(ledger);
   const rank = rankForXP(ledger.totalXP), atMax = rank === MAX_RANK;
+  const rewards = REWARDS.map(reward => ({ ...reward, unlocked: rank >= reward.rank,
+    claimed: ledger.claimed.includes(reward.rank), claimable: rank >= reward.rank && !ledger.claimed.includes(reward.rank) }));
   return { rank, xp: ledger.totalXP, totalXP: ledger.totalXP, xpInRank: atMax ? 0 : ledger.totalXP - totalForRank(rank),
     xpNeeded: atMax ? 0 : xpForRank(rank), maxRank: MAX_RANK, available: storageOK && !!navigator.locks?.request,
-    daily: { date: ledger.daily.date, resetAt: resetAt(), quests: ledger.daily.quests.map((entry, tier) => {
+    daily: { date: ledger.daily.date, resetAt: resetAt(),
+      rerollsRemaining: ledger.daily.quests.filter(quest => !quest.rerolled).length,
+      quests: ledger.daily.quests.map((entry, tier) => {
       const quest = questById.get(entry.id), target = quest.targets[tier];
-      return { id: entry.id, title: quest.title(target), progress: entry.progress, target, xp: (tier + 1) * 100,
-        complete: entry.progress >= target };
-    }) }, rewards: REWARDS.map(reward => ({ ...reward, unlocked: rank >= reward.rank })), rewardTotals: rewardTotals() };
+      return { id: entry.id, slot: tier, title: quest.title(target), progress: entry.progress, target, xp: (tier + 1) * 100,
+        complete: entry.progress >= target, rerolled: entry.rerolled, canReroll: !entry.rerolled && entry.progress < target };
+    }) }, rewards, claimableCount: rewards.filter(reward => reward.claimable).length, rewardTotals: rewardTotals() };
+}
+async function claimReward(rank) {
+  const reward = REWARDS.find(entry => entry.rank === rank);
+  if (!reward) return { ok: false, message: 'This rank has no reward to claim.' };
+  if (!navigator.locks?.request) return { ok: false, message: 'Open the online game to save flight pass rewards.' };
+  try {
+    return await navigator.locks.request(KEY, () => {
+      const next = rotateDaily(read());
+      if (rankForXP(next.totalXP) < rank) { ledger = next; return { ok: false, message: `Reach rank ${rank} to claim this reward.` }; }
+      if (next.claimed.includes(rank)) { ledger = next; return { ok: false, duplicate: true, message: 'This reward is already claimed.' }; }
+      next.claimed.push(rank);
+      next.claimed.sort((a, b) => a - b);
+      localStorage.setItem(KEY, JSON.stringify(next));
+      ledger = next;
+      storageOK = true;
+      return { ok: true, reward: { ...reward, unlocked: true, claimed: true, claimable: false } };
+    });
+  } catch { storageOK = false; return { ok: false, message: 'Could not save this reward. Please try claiming it again.' }; }
+  finally { notify(); }
+}
+async function rerollQuest(slot) {
+  if (!Number.isInteger(slot) || slot < 0 || slot > 2) return { ok: false, message: 'Choose a daily task to change.' };
+  if (!navigator.locks?.request) return { ok: false, message: 'Open the online game to save daily task changes.' };
+  try {
+    return await navigator.locks.request(KEY, () => {
+      const next = rotateDaily(read()), entry = next.daily.quests[slot];
+      if (entry.progress >= questById.get(entry.id).targets[slot]) { ledger = next; return { ok: false, message: 'Completed tasks cannot be changed.' }; }
+      if (entry.rerolled) { ledger = next; return { ok: false, message: 'This task has already been changed today.' }; }
+      const replacement = QUESTS.filter(quest => !next.daily.seen.includes(quest.id)
+          && (!quest.sewer || GAME.access?.sewerUnlocked?.() === true))
+        .map(quest => ({ id: quest.id, score: hash(`${next.daily.date}:change:${slot}:${quest.id}`) }))
+        .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id))[0];
+      if (!replacement) return { ok: false, message: 'There are no other tasks available today.' };
+      next.daily.quests[slot] = { id: replacement.id, progress: 0, rerolled: true };
+      next.daily.seen.push(replacement.id);
+      localStorage.setItem(KEY, JSON.stringify(next));
+      ledger = next;
+      storageOK = true;
+      return { ok: true, quest: state().daily.quests[slot] };
+    });
+  } catch { storageOK = false; return { ok: false, message: 'Could not save this task change. Your previous tasks are safe.' }; }
+  finally { notify(); }
 }
 function normalizeFlight(value) {
   if (!value || !validId(value.id) || typeof value.code !== 'string' || !value.code.length || value.code.length > 160
@@ -10619,14 +10756,15 @@ async function completeFlight(summary) {
       const rankAfter = rankForXP(next.totalXP);
       const earnedXP = next.totalXP - beforeXP, earnedFlightXP = Math.min(flightXP, earnedXP);
       return { ok: true, xp: earnedXP, flightXP: earnedFlightXP, dailyXP: earnedXP - earnedFlightXP, rankBefore, rankAfter,
-        rewards: REWARDS.filter(reward => reward.rank > rankBefore && reward.rank <= rankAfter).map(reward => ({ ...reward, unlocked: true })) };
+        rewards: REWARDS.filter(reward => reward.rank > rankBefore && reward.rank <= rankAfter)
+          .map(reward => ({ ...reward, unlocked: true, claimed: false, claimable: true })) };
     });
   } catch { storageOK = false; return { ok: false, message: 'Could not save pass progress. Your previous progress is safe.' }; }
   finally { notify(); }
 }
 window.addEventListener('storage', event => { if (event.key === null || event.key === KEY) refresh(); });
 GAME.pass = { KEY, MAX_RANK, MAX_XP, FLIGHT_XP, MEDAL_XP, REWARDS, QUESTS, xpForRank, totalForRank, rankForXP,
-  refresh, state, completeFlight, rewardTotals,
+  refresh, state, completeFlight, claimReward, rerollQuest, rewardTotals,
   ownsTheme: id => rewardTotals().themes.includes(id), ownsMusic: id => rewardTotals().music.includes(id),
   onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
 refresh();
@@ -10701,19 +10839,21 @@ function displayValue(key) {
   // Existing soundtrack consumers also read the currently active song through this helper.
   return key === 'musicTrack' && inSewer() ? get('sewerMusicTrack') : get(key);
 }
+const passChoiceNote = item => GAME.pass?.state().rank >= item.passRank
+  ? 'Claim this reward in the Flight Pass' : `Pass rank ${item.passRank}`;
 function choiceStatus(key, id) {
   const hidden = !rowVisible(key);
   if (key === 'theme' || key === 'sewerTheme') {
     const item = (key === 'sewerTheme' ? sewerThemes() : GAME.themes?.list || []).find(t => t.id === id);
     const locked = !ownsTheme(id);
     return { locked, available: !locked && !hidden, hidden, icon: THEME_ICONS[id] || '◈',
-      note: locked ? item?.passRank ? `Pass rank ${item.passRank}` : `${GAME.shop?.themePrice?.(id) ?? 4} stars in the shop` : '' };
+      note: locked ? item?.passRank ? passChoiceNote(item) : `${GAME.shop?.themePrice?.(id) ?? 4} stars in the shop` : '' };
   }
   if (key === 'musicTrack' || key === 'sewerMusicTrack') {
     const item = GAME.songs.find(s => s.id === id);
     const locked = id !== 'random' && !ownsMusic(id);
     return { locked, available: !locked && !hidden, hidden, icon: id === 'random' ? '⤨' : id === 'undertow' ? '≈' : '♫',
-      note: locked ? item?.passRank ? `Pass rank ${item.passRank}` : `${GAME.shop?.MUSIC_PRICE ?? 5} stars in the shop`
+      note: locked ? item?.passRank ? passChoiceNote(item) : `${GAME.shop?.MUSIC_PRICE ?? 5} stars in the shop`
         : id === 'undertow' ? 'Free in the Sewer' : '' };
   }
   return { locked: false, available: true, hidden: false, icon: '', note: '' };
@@ -21992,29 +22132,161 @@ GAME.shopPanel = { create };
 ;(function () {
 'use strict';
 // ---- src/ui/pass-panel.js ----
-// Permanent flight pass. Rewards are saved with XP, so opening the track never grants twice.
+// The rank chain follows the player; unclaimed milestones stay available above it.
 function create(panel) {
   const { el } = GAME.hud;
   const q = selector => panel.querySelector(selector);
   const number = n => Math.max(0, Math.floor(n)).toLocaleString();
   const glyph = kind => ({ stars: '★', lifts: '↑', flashlights: '◒', theme: '◈', music: '♫' })[kind] || '✦';
-  let origin = null, opener = null, timer = null;
-  const ranks = new Map(), quests = new Map();
+  let origin = null, opener = null, timer = null, overview = false, windowStart = 1;
+  let pending = null, previousStart = null, previousWidth = 0;
+  const ranks = new Map(), allRanks = new Map(), quests = new Map(), readyRewards = new Map();
   const rewards = new Map(GAME.pass.REWARDS.map(reward => [reward.rank, reward]));
-  for (let rank = 1; rank <= 100; rank++) {
+  const track = q('#pass-track'), viewport = q('#pass-track-viewport');
+
+  function makeRank(rank, parent, full) {
     const reward = rewards.get(rank);
-    const cell = el('li', 'pass-rank' + (reward ? ' milestone' : ''), q('#pass-track'));
+    const cell = el('li', `pass-rank ${full ? 'pass-all-rank' : 'pass-chain-rank'}${reward ? ' milestone' : ''}`, parent);
     cell.dataset.rank = String(rank);
-    el('span', 'pass-rank-number', cell, String(rank));
+    const label = el('span', 'pass-rank-label', cell, 'Rank');
+    label.setAttribute('aria-hidden', 'true');
+    el('strong', 'pass-rank-number', cell, String(rank));
+    let button = null, status = null;
     if (reward) {
       el('span', 'pass-reward-icon', cell, glyph(reward.kind)).setAttribute('aria-hidden', 'true');
       el('span', 'pass-reward-title', cell, reward.title);
-    } else el('span', 'pass-rank-dot', cell, '·').setAttribute('aria-hidden', 'true');
-    ranks.set(rank, cell);
+      button = el('button', 'btn pass-claim pass-rank-claim', cell, 'Claim');
+      button.type = 'button'; button.dataset.claimRank = String(rank);
+      button.addEventListener('click', () => claim(rank, button));
+      status = el('span', 'pass-reward-state', cell);
+    } else {
+      el('span', 'pass-rank-dot', cell, '·').setAttribute('aria-hidden', 'true');
+      status = el('span', 'pass-rank-state', cell);
+    }
+    return { cell, button, status };
+  }
+  for (let rank = 1; rank <= 100; rank++) {
+    ranks.set(rank, makeRank(rank, track, false));
+    allRanks.set(rank, makeRank(rank, q('#pass-all-track'), true));
+  }
+  function moveTrack(animate = true) {
+    const width = Number.parseFloat(getComputedStyle(track).width) || viewport.clientWidth;
+    if (!width) return;
+    const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
+    if (previousStart === windowStart && previousWidth === width) return;
+    // One card and its connector occupy one fifth of the viewport plus one fifth of a gap.
+    // Pixel measurement also keeps the chain aligned when the game's UI zoom changes.
+    const offset = (windowStart - 1) * (width + gap) / 5;
+    if (!animate || previousWidth !== width) track.classList.remove('moving');
+    track.style.transform = `translateX(${-offset}px)`;
+    previousStart = windowStart; previousWidth = width;
+    if (!track.classList.contains('moving')) requestAnimationFrame(() => {
+      if (origin) track.classList.add('moving');
+    });
+  }
+  const resizeObserver = new ResizeObserver(() => moveTrack(false));
+  resizeObserver.observe(viewport);
+  function setOverview(show) {
+    overview = show;
+    q('#pass-summary-view').hidden = show;
+    q('#pass-all-view').hidden = !show;
+    q('#pass-view-all').setAttribute('aria-expanded', String(show));
+    q('.pass-content').scrollTop = 0;
+    if (show) q('#pass-view-back').focus();
+    else { moveTrack(false); q('#pass-view-all').focus(); }
+  }
+  function feedback(message, error = false) {
+    q('#pass-feedback').textContent = message;
+    q('#pass-feedback').classList.toggle('error', error);
+  }
+  async function claim(rank, button) {
+    if (pending) return;
+    pending = { type: 'claim', rank };
+    feedback(''); render();
+    try {
+      const result = await GAME.pass.claimReward(rank);
+      feedback(result.ok ? `${rewards.get(rank).title} claimed.` : result.message || 'Could not claim this reward.', !result.ok);
+    } catch { feedback('Could not save this reward. Please try again.', true); }
+    finally {
+      pending = null; render();
+      if (origin && (!button.isConnected || button.hidden || button.disabled)) {
+        const next = overview ? allRanks.get(rank).cell : q('#pass-ready-list .pass-ready-claim') || q('#pass-view-all');
+        if (next.tagName !== 'BUTTON') next.tabIndex = -1;
+        next.focus({ preventScroll: true });
+      }
+    }
+  }
+  async function reroll(slot, button) {
+    if (pending) return;
+    pending = { type: 'reroll', slot };
+    feedback(''); render();
+    try {
+      const result = await GAME.pass.rerollQuest(slot);
+      feedback(result.ok ? 'Daily task changed. Its XP reward stays the same.' : result.message || 'Could not change this task.', !result.ok);
+    } catch { feedback('Could not save this task. Please try again.', true); }
+    finally {
+      pending = null; render();
+      if (origin && button.disabled) { quests.get(slot).card.tabIndex = -1; quests.get(slot).card.focus({ preventScroll: true }); }
+    }
+  }
+  function renderRank(row, rank, state, reward, full) {
+    const { cell, button, status } = row;
+    const earned = rank <= state.rank, current = rank === state.rank;
+    const visible = full || rank >= windowStart && rank < windowStart + 5;
+    const peek = !full && rank === windowStart + 4 && !earned;
+    cell.classList.toggle('earned', earned);
+    cell.classList.toggle('current', current);
+    cell.classList.toggle('peek', peek);
+    cell.classList.toggle('claimed', reward?.claimed === true);
+    cell.classList.toggle('claimable', reward?.claimable === true);
+    cell.dataset.visible = String(visible);
+    cell.inert = !visible;
+    if (visible) cell.removeAttribute('aria-hidden'); else cell.setAttribute('aria-hidden', 'true');
+    if (current) cell.setAttribute('aria-current', 'step'); else cell.removeAttribute('aria-current');
+    const rewardState = reward?.claimed ? 'claimed' : reward?.claimable ? 'ready to claim' : earned ? 'reached' : 'upcoming';
+    const label = `Rank ${rank}${reward ? ` · ${reward.title}` : ''} · ${current ? 'your rank' : rewardState}`;
+    cell.setAttribute('aria-label', label); cell.title = label;
+    if (reward) {
+      button.hidden = !reward.claimable;
+      button.disabled = !!pending || state.available === false;
+      button.textContent = pending?.type === 'claim' && pending.rank === rank ? 'Claiming…' : 'Claim';
+      button.setAttribute('aria-label', `Claim ${reward.title} from rank ${rank}`);
+      status.hidden = !!reward.claimable;
+      status.textContent = reward.claimed ? '✓ Claimed' : earned ? 'Reached' : `At rank ${rank}`;
+    } else status.textContent = current ? 'You are here' : earned ? 'Reached' : '';
+  }
+  function renderReady(state) {
+    const claimable = state.rewards.filter(reward => reward.claimable);
+    q('#pass-ready').hidden = claimable.length === 0;
+    q('#pass-ready-count').textContent = `${claimable.length} ${claimable.length === 1 ? 'reward' : 'rewards'}`;
+    const active = new Set();
+    for (const reward of claimable) {
+      active.add(reward.rank);
+      let row = readyRewards.get(reward.rank);
+      if (!row) {
+        const card = el('li', 'pass-ready-reward', q('#pass-ready-list'));
+        card.dataset.rank = String(reward.rank);
+        el('span', 'pass-ready-icon', card, glyph(reward.kind)).setAttribute('aria-hidden', 'true');
+        const copy = el('div', 'pass-ready-copy', card);
+        el('span', '', copy, `Rank ${reward.rank}`);
+        el('strong', '', copy, reward.title);
+        const button = el('button', 'btn pass-claim pass-ready-claim', card, 'Claim');
+        button.type = 'button'; button.dataset.claimRank = String(reward.rank);
+        button.setAttribute('aria-label', `Claim ${reward.title} from rank ${reward.rank}`);
+        button.addEventListener('click', () => claim(reward.rank, button));
+        row = { card, button }; readyRewards.set(reward.rank, row);
+      }
+      q('#pass-ready-list').appendChild(row.card);
+      row.button.disabled = !!pending || state.available === false;
+      row.button.textContent = pending?.type === 'claim' && pending.rank === reward.rank ? 'Claiming…' : 'Claim';
+    }
+    for (const [rank, row] of readyRewards) if (!active.has(rank)) { row.card.remove(); readyRewards.delete(rank); }
   }
   function render() {
     const state = GAME.pass.state();
     const atMax = state.rank >= state.maxRank;
+    windowStart = Math.min(state.rank, state.maxRank - 4);
+    track.dataset.startRank = String(windowStart);
     q('#pass-rank-value').textContent = number(state.rank);
     q('#pass-rank-total').textContent = `/ ${state.maxRank}`;
     q('#pass-xp-label').textContent = atMax ? 'All 100 ranks reached' : `${number(state.xpInRank)} / ${number(state.xpNeeded)} XP`;
@@ -22028,45 +22300,50 @@ function create(panel) {
     const next = state.rewards.find(reward => !reward.unlocked);
     q('#pass-next-icon').textContent = next ? glyph(next.kind) : '✦';
     q('#pass-next-label').textContent = next ? `Next reward · Rank ${next.rank}` : 'Pass complete';
-    q('#pass-next-title').textContent = next ? next.title : 'Every reward unlocked';
+    q('#pass-next-title').textContent = next ? next.title : 'All 100 ranks reached';
     q('#pass-storage').hidden = state.available !== false;
-    q('#pass-track-note').textContent = atMax ? 'Every fifth rank reward is yours.' : 'Rewards unlock automatically every fifth rank.';
-    for (const [rank, cell] of ranks) {
-      const earned = rank <= state.rank;
-      cell.classList.toggle('earned', earned);
-      cell.classList.toggle('current', rank === state.rank);
-      if (rank === state.rank) cell.setAttribute('aria-current', 'step');
-      else cell.removeAttribute('aria-current');
-      const reward = rewards.get(rank);
-      const label = `Rank ${rank}${reward ? ` · ${reward.title}` : ''} · ${earned ? 'unlocked' : 'locked'}`;
-      cell.setAttribute('aria-label', label); cell.title = label;
-    }
+    q('#pass-track-note').textContent = atMax ? 'All ranks reached. Your unclaimed rewards stay available above.' : 'A reward every fifth rank. Claim earned rewards whenever you are ready.';
+    const stateRewards = new Map(state.rewards.map(reward => [reward.rank, reward]));
+    for (const [rank, row] of ranks) renderRank(row, rank, state, stateRewards.get(rank), false);
+    for (const [rank, row] of allRanks) renderRank(row, rank, state, stateRewards.get(rank), true);
+    renderReady(state);
     const active = new Set();
-    for (const quest of state.daily.quests) {
-      active.add(quest.id);
-      let row = quests.get(quest.id);
+    state.daily.quests.forEach((quest, slot) => {
+      active.add(slot);
+      let row = quests.get(slot);
       if (!row) {
         const card = el('article', 'pass-quest', q('#pass-quests'));
-        card.dataset.quest = quest.id;
+        card.dataset.slot = String(slot);
         const head = el('div', 'pass-quest-head', card);
         const xp = el('strong', 'pass-quest-xp', head);
         const status = el('span', 'pass-quest-status', head);
         const title = el('h4', '', card);
         const progress = el('div', 'pass-quest-progress', card);
         const fill = el('span', '', progress);
-        const readout = el('span', 'pass-quest-count', card);
-        row = { card, xp, status, title, progress, fill, readout }; quests.set(quest.id, row);
+        const foot = el('div', 'pass-quest-foot', card);
+        const readout = el('span', 'pass-quest-count', foot);
+        const change = el('button', 'btn pass-quest-change', foot, 'Change task');
+        change.type = 'button'; change.dataset.rerollSlot = String(slot);
+        change.addEventListener('click', () => reroll(slot, change));
+        row = { card, xp, status, title, progress, fill, readout, change }; quests.set(slot, row);
       }
-      q('#pass-quests').appendChild(row.card);
+      row.card.dataset.quest = quest.id;
       row.xp.textContent = `${quest.xp} XP`;
       row.title.textContent = quest.title;
-      row.status.textContent = quest.complete ? '✓ Complete' : 'Daily task';
+      row.status.textContent = quest.complete ? '✓ Complete' : quest.rerolled ? 'Task changed' : 'Daily task';
       row.card.classList.toggle('complete', quest.complete);
+      row.card.classList.toggle('rerolled', quest.rerolled === true);
       row.fill.style.width = `${Math.min(1, quest.progress / Math.max(1, quest.target)) * 100}%`;
       row.readout.textContent = quest.complete ? 'XP added to your pass' : `${number(quest.progress)} / ${number(quest.target)}`;
       row.progress.setAttribute('aria-label', `${quest.title}: ${quest.progress} of ${quest.target}`);
-    }
-    for (const [id, row] of quests) if (!active.has(id)) { row.card.remove(); quests.delete(id); }
+      row.change.disabled = !quest.canReroll || !!pending || state.available === false;
+      row.change.textContent = pending?.type === 'reroll' && pending.slot === slot ? 'Changing…' : quest.complete ? 'Completed' : quest.rerolled ? 'Changed' : 'Change task';
+      row.change.title = quest.complete ? 'Completed tasks cannot be changed.' : quest.rerolled ? 'This task has already been changed today.' : 'Change this task once today. Its progress will restart.';
+      row.change.setAttribute('aria-label', `${quest.complete ? 'Completed task' : quest.rerolled ? 'Task already changed' : 'Change task'} · ${quest.xp} XP`);
+    });
+    for (const [slot, row] of quests) if (!active.has(slot)) { row.card.remove(); quests.delete(slot); }
+    const changes = state.daily.quests.filter(quest => quest.canReroll).length;
+    q('#pass-rerolls').textContent = `${changes} ${changes === 1 ? 'change' : 'changes'} left · one per task`;
     const remaining = Math.max(0, state.daily.resetAt - Date.now());
     const minutes = Math.ceil(remaining / 60000);
     q('#pass-reset').textContent = `New tasks in ${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
@@ -22075,6 +22352,7 @@ function create(panel) {
       const badge = document.querySelector(`#${id} .pass-opener-rank`);
       if (badge) badge.textContent = `R${state.rank}`;
     }
+    moveTrack();
   }
   function close() {
     if (!origin) return;
@@ -22085,15 +22363,14 @@ function create(panel) {
     origin = opener = null;
   }
   q('#pass-done').addEventListener('click', close);
-  q('#pass-current').addEventListener('click', () => {
-    const current = ranks.get(GAME.pass.state().rank);
-    current.scrollIntoView({ block: 'center', behavior: 'auto' });
-  });
+  q('#pass-view-all').addEventListener('click', () => setOverview(true));
+  q('#pass-view-back').addEventListener('click', () => setOverview(false));
   panel.addEventListener('click', e => { if (e.target === panel) close(); });
   panel.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') { e.preventDefault(); if (overview) setOverview(false); else close(); }
     if (e.key === 'Tab') {
-      const buttons = [...panel.querySelectorAll('button:not(:disabled)')].filter(button => button.getClientRects().length);
+      const buttons = [...panel.querySelectorAll('button:not(:disabled):not([hidden])')]
+        .filter(button => button.getClientRects().length && !button.closest('[inert]'));
       const first = buttons[0], last = buttons.at(-1);
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
@@ -22107,10 +22384,12 @@ function create(panel) {
       if (origin) return;
       opener = button; origin = button.closest('.screen'); origin.inert = true;
       opener.setAttribute('aria-expanded', 'true');
-      GAME.pass.refresh(); render();
+      overview = false; q('#pass-summary-view').hidden = false; q('#pass-all-view').hidden = true;
+      q('#pass-view-all').setAttribute('aria-expanded', 'false');
+      feedback(''); GAME.pass.refresh(); render();
       panel.classList.remove('hidden');
       q('.pass-content').scrollTop = 0;
-      q('#pass-done').focus();
+      moveTrack(false); q('#pass-done').focus();
       timer = setInterval(() => { GAME.pass.refresh(); render(); }, 30000);
     },
     close, refresh: render, get isOpen() { return !!origin; },
@@ -22636,7 +22915,7 @@ function saveFlightXP() {
       if (run === flight) {
         showFlightXP(flight);
         if (result.ok && result.rankAfter > result.rankBefore)
-          hud.toast(`Pass rank ${result.rankAfter}${result.rewards?.length ? ' · rewards unlocked' : ''}`, 'good', 4);
+          hud.toast(`Pass rank ${result.rankAfter}${result.rewards?.length ? ' · rewards ready to claim' : ''}`, 'good', 4);
       }
     }).catch(() => {
       record.result = { ok: false, message: 'Flight XP could not be saved.' };

@@ -129,8 +129,14 @@ Shop shows the stars still available to spend after purchases.
 The **Flight Pass** has **100 ranks** and never expires. Finish courses for XP, including replays;
 higher difficulties, medals and Sewer flights award more. Each rank requires more XP than the
 previous one. Three daily tasks rotate at **local midnight** from **18 quest types**, paying
-**100, 200 and 300 XP** once per day. Only finished courses count toward tasks.
-Every fifth rank automatically unlocks stars, music, themes or gear. The full pass awards
+**100, 200 and 300 XP** once per day. Only finished courses count toward tasks. Change each task
+**once per day**, up to three swaps; completed tasks cannot be changed. Replacements keep the
+same XP tier and reset that slot's progress. Swaps reset at local midnight.
+The rank chain slides left as you advance, showing four ranks and the next one faded at the
+edge. **View rank rewards** opens all ranks 1–100. Every fifth rank earns stars, music, themes
+or gear; use its rounded **Claim** button to collect the reward. Empty ranks need no claim.
+Earlier unclaimed rewards stay accessible, and rewards from the original pass remain owned.
+The full pass awards
 **30 stars**, **four lift boosts** and **six five-use flashlights**. Exclusive surface themes are
 **Cobalt Circuit**, **Rose Quartz** and **Solar Eclipse**; underground themes are **Bioluminescent
 Depths** and **Rustworks**. New songs are **Cloudrunner**, **Prism Drive** and Sewer-only
